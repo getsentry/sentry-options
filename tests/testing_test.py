@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from sentry_options.testing import override_options
 from testing.option_group import empty_option_group
 
@@ -41,3 +43,30 @@ def test_fallback_non_overridden(tmp_path: pathlib.Path) -> None:
     with override_options(testing={'example-option': '1'}):
         assert g.get('example-option') == '1'
         assert g.get('typeddict-option') == {'x': 0, 'y': 0}
+
+
+def test_override_options_unknown_group() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        with override_options(unknown_group={}):
+            raise AssertionError('unreachable!')
+    msg, = excinfo.value.args
+    assert msg == 'unknown option group: `unknown_group`'
+
+
+def test_override_options_unknown_option() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        with override_options(testing={'unknown-key': '1'}):
+            raise AssertionError('unreachable!')
+    msg, = excinfo.value.args
+    assert msg == 'unknown option: `unknown-key` (in group `testing`)'
+
+
+def test_override_options_incorrect_type() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        with override_options(testing={'example-option': 1}):
+            raise AssertionError('unreachable')
+    msg, = excinfo.value.args
+    assert msg == (
+        'incorrect option type (`[testing]example-option`): '
+        "expected `<class 'str'>` got `1`"
+    )
