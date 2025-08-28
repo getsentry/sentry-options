@@ -29,7 +29,7 @@ class _OptionGroup[Name]:
         self._data: Any = {}
 
     def __repr__(self) -> str:
-        return f'{type(self).__name__}({self.name!r})'
+        return f'{__name__}.{option_group.__name__}({self.name!r})'
 
     def _ensure_data(self) -> None:
         loc = os.path.join(self._location, self.name, 'values.json')

@@ -22,3 +22,8 @@ def test_reloading(tmp_path: pathlib.Path) -> None:
     # should not attempt to reload
     with mock.patch.object(builtins, 'open', side_effect=OSError):
         assert g.get('example-option') == 'hi'
+
+
+def test_repr(tmp_path: pathlib.Path) -> None:
+    g = empty_option_group(tmp_path)
+    assert repr(g) == "sentry_options.api.option_group('testing')"
