@@ -70,7 +70,7 @@ def _adjust_option_value(ctx: MethodContext) -> Type:
     assert isinstance(ctx.type, Instance)
     group_name_literal, = ctx.type.args
     if not isinstance(group_name_literal, LiteralType):
-        return ctx.default_return_type  # an "error" OptionGroup[...]
+        return ctx.default_return_type  # an "error" _OptionGroup[...]
 
     group_name = group_name_literal.value
     assert isinstance(group_name, str), group_name
@@ -99,7 +99,7 @@ class OptionsMypyPlugin(Plugin):
             self,
             fullname: str,
     ) -> Callable[[MethodContext], Type] | None:
-        if fullname == 'sentry_options.api.OptionGroup.get':
+        if fullname == 'sentry_options.api._OptionGroup.get':
             return _adjust_option_value
         else:
             return None
