@@ -33,3 +33,11 @@ def test_override_options_decorator(tmp_path: pathlib.Path) -> None:
         return f'{x}:{g.get("example-option")}'
 
     assert func(2) == '2:1'
+
+
+def test_fallback_non_overridden(tmp_path: pathlib.Path) -> None:
+    g = empty_option_group(tmp_path)
+
+    with override_options(testing={'example-option': '1'}):
+        assert g.get('example-option') == '1'
+        assert g.get('typeddict-option') == {'x': 0, 'y': 0}
