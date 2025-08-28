@@ -5,7 +5,11 @@ import pathlib
 from typing import Literal
 from unittest import mock
 
-from sentry_options.api import OptionGroup
+from sentry_options.api import _OptionGroup
+
+
+def _option_group(pth: pathlib.Path) -> _OptionGroup[Literal['testing']]:
+    return _OptionGroup('testing', _location=str(pth))
 
 
 def test_reloading(tmp_path: pathlib.Path) -> None:
@@ -13,8 +17,7 @@ def test_reloading(tmp_path: pathlib.Path) -> None:
     tdir.mkdir()
     tdir.joinpath('values.json').write_text('{}')
 
-    g: OptionGroup[Literal['testing']]
-    g = OptionGroup('testing', _location=str(tmp_path))
+    g = _option_group(tmp_path)
     # should have the default value
     assert g.get('example-option') == ''
 

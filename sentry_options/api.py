@@ -15,7 +15,7 @@ _groups = {
 }
 
 
-class OptionGroup[Name]:
+class _OptionGroup[Name]:
     def __init__(
             self,
             name: str,
@@ -47,5 +47,5 @@ class OptionGroup[Name]:
         return self._data.get(key, option.default)
 
 
-def option_group(group: LiteralString) -> OptionGroup[Any]:
+def option_group(group: LiteralString) -> _OptionGroup[Any]:
     raise NotImplementedError
