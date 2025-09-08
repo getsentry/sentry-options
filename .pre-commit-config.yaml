@@ -40,4 +40,4 @@ repos:
     hooks:
     -   id: mypy
         entry: python -m mypy
-        additional_dependencies: [pytest]
+        additional_dependencies: [pytest, types-pyyaml]

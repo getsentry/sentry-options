@@ -14,6 +14,7 @@ class _TD(TypedDict):
 
 testing: dict[LiteralString, _Option] = {
     'example-option': option(str).default(''),
+    'float-option': option(float).default(0.),
     'list-option': option(list[str]).default([]),
     'dict-option': option(dict[str, int]).default({}),
     'typeddict-option': option(_TD).default({'x': 0, 'y': 0}),
