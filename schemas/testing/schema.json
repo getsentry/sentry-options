@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "options": {
+    "example-option": {
+      "type": "str",
+      "default": "",
+      "description": "An example string option"
+    },
+    "float-option": {
+      "type": "float",
+      "default": 0.0,
+      "description": "An example float option"
+    },
+    "int-option": {
+      "type": "int",
+      "default": 0,
+      "description": "An example integer option"
+    },
+    "bool-option": {
+      "type": "bool",
+      "default": false,
+      "description": "An example boolean option"
+    }
+  }
+}
