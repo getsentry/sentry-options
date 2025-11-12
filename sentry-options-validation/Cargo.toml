@@ -1,0 +1,18 @@
+[package]
+name = "sentry-options-validation"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+description = "Schema validation library and CLI for sentry-options"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[features]
+default = []
