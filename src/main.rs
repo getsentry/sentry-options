@@ -211,13 +211,7 @@ fn main() {
         let empty_vec = Vec::new();
         let defaults = merge(targets.get("default").unwrap_or(&empty_vec));
 
-        // FIXME: The below is coded as Anthony did, where default is popped and is ignored in the loop.
-        // If a group has only `default` as a target, we won't write any JSON?
-
         for (target, filedatas) in targets {
-            if target == "default" {
-                continue;
-            }
             let mut merged = defaults.clone();
             merged.extend(merge(&filedatas));
 
