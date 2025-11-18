@@ -26,7 +26,7 @@ struct Args {
 
 // Data types that can be used as an Option
 #[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
+#[serde(untagged)] // don't output the type
 enum OptionValue {
     String(String),
     Int(i64),
@@ -38,76 +38,15 @@ enum OptionValue {
 #[derive(Debug)]
 struct FileData {
     path: String,
-    data: HashMap<String, OptionValue>,
+    data: TargetMap,
 }
 
-/// Validates and parses a YAML file containing Options
-fn validate_and_parse(_group: &str, path: &str) -> Result<HashMap<String, OptionValue>, String> {
-    let contents =
-        fs::read_to_string(path).map_err(|e| format!("Failed to read file {}: {}", path, e))?;
-
-    let data: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(&contents)
-        .map_err(|e| format!("Failed to parse YAML in {}: {}", path, e))?;
-
-    let mut result = HashMap::new();
-
-    // should only have one top level key named "options"
-    if data.len() != 1 || !data.contains_key("options") {
-        return Err(format!(
-            "Expected one top level group named 'options', found {:?}",
-            data.keys().collect::<Vec<_>>()
-        ));
-    }
-
-    let options = data.get("options").unwrap();
-
-    // options should be a Mapping
-    // unwrap because we guarantee existence of key above
-    if !options.is_mapping() {
-        return Err(format!(
-            "Expected 'options' to be a mapping, found {:?}",
-            options
-        ));
-    }
-
-    // unwrap because we guarantee it's a mapping
-    for (option, option_value) in options.as_mapping().unwrap() {
-        // TODO: verify option exists in schema
-        // TODO: verify option value matches schema
-        // TODO: verify option type is supported
-        let value_parsed = match option_value {
-            serde_yaml::Value::String(s) => OptionValue::String(s.clone()),
-            serde_yaml::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    OptionValue::Int(i)
-                } else if let Some(f) = n.as_f64() {
-                    OptionValue::Float(f)
-                } else {
-                    return Err(format!(
-                        "Unsupported number type for option {}: {}",
-                        option.as_str().unwrap(),
-                        n
-                    ));
-                }
-            }
-            serde_yaml::Value::Bool(b) => OptionValue::Bool(*b),
-            _ => {
-                return Err(format!(
-                    "Unsupported value type for option {}: {:?}",
-                    option.as_str().unwrap(),
-                    option_value
-                ));
-            }
-        };
-        result.insert(option.as_str().unwrap().to_string(), value_parsed);
-    }
-
-    Ok(result)
-}
+type TargetMap = HashMap<String, OptionValue>;
+type LoadMap = HashMap<String, HashMap<String, Vec<FileData>>>;
 
 /// Reads all YAML files in the root directory, validating and parsing them, then outputting
 /// the options grouped by group and target
-fn load(root: &str) -> Result<HashMap<String, HashMap<String, Vec<FileData>>>, String> {
+fn load(root: &str) -> Result<LoadMap, String> {
     let mut grouped = HashMap::new();
     let root_path = Path::new(root);
     for entry in WalkDir::new(root) {
@@ -180,12 +119,90 @@ fn load(root: &str) -> Result<HashMap<String, HashMap<String, Vec<FileData>>>, S
     }
 
     // TODO: Check overlap
+    check_overlap(&grouped);
 
     Ok(grouped)
 }
 
+/// Validates and parses a YAML file containing Options
+fn validate_and_parse(_group: &str, path: &str) -> Result<TargetMap, String> {
+    let contents =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read file {}: {}", path, e))?;
+
+    let data: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(&contents)
+        .map_err(|e| format!("Failed to parse YAML in {}: {}", path, e))?;
+
+    let mut result = HashMap::new();
+
+    // should only have one top level key named "options"
+    if data.len() != 1 || !data.contains_key("options") {
+        return Err(format!(
+            "Expected one top level group named 'options', found {:?}",
+            data.keys().collect::<Vec<_>>()
+        ));
+    }
+
+    let options = data.get("options").unwrap();
+
+    // options should be a Mapping
+    // unwrap because we guarantee existence of key above
+    if !options.is_mapping() {
+        return Err(format!(
+            "Expected 'options' to be a mapping, found {:?}",
+            options
+        ));
+    }
+
+    // unwrap because we guarantee it's a mapping
+    for (option, option_value) in options.as_mapping().unwrap() {
+        // TODO: verify option exists in schema
+        // TODO: verify option value matches schema
+        let value_parsed = match option_value {
+            serde_yaml::Value::String(s) => OptionValue::String(s.clone()),
+            serde_yaml::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    OptionValue::Int(i)
+                } else if let Some(f) = n.as_f64() {
+                    OptionValue::Float(f)
+                } else { // theoretically impossible
+                    panic!("Error parsing number {n} in {path}");
+                }
+            }
+            serde_yaml::Value::Bool(b) => OptionValue::Bool(*b),
+            _ => {
+                return Err(format!(
+                    "Unsupported value type for option {}: {:?}",
+                    option.as_str().unwrap(),
+                    option_value
+                ));
+            }
+        };
+        result.insert(option.as_str().unwrap().to_string(), value_parsed);
+    }
+
+    Ok(result)
+}
+
+// Checks files in the same target for overlapping keys
+fn check_overlap(grouped: &LoadMap) -> () {
+    for (_, targets) in grouped {
+        for (_, filedatas) in targets {
+            let mut key_to_file = HashMap::<String, String>::new();
+            for FileData {path, data} in filedatas {
+                for key in data.keys() {
+                    if key_to_file.contains_key(key) {
+                        panic!("duplicate key '{}' was found in {} and {}", key, key_to_file.get(key).unwrap(), path);
+                    }
+                    key_to_file.insert(key.to_string(), path.to_string());
+                }
+            }
+        }
+    }
+}
+
+
 /// Merges a set of option files into one
-fn merge(filedata: &[FileData]) -> HashMap<String, OptionValue> {
+fn merge(filedata: &[FileData]) -> TargetMap {
     let mut result = HashMap::new();
     for FileData { data, .. } in filedata {
         for (key, value) in data {
@@ -199,7 +216,9 @@ fn main() {
     // parse cli args
     let args = Args::parse();
 
-    // TODO: Error if output directory already exists
+    if Path::new(&args.out).exists() {
+        //panic!("out directory already exists");
+    }
 
     // load files
     let grouped = load(&args.root).unwrap();
