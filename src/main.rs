@@ -217,7 +217,7 @@ fn main() {
     let args = Args::parse();
 
     if Path::new(&args.out).exists() {
-        //panic!("out directory already exists");
+        panic!("out directory already exists");
     }
 
     // load files
