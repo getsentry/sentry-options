@@ -47,11 +47,11 @@ type OptionsMap = HashMap<String, OptionValue>;
 /// A map representation of an option namespace
 /// outer map is keyed by namespace
 /// inner map is keyed by target, value a list of files
-type GroupMap = HashMap<String, HashMap<String, Vec<FileData>>>;
+type NamespaceMap = HashMap<String, HashMap<String, Vec<FileData>>>;
 
 /// Reads all YAML files in the root directory, validating and parsing them, then outputting
 /// the options grouped by namespace and target
-fn load_and_validate(root: &str) -> Result<GroupMap> {
+fn load_and_validate(root: &str) -> Result<NamespaceMap> {
     let mut grouped = HashMap::new();
     let root_path = Path::new(root);
     for entry in WalkDir::new(root) {
@@ -95,7 +95,7 @@ fn load_and_validate(root: &str) -> Result<GroupMap> {
             }
 
             // TODO: validate namespace name here
-            // if parts[0] not in namespace ...
+            // if namespace not in list_of_valid_namespaces ...
 
             let validated = validate_and_parse(&path_string)?;
 
@@ -145,7 +145,6 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
     let options = data.get("options").expect("key to be guaranteed above");
 
     // options should be a Mapping
-    // unwrap because we guarantee existence of key above
     if !options.is_mapping() {
         bail!(
             "Invalid YAML structure in {}: expected 'options' to be a mapping",
@@ -153,10 +152,16 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
         );
     }
 
-    // unwrap because we guarantee it's a mapping
-    for (option, option_value) in options.as_mapping().expect("options guaranteed to be a map above") {
+    for (option, option_value) in options
+        .as_mapping()
+        .expect("options guaranteed to be a map above")
+    {
         // TODO: verify option exists in schema
+        // if option not in schema[namespace]
+
         // TODO: verify option value matches schema
+        // if option.type == schema[namespace][target][option].type
+
         let value_parsed = match option_value {
             serde_yaml::Value::String(s) => OptionValue::String(s.clone()),
             serde_yaml::Value::Number(n) => {
@@ -186,14 +191,17 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
                 );
             }
         };
-        result.insert(option.as_str().expect("option key to be valid").to_string(), value_parsed);
+        result.insert(
+            option.as_str().expect("option key to be valid").to_string(),
+            value_parsed,
+        );
     }
 
     Ok(result)
 }
 
 /// Checks options in the same target for duplicate keys
-fn ensure_no_duplicate_keys(grouped: &GroupMap) -> Result<()> {
+fn ensure_no_duplicate_keys(grouped: &NamespaceMap) -> Result<()> {
     for (_, targets) in grouped {
         for (_, filedata) in targets {
             let mut key_to_file = HashMap::<String, String>::new();
@@ -228,7 +236,7 @@ fn merge_keys(filedata: &[FileData]) -> OptionsMap {
 
 /// Generates the list of output JSON files
 /// Uses the default target and handles overrides from other targets
-fn generate_json(maps: GroupMap) -> Result<Vec<(String, String)>> {
+fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
     let mut json_outputs: Vec<(String, String)> = Vec::new();
 
     // merge files in the same target together
@@ -243,7 +251,8 @@ fn generate_json(maps: GroupMap) -> Result<Vec<(String, String)>> {
             with_option_key.insert("options", merged);
             json_outputs.push((
                 format!("sentry-options-{namespace}-{target}.json"),
-                serde_json::to_string(&with_option_key).context("Failed to serialize JSON")?,
+                serde_json::to_string_pretty(&with_option_key)
+                    .context("Failed to serialize JSON")?,
             ));
         }
     }
@@ -252,7 +261,7 @@ fn generate_json(maps: GroupMap) -> Result<Vec<(String, String)>> {
 
 fn write_json(out_path: PathBuf, json_outputs: Vec<(String, String)>) -> Result<()> {
     fs::create_dir_all(&out_path)
-    .with_context(|| format!("Failed to create directory {}", out_path.display()))?;
+        .with_context(|| format!("Failed to create directory {}", out_path.display()))?;
 
     for (filename, json_text) in json_outputs {
         let filepath = out_path.join(&filename);
