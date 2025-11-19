@@ -13,6 +13,7 @@ use serde_json::Value;
 
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
+const SCHEMA_FILE_NAME: &str = "schema.json";
 
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
@@ -96,11 +97,6 @@ impl SchemaRegistry {
         Ok(Self { schemas })
     }
 
-    /// Get a namespace schema by name
-    pub fn get_schema(&self, namespace: &str) -> Option<Arc<NamespaceSchema>> {
-        self.schemas.get(namespace).cloned()
-    }
-
     /// Validate an entire values object for a namespace
     ///
     /// # Arguments
@@ -153,7 +149,7 @@ impl SchemaRegistry {
                     message: "Directory name contains invalid UTF-8".to_string(),
                 })?;
 
-            let schema_file = entry.path().join("schema.json");
+            let schema_file = entry.path().join(SCHEMA_FILE_NAME);
 
             if schema_file.exists() {
                 let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
@@ -232,6 +228,14 @@ impl SchemaRegistry {
         namespace: &str,
         path: &Path,
     ) -> ValidationResult<Arc<NamespaceSchema>> {
+        // Use the schema file directly as the validator
+        let validator = jsonschema::validator_for(&schema).map_err(|e| {
+            ValidationError::SchemaError {
+                file: path.to_path_buf(),
+                message: format!("Failed to compile validator: {}", e),
+            }
+        })?;
+
         // Validate that default values match their types
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
@@ -243,14 +247,6 @@ impl SchemaRegistry {
                 }
             }
         }
-
-        // Use the schema file directly as the validator
-        let validator = jsonschema::validator_for(&schema).map_err(|e| {
-            ValidationError::SchemaError {
-                file: path.to_path_buf(),
-                message: format!("Failed to compile validator: {}", e),
-            }
-        })?;
 
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
@@ -299,8 +295,6 @@ mod tests {
         );
 
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
-        let schema = registry.get_schema("test").unwrap();
-        assert_eq!(schema.namespace, "test");
     }
 
     #[test]
@@ -553,10 +547,7 @@ mod tests {
             }"#,
         );
 
-        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
-
-        assert!(registry.get_schema("ns1").is_some());
-        assert!(registry.get_schema("ns2").is_some());
+        let _ = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
     }
 
     #[test]
