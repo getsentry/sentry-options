@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "sentry-options-validation",
-    # clients/rust - will be added in PR3
 ]
 
 [workspace.package]
