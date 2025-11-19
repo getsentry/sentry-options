@@ -1,23 +1,24 @@
 {
-  "version": "1.0",
-  "options": {
+  "version": "0.1",
+  "type": "object",
+  "properties": {
     "example-option": {
-      "option_type": "str",
+      "type": "string",
       "default": "",
       "description": "An example string option"
     },
     "float-option": {
-      "option_type": "float",
+      "type": "number",
       "default": 0.0,
       "description": "An example float option"
     },
     "int-option": {
-      "option_type": "int",
+      "type": "integer",
       "default": 0,
       "description": "An example integer option"
     },
     "bool-option": {
-      "option_type": "bool",
+      "type": "boolean",
       "default": false,
       "description": "An example boolean option"
     }

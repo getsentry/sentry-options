@@ -1,3 +1,6 @@
 *.egg-info
 *.pyc
 /.coverage
+
+# Rust build files
+/target/*
