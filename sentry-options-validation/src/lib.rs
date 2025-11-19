@@ -146,7 +146,12 @@ impl SchemaRegistry {
             }
 
             let namespace = entry
-                .file_name().into_string().unwrap();
+                .file_name()
+                .into_string()
+                .map_err(|_| ValidationError::SchemaError {
+                    file: entry.path(),
+                    message: "Directory name contains invalid UTF-8".to_string(),
+                })?;
 
             let schema_file = entry.path().join("schema.json");
 
