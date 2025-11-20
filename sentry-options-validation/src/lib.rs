@@ -30,6 +30,9 @@ pub enum ValidationError {
     #[error("Unknown namespace: {0}")]
     UnknownNamespace(String),
 
+    #[error("Internal error: {0}")]
+    InternalError(String),
+
     #[error("Failed to read file: {0}")]
     FileRead(#[from] std::io::Error),
 
@@ -105,10 +108,21 @@ impl SchemaRegistry {
         schemas_dir: &Path,
     ) -> ValidationResult<HashMap<String, Arc<NamespaceSchema>>> {
         // Compile namespace-schema once for all schemas
-        let namespace_schema_value: Value =
-            serde_json::from_str(NAMESPACE_SCHEMA_JSON).expect("Invalid namespace-schema JSON");
-        let namespace_validator = jsonschema::validator_for(&namespace_schema_value)
-            .expect("Failed to compile namespace-schema");
+        let namespace_schema_value: Value = serde_json::from_str(NAMESPACE_SCHEMA_JSON)
+            .map_err(|e| {
+                ValidationError::InternalError(format!(
+                    "Invalid namespace-schema JSON: {}",
+                    e
+                ))
+            })?;
+        let namespace_validator = jsonschema::validator_for(&namespace_schema_value).map_err(
+            |e| {
+                ValidationError::InternalError(format!(
+                    "Failed to compile namespace-schema: {}",
+                    e
+                ))
+            },
+        )?;
 
         let mut schemas = HashMap::new();
 
