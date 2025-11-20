@@ -25,6 +25,8 @@ struct Args {
 
 // TODO: Add support for list, dict
 
+
+// TODO: Can be removed, we validate later as well
 /// Option types we support
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)] // don't output the type
@@ -35,6 +37,9 @@ enum OptionValue {
     Bool(bool),
 }
 
+/// A key value pair of options and their parsed value
+type OptionsMap = HashMap<String, OptionValue>;
+
 /// Represents a filepath and its parsed YAML data
 #[derive(Debug)]
 struct FileData {
@@ -42,8 +47,6 @@ struct FileData {
     data: OptionsMap,
 }
 
-/// A key value pair of options and their parsed value
-type OptionsMap = HashMap<String, OptionValue>;
 /// A map representation of an option namespace
 /// outer map is keyed by namespace
 /// inner map is keyed by target, value a list of files
@@ -127,6 +130,7 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
     let contents =
         fs::read_to_string(path).with_context(|| format!("Failed to read file {}", path))?;
 
+        // FIXME: from reader
     let data: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(&contents)
         .with_context(|| format!("Failed to parse YAML in {}", path))?;
 
@@ -259,6 +263,7 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
     Ok(json_outputs)
 }
 
+/// Writes JSON data to JSON files in the specified directory
 fn write_json(out_path: PathBuf, json_outputs: Vec<(String, String)>) -> Result<()> {
     fs::create_dir_all(&out_path)
         .with_context(|| format!("Failed to create directory {}", out_path.display()))?;
