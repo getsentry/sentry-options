@@ -273,7 +273,13 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
 
     // merge files in the same target together
     for (namespace, targets) in maps {
-        let defaults = merge_keys(targets.get("default").unwrap_or(&Vec::new()));
+        let default_target = targets.get("default").ok_or_else(|| {
+            AppError::Validation(format!(
+                "Namespace '{}' is missing required 'default' target",
+                namespace
+            ))
+        })?;
+        let defaults = merge_keys(default_target);
 
         for (target, filedatas) in targets {
             let mut merged = defaults.clone();
