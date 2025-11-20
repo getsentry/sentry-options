@@ -52,8 +52,7 @@ impl NamespaceSchema {
     /// # Errors
     /// Returns error if values don't match the schema
     pub fn validate_values(&self, _values: &Value) -> ValidationResult<()> {
-        // TODO: Implement validation
-        Ok(())
+        todo!("Implement validation by comparing values against the schema")
     }
 }
 
