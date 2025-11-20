@@ -105,13 +105,6 @@ impl SchemaRegistry {
     fn load_all_schemas(
         schemas_dir: &Path,
     ) -> ValidationResult<HashMap<String, Arc<NamespaceSchema>>> {
-        if !schemas_dir.exists() {
-            return Err(ValidationError::FileRead(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Schemas directory not found: {}", schemas_dir.display()),
-            )));
-        }
-
         // Compile namespace-schema once for all schemas
         let namespace_schema_value: Value =
             serde_json::from_str(NAMESPACE_SCHEMA_JSON).expect("Invalid namespace-schema JSON");
@@ -137,11 +130,8 @@ impl SchemaRegistry {
                 })?;
 
             let schema_file = entry.path().join(SCHEMA_FILE_NAME);
-
-            if schema_file.exists() {
-                let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
-                schemas.insert(namespace, schema);
-            }
+            let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
+            schemas.insert(namespace, schema);
         }
 
         Ok(schemas)
@@ -168,7 +158,7 @@ impl SchemaRegistry {
     ) -> ValidationResult<()> {
         let output = namespace_validator.evaluate(schema_data);
 
-        if output.iter_errors().count() == 0 {
+        if output.flag().valid {
             Ok(())
         } else {
             let errors: Vec<String> = output
@@ -351,7 +341,9 @@ Error: \"version\" is a required property"));
             }"#,
         );
 
-        SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        assert!(registry.schemas.contains_key("ns1"));
+        assert!(registry.schemas.contains_key("ns2"));
     }
 
     #[test]

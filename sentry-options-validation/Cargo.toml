@@ -16,9 +16,5 @@ tempfile.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 
-[[example]]
-name = "test_schema"
-required-features = []
-
 [features]
 default = []
