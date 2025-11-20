@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -285,8 +285,11 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
             let mut merged = defaults.clone();
             merged.extend(merge_keys(&filedatas));
 
-            let mut with_option_key = HashMap::new();
-            with_option_key.insert("options", merged);
+            // Convert to BTreeMap for sorted keys
+            let sorted_merged: BTreeMap<_, _> = merged.into_iter().collect();
+            
+            let mut with_option_key = BTreeMap::new();
+            with_option_key.insert("options", sorted_merged);
             json_outputs.push((
                 format!("sentry-options-{namespace}-{target}.json"),
                 serde_json::to_string_pretty(&with_option_key)?,
