@@ -4,12 +4,44 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
 use clap::Parser;
 use serde::Serialize;
 use serde_json;
 use serde_yaml;
 use walkdir::WalkDir;
+
+/// Result type for operations
+pub type Result<T> = std::result::Result<T, AppError>;
+
+/// Errors that can occur during option processing
+#[derive(Debug, thiserror::Error)]
+pub enum AppError {
+    #[error("{0}")]
+    Validation(String),
+
+    #[error("Duplicate key '{key}' found in {first_file} and {second_file}")]
+    DuplicateKey {
+        key: String,
+        first_file: String,
+        second_file: String,
+    },
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("YAML parse error in {path}: {source}")]
+    YamlParse {
+        path: String,
+        #[source]
+        source: serde_yaml::Error,
+    },
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("Directory walk error: {0}")]
+    Walk(#[from] walkdir::Error),
+}
 
 /// Required CLI arguments
 #[derive(Parser, Debug)]
@@ -58,7 +90,7 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
     let mut grouped = HashMap::new();
     let root_path = Path::new(root);
     for entry in WalkDir::new(root) {
-        let dir_entry = entry.context("Failed to read directory entry")?;
+        let dir_entry = entry?;
 
         // Only process files, skip directories
         if dir_entry.file_type().is_file() {
@@ -76,10 +108,10 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
                 .collect();
 
             if parts.len() != 3 {
-                bail!(
+                return Err(AppError::Validation(format!(
                     "Invalid directory structure in {}: expected namespace/target/file.yaml",
                     relative_path.display()
-                );
+                )));
             }
 
             let namespace = parts[0];
@@ -87,10 +119,10 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
             let fname = parts[2];
 
             if fname.ends_with(".yml") {
-                bail!(
-                    "Invalid file extension in {}: expected .yaml, found .yml",
+                return Err(AppError::Validation(format!(
+                    "Invalid file {}: expected .yaml, found .yml",
                     path.display()
-                );
+                )));
             }
             // ignore non-yaml files
             if !fname.ends_with(".yaml") {
@@ -127,33 +159,34 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
 
 /// Validates and parses a YAML file containing Options
 fn validate_and_parse(path: &str) -> Result<OptionsMap> {
-    let contents =
-        fs::read_to_string(path).with_context(|| format!("Failed to read file {}", path))?;
+    let contents = fs::read_to_string(path)?;
 
-        // FIXME: from reader
-    let data: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(&contents)
-        .with_context(|| format!("Failed to parse YAML in {}", path))?;
+    // FIXME: from reader
+    let data: HashMap<String, serde_yaml::Value> =
+        serde_yaml::from_str(&contents).map_err(|e| AppError::YamlParse {
+            path: path.to_string(),
+            source: e,
+        })?;
 
     let mut result = HashMap::new();
 
     // should only have one top level key named "options"
     if data.len() != 1 || !data.contains_key("options") {
         let keys: Vec<String> = data.keys().map(|k| k.to_string()).collect();
-        bail!(
+        return Err(AppError::Validation(format!(
             "Invalid YAML structure in {}: expected one top level group named 'options', found {:?}",
-            path,
-            keys
-        );
+            path, keys
+        )));
     }
 
     let options = data.get("options").expect("key to be guaranteed above");
 
     // options should be a Mapping
     if !options.is_mapping() {
-        bail!(
+        return Err(AppError::Validation(format!(
             "Invalid YAML structure in {}: expected 'options' to be a mapping",
             path
-        );
+        )));
     }
 
     for (option, option_value) in options
@@ -176,23 +209,19 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
                 } else {
                     // theoretically impossible
                     let option_name = option.as_str().unwrap_or("unknown");
-                    bail!(
+                    return Err(AppError::Validation(format!(
                         "Unsupported value type in {} for option '{}': invalid number {}",
-                        path,
-                        option_name,
-                        n
-                    );
+                        path, option_name, n
+                    )));
                 }
             }
             serde_yaml::Value::Bool(b) => OptionValue::Bool(*b),
             _ => {
                 let option_name = option.as_str().unwrap_or("unknown");
-                bail!(
+                return Err(AppError::Validation(format!(
                     "Unsupported value type in {} for option '{}': {:?}",
-                    path,
-                    option_name,
-                    option_value
-                );
+                    path, option_name, option_value
+                )));
             }
         };
         result.insert(
@@ -212,12 +241,11 @@ fn ensure_no_duplicate_keys(grouped: &NamespaceMap) -> Result<()> {
             for FileData { path, data } in filedata {
                 for key in data.keys() {
                     if let Some(first_file) = key_to_file.get(key) {
-                        bail!(
-                            "Duplicate key '{}' found in {} and {}",
-                            key,
-                            first_file,
-                            path
-                        );
+                        return Err(AppError::DuplicateKey {
+                            key: key.to_string(),
+                            first_file: first_file.to_string(),
+                            second_file: path.to_string(),
+                        });
                     }
                     key_to_file.insert(key.to_string(), path.to_string());
                 }
@@ -255,8 +283,7 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
             with_option_key.insert("options", merged);
             json_outputs.push((
                 format!("sentry-options-{namespace}-{target}.json"),
-                serde_json::to_string_pretty(&with_option_key)
-                    .context("Failed to serialize JSON")?,
+                serde_json::to_string_pretty(&with_option_key)?,
             ));
         }
     }
@@ -265,13 +292,11 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
 
 /// Writes JSON data to JSON files in the specified directory
 fn write_json(out_path: PathBuf, json_outputs: Vec<(String, String)>) -> Result<()> {
-    fs::create_dir_all(&out_path)
-        .with_context(|| format!("Failed to create directory {}", out_path.display()))?;
+    fs::create_dir_all(&out_path)?;
 
     for (filename, json_text) in json_outputs {
         let filepath = out_path.join(&filename);
-        fs::write(&filepath, json_text)
-            .with_context(|| format!("Failed to write file {}", filepath.display()))?;
+        fs::write(&filepath, json_text)?;
     }
     Ok(())
 }
@@ -281,7 +306,10 @@ fn main() -> Result<()> {
 
     let out_path = PathBuf::from(&args.out);
     if out_path.exists() {
-        bail!("Output directory already exists: {}", out_path.display());
+        return Err(AppError::Validation(format!(
+            "Output directory already exists: {}",
+            out_path.display()
+        )));
     }
 
     let grouped = load_and_validate(&args.root)?;
