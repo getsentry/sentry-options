@@ -159,14 +159,14 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
 
 /// Validates and parses a YAML file containing Options
 fn validate_and_parse(path: &str) -> Result<OptionsMap> {
-    let contents = fs::read_to_string(path)?;
-
-    // FIXME: from reader
+    let file = fs::File::open(path)?;
+    
     let data: HashMap<String, serde_yaml::Value> =
-        serde_yaml::from_str(&contents).map_err(|e| AppError::YamlParse {
+        serde_yaml::from_reader(file).map_err(|e| AppError::YamlParse {
             path: path.to_string(),
             source: e,
         })?;
+    
 
     let mut result = HashMap::new();
 
