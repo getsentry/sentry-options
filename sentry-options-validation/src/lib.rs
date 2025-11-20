@@ -40,7 +40,7 @@ pub enum ValidationError {
 /// Schema for a namespace, containing only a validator
 pub struct NamespaceSchema {
     pub namespace: String,
-    validator: jsonschema::Validator,
+    _validator: jsonschema::Validator,
 }
 
 impl NamespaceSchema {
@@ -51,7 +51,7 @@ impl NamespaceSchema {
     ///
     /// # Errors
     /// Returns error if values don't match the schema
-    pub fn validate_values(&self, values: &Value) -> ValidationResult<()> {
+    pub fn validate_values(&self, _values: &Value) -> ValidationResult<()> {
         // TODO: Implement validation
         Ok(())
     }
@@ -237,7 +237,7 @@ impl SchemaRegistry {
 
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
-            validator,
+            _validator: validator,
         }))
     }
 }
@@ -281,7 +281,7 @@ mod tests {
             }"#,
         );
 
-        let _ = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        SchemaRegistry::from_directory(temp_dir.path()).unwrap();
     }
 
     #[test]
@@ -297,7 +297,14 @@ mod tests {
         );
 
         let result = SchemaRegistry::from_directory(temp_dir.path());
-        assert!(matches!(result, Err(ValidationError::SchemaError { .. })));
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::SchemaError { message, .. }) => {
+                assert!(message.eq("Schema validation failed:
+Error: \"version\" is a required property"));
+            }
+            _ => panic!("Expected SchemaError for missing version"),
+        }
     }
 
     #[test]
@@ -308,7 +315,7 @@ mod tests {
         let result = registry.validate_values("unknown", &json!({}));
         assert!(matches!(
             result,
-            Err(ValidationError::UnknownNamespace(_))
+            Err(ValidationError::UnknownNamespace(..))
         ));
     }
 
@@ -344,7 +351,7 @@ mod tests {
             }"#,
         );
 
-        let _ = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        SchemaRegistry::from_directory(temp_dir.path()).unwrap();
     }
 
     #[test]
@@ -369,10 +376,9 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("default value"));
-                assert!(message.contains("does not match type"));
+                assert!(message.eq("Property 'bad-default': default value does not match type 'integer': \"not-a-number\" is not of type \"integer\""));
             }
-            _ => panic!("Expected SchemaError"),
+            _ => panic!("Expected SchemaError for invalid default type"),
         }
     }
 }
