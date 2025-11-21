@@ -145,13 +145,13 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
 /// Validates and parses a YAML file containing Options
 fn validate_and_parse(path: &str) -> Result<OptionsMap> {
     let file = fs::File::open(path)?;
-    
+
     let data: HashMap<String, serde_yaml::Value> =
         serde_yaml::from_reader(file).map_err(|e| AppError::YamlParse {
             path: path.to_string(),
             source: e,
         })?;
-    
+
 
     let mut result = HashMap::new();
 
@@ -186,7 +186,7 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
 
         // Convert from serde_yaml::Value to serde_json::Value
         let json_value = serde_json::to_value(option_value)?;
-        
+
         result.insert(
             option.as_str().expect("option key to be valid").to_string(),
             json_value,
@@ -250,7 +250,7 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
 
             // Convert to BTreeMap for sorted keys
             let sorted_merged: BTreeMap<_, _> = merged.into_iter().collect();
-            
+
             let mut with_option_key = BTreeMap::new();
             with_option_key.insert("options", sorted_merged);
             json_outputs.push((
