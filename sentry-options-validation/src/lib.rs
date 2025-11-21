@@ -108,21 +108,14 @@ impl SchemaRegistry {
         schemas_dir: &Path,
     ) -> ValidationResult<HashMap<String, Arc<NamespaceSchema>>> {
         // Compile namespace-schema once for all schemas
-        let namespace_schema_value: Value = serde_json::from_str(NAMESPACE_SCHEMA_JSON)
-            .map_err(|e| {
-                ValidationError::InternalError(format!(
-                    "Invalid namespace-schema JSON: {}",
-                    e
-                ))
+        let namespace_schema_value: Value =
+            serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {
+                ValidationError::InternalError(format!("Invalid namespace-schema JSON: {}", e))
             })?;
-        let namespace_validator = jsonschema::validator_for(&namespace_schema_value).map_err(
-            |e| {
-                ValidationError::InternalError(format!(
-                    "Failed to compile namespace-schema: {}",
-                    e
-                ))
-            },
-        )?;
+        let namespace_validator =
+            jsonschema::validator_for(&namespace_schema_value).map_err(|e| {
+                ValidationError::InternalError(format!("Failed to compile namespace-schema: {}", e))
+            })?;
 
         let mut schemas = HashMap::new();
 
@@ -134,13 +127,14 @@ impl SchemaRegistry {
                 continue;
             }
 
-            let namespace = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| ValidationError::SchemaError {
-                    file: entry.path(),
-                    message: "Directory name contains invalid UTF-8".to_string(),
-                })?;
+            let namespace =
+                entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| ValidationError::SchemaError {
+                        file: entry.path(),
+                        message: "Directory name contains invalid UTF-8".to_string(),
+                    })?;
 
             let schema_file = entry.path().join(SCHEMA_FILE_NAME);
             let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
@@ -219,12 +213,11 @@ impl SchemaRegistry {
         path: &Path,
     ) -> ValidationResult<Arc<NamespaceSchema>> {
         // Use the schema file directly as the validator
-        let validator = jsonschema::validator_for(&schema).map_err(|e| {
-            ValidationError::SchemaError {
+        let validator =
+            jsonschema::validator_for(&schema).map_err(|e| ValidationError::SchemaError {
                 file: path.to_path_buf(),
                 message: format!("Failed to compile validator: {}", e),
-            }
-        })?;
+            })?;
 
         // Validate that default values match their types
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
@@ -303,8 +296,10 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Schema validation failed:
-Error: \"version\" is a required property"));
+                assert!(message.contains(
+                    "Schema validation failed:
+Error: \"version\" is a required property"
+                ));
             }
             _ => panic!("Expected SchemaError for missing version"),
         }
@@ -316,10 +311,7 @@ Error: \"version\" is a required property"));
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
         let result = registry.validate_values("unknown", &json!({}));
-        assert!(matches!(
-            result,
-            Err(ValidationError::UnknownNamespace(..))
-        ));
+        assert!(matches!(result, Err(ValidationError::UnknownNamespace(..))));
     }
 
     #[test]
@@ -414,7 +406,10 @@ Error: \"version\" is a required property"));
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Additional properties are not allowed ('extra' was unexpected)"));
+                assert!(
+                    message
+                        .contains("Additional properties are not allowed ('extra' was unexpected)")
+                );
             }
             _ => panic!("Expected SchemaError for extra properties"),
         }
