@@ -303,7 +303,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.eq("Schema validation failed:
+                assert!(message.contains("Schema validation failed:
 Error: \"version\" is a required property"));
             }
             _ => panic!("Expected SchemaError for missing version"),
@@ -334,7 +334,8 @@ Error: \"version\" is a required property"));
                 "properties": {
                     "opt1": {
                         "type": "string",
-                        "default": "default1"
+                        "default": "default1",
+                        "description": "First option"
                     }
                 }
             }"#,
@@ -348,7 +349,8 @@ Error: \"version\" is a required property"));
                 "properties": {
                     "opt2": {
                         "type": "integer",
-                        "default": 42
+                        "default": 42,
+                        "description": "Second option"
                     }
                 }
             }"#,
@@ -371,7 +373,8 @@ Error: \"version\" is a required property"));
                 "properties": {
                     "bad-default": {
                         "type": "integer",
-                        "default": "not-a-number"
+                        "default": "not-a-number",
+                        "description": "A bad default value"
                     }
                 }
             }"#,
@@ -381,9 +384,84 @@ Error: \"version\" is a required property"));
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.eq("Property 'bad-default': default value does not match type 'integer': \"not-a-number\" is not of type \"integer\""));
+                assert!(message.contains("Property 'bad-default': default value does not match type 'integer': \"not-a-number\" is not of type \"integer\""));
             }
             _ => panic!("Expected SchemaError for invalid default type"),
+        }
+    }
+
+    #[test]
+    fn test_extra_properties() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "bad-property": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Test property",
+                        "extra": "property"
+                    }
+                }
+            }"#,
+        );
+
+        let result = SchemaRegistry::from_directory(temp_dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::SchemaError { message, .. }) => {
+                assert!(message.contains("Additional properties are not allowed ('extra' was unexpected)"));
+            }
+            _ => panic!("Expected SchemaError for extra properties"),
+        }
+    }
+
+    #[test]
+    fn test_missing_description() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "missing-desc": {
+                        "type": "string",
+                        "default": "test"
+                    }
+                }
+            }"#,
+        );
+
+        let result = SchemaRegistry::from_directory(temp_dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::SchemaError { message, .. }) => {
+                assert!(message.contains("\"description\" is a required property"));
+            }
+            _ => panic!("Expected SchemaError for missing description"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_directory_structure() {
+        let temp_dir = TempDir::new().unwrap();
+        // Create a namespace directory without schema.json file
+        let schema_dir = temp_dir.path().join("missing_schema");
+        fs::create_dir_all(&schema_dir).unwrap();
+
+        let result = SchemaRegistry::from_directory(temp_dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::FileRead(..)) => {
+                // Expected error when schema.json file is missing
+            }
+            _ => panic!("Expected FileRead error for missing schema.json"),
         }
     }
 }
