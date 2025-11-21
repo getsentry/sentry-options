@@ -5,7 +5,6 @@ use std::{
 };
 
 use clap::Parser;
-use serde::Serialize;
 use serde_json;
 use serde_yaml;
 use walkdir::WalkDir;
@@ -55,22 +54,8 @@ struct Args {
     out: String,
 }
 
-// TODO: Add support for list, dict
-
-
-// TODO: Can be removed, we validate later as well
-/// Option types we support
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)] // don't output the type
-enum OptionValue {
-    String(String),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-}
-
 /// A key value pair of options and their parsed value
-type OptionsMap = HashMap<String, OptionValue>;
+type OptionsMap = HashMap<String, serde_json::Value>;
 
 /// Represents a filepath and its parsed YAML data
 #[derive(Debug)]
@@ -199,34 +184,12 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
         // TODO: verify option value matches schema
         // if option.type == schema[namespace][target][option].type
 
-        let value_parsed = match option_value {
-            serde_yaml::Value::String(s) => OptionValue::String(s.clone()),
-            serde_yaml::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    OptionValue::Int(i)
-                } else if let Some(f) = n.as_f64() {
-                    OptionValue::Float(f)
-                } else {
-                    // theoretically impossible
-                    let option_name = option.as_str().unwrap_or("unknown");
-                    return Err(AppError::Validation(format!(
-                        "Unsupported value type in {} for option '{}': invalid number {}",
-                        path, option_name, n
-                    )));
-                }
-            }
-            serde_yaml::Value::Bool(b) => OptionValue::Bool(*b),
-            _ => {
-                let option_name = option.as_str().unwrap_or("unknown");
-                return Err(AppError::Validation(format!(
-                    "Unsupported value type in {} for option '{}': {:?}",
-                    path, option_name, option_value
-                )));
-            }
-        };
+        // Convert from serde_yaml::Value to serde_json::Value
+        let json_value = serde_json::to_value(option_value)?;
+        
         result.insert(
             option.as_str().expect("option key to be valid").to_string(),
-            value_parsed,
+            json_value,
         );
     }
 
