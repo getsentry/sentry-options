@@ -4,8 +4,5 @@
 
 /rust_testing
 
-# Added by cargo
-
 */target
-# Rust build files
-/target/*
+/target
