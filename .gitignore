@@ -1,8 +1,5 @@
 *.egg-info
 *.pyc
 /.coverage
-
-/rust_testing
-
 */target
 /target
