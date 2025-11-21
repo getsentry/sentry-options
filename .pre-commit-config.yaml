@@ -5,6 +5,11 @@ repos:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
     -   id: check-yaml
+    -   id: check-json
+    -   id: check-toml
+    -   id: check-added-large-files
+    -   id: check-merge-conflict
+    -   id: check-case-conflict
     -   id: debug-statements
     -   id: double-quote-string-fixer
     -   id: name-tests-test
@@ -41,3 +46,14 @@ repos:
     -   id: mypy
         entry: python -m mypy
         additional_dependencies: [pytest, types-pyyaml]
+-   repo: local
+    hooks:
+    - id: rustfmt
+      name: format rust code
+      language: system
+      types: [rust]
+      # keep edition in sync with Cargo.toml
+      # There is no way to run cargo fmt for specific files,
+      # rustfmt can do it but doesn't read Cargo.toml.
+      # https://github.com/rust-lang/rustfmt/issues/4485
+      entry: rustfmt --edition=2024
