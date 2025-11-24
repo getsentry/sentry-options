@@ -5,8 +5,6 @@ use std::{
 };
 
 use clap::Parser;
-use serde_json;
-use serde_yaml;
 use walkdir::WalkDir;
 
 /// Result type for operations
@@ -210,8 +208,8 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
 
 /// Checks options in the same target for duplicate keys
 fn ensure_no_duplicate_keys(grouped: &NamespaceMap) -> Result<()> {
-    for (_, targets) in grouped {
-        for (_, filedata) in targets {
+    for targets in grouped.values() {
+        for filedata in targets.values() {
             let mut key_to_file = HashMap::<String, String>::new();
             for FileData { path, data } in filedata {
                 for key in data.keys() {
