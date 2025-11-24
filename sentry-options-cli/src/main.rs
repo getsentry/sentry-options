@@ -92,16 +92,12 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
                 })
                 .collect();
 
-            if parts.len() != 3 {
+            let [namespace, target, fname] = parts.as_slice() else {
                 return Err(AppError::Validation(format!(
                     "Invalid directory structure in {}: expected namespace/target/file.yaml",
                     relative_path.display()
                 )));
-            }
-
-            let namespace = parts[0];
-            let target = parts[1];
-            let fname = parts[2];
+            };
 
             if fname.ends_with(".yml") {
                 return Err(AppError::Validation(format!(
@@ -139,6 +135,16 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
         }
     }
 
+    // validate each namespace has a default target
+    for (namespace, targets) in &grouped {
+        if !targets.contains_key("default") {
+            return Err(AppError::Validation(format!(
+                "Namespace '{}' is missing required 'default' target",
+                namespace
+            )));
+        }
+    }
+
     Ok(grouped)
 }
 
@@ -152,32 +158,26 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
             source: e,
         })?;
 
-
     let mut result = HashMap::new();
 
     // should only have one top level key named "options"
-    if data.len() != 1 || !data.contains_key("options") {
+    let Some(options) = data.get("options") else {
         let keys: Vec<String> = data.keys().map(|k| k.to_string()).collect();
         return Err(AppError::Validation(format!(
             "Invalid YAML structure in {}: expected one top level group named 'options', found {:?}",
             path, keys
         )));
-    }
-
-    let options = data.get("options").expect("key to be guaranteed above");
+    };
 
     // options should be a Mapping
-    if !options.is_mapping() {
+    let Some(options_map) = options.as_mapping() else {
         return Err(AppError::Validation(format!(
             "Invalid YAML structure in {}: expected 'options' to be a mapping",
             path
         )));
-    }
+    };
 
-    for (option, option_value) in options
-        .as_mapping()
-        .expect("options guaranteed to be a map above")
-    {
+    for (option, option_value) in options_map {
         // TODO: verify option exists in schema
         // if option not in schema[namespace]
 
@@ -187,10 +187,14 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
         // Convert from serde_yaml::Value to serde_json::Value
         let json_value = serde_json::to_value(option_value)?;
 
-        result.insert(
-            option.as_str().expect("option key to be valid").to_string(),
-            json_value,
-        );
+        let option_key = option.as_str().ok_or_else(|| {
+            AppError::Validation(format!(
+                "Invalid YAML in {}: option key must be a string, found {:?}",
+                path, option
+            ))
+        })?;
+
+        result.insert(option_key.to_string(), json_value);
     }
 
     Ok(result)
@@ -236,12 +240,14 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
 
     // merge files in the same target together
     for (namespace, targets) in maps {
-        let default_target = targets.get("default").ok_or_else(|| {
-            AppError::Validation(format!(
+        // This should never fail due to validation in load_and_validate,
+        // but handle it gracefully just in case
+        let Some(default_target) = targets.get("default") else {
+            return Err(AppError::Validation(format!(
                 "Namespace '{}' is missing required 'default' target",
                 namespace
-            ))
-        })?;
+            )));
+        };
         let defaults = merge_keys(default_target);
 
         for (target, filedatas) in targets {
