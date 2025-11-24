@@ -283,12 +283,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let out_path = PathBuf::from(&args.out);
-    if out_path.exists() {
-        return Err(AppError::Validation(format!(
-            "Output directory already exists: {}",
-            out_path.display()
-        )));
-    }
 
     let grouped = load_and_validate(&args.root)?;
 
