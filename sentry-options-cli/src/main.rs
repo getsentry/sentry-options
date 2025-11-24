@@ -83,7 +83,7 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
             let path_string = path.display().to_string();
             // path relative to root
             let relative_path = path.strip_prefix(root_path).unwrap_or(path);
-            let parts: Vec<_> = relative_path
+            let parts: Vec<&str> = relative_path
                 .components()
                 .filter_map(|c| match c {
                     Component::Normal(s) => s.to_str(),
@@ -102,7 +102,7 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
             if fname.ends_with(".yml") {
                 return Err(AppError::Validation(format!(
                     "Invalid file {}: expected .yaml, found .yml",
-                    path.display()
+                    path_string
                 )));
             }
             // ignore non-yaml files
@@ -113,7 +113,7 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
             // TODO: validate namespace name here
             // if namespace not in list_of_valid_namespaces ...
 
-            let validated = validate_and_parse(&path_string)?;
+            let parsed_options = validate_and_parse(&path_string)?;
 
             let by_target = grouped
                 .entry(namespace.to_string())
@@ -123,7 +123,7 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
 
             by_target.push(FileData {
                 path: path_string,
-                data: validated,
+                data: parsed_options,
             })
         }
     }
