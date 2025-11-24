@@ -161,10 +161,18 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
     let mut result = HashMap::new();
 
     // should only have one top level key named "options"
+    if data.len() != 1 {
+        let keys: Vec<String> = data.keys().map(|k| k.to_string()).collect();
+        return Err(AppError::Validation(format!(
+            "Invalid YAML structure in {}: expected exactly one top level key 'options', found {:?}",
+            path, keys
+        )));
+    }
+
     let Some(options) = data.get("options") else {
         let keys: Vec<String> = data.keys().map(|k| k.to_string()).collect();
         return Err(AppError::Validation(format!(
-            "Invalid YAML structure in {}: expected one top level group named 'options', found {:?}",
+            "Invalid YAML structure in {}: expected top level key 'options', found {:?}",
             path, keys
         )));
     };
@@ -261,7 +269,7 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
             with_option_key.insert("options", sorted_merged);
             json_outputs.push((
                 format!("sentry-options-{namespace}-{target}.json"),
-                serde_json::to_string_pretty(&with_option_key)?,
+                serde_json::to_string(&with_option_key)?,
             ));
         }
     }
