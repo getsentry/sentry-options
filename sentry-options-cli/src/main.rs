@@ -699,7 +699,7 @@ mod tests {
             r#"options:
   string_val: "hello"
   int_val: 42
-  float_val: 3.14
+  float_val: 7.77
   bool_val: true
 "#,
         );
@@ -713,7 +713,7 @@ mod tests {
 
         assert_eq!(json["options"]["string_val"], "hello");
         assert_eq!(json["options"]["int_val"], 42);
-        assert_eq!(json["options"]["float_val"], 3.14);
+        assert_eq!(json["options"]["float_val"], 7.77);
         assert_eq!(json["options"]["bool_val"], true);
     }
 
