@@ -4,6 +4,7 @@
 //! Schemas are loaded once and stored in Arc for efficient sharing.
 //! Values are validated against schemas as complete objects.
 
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -224,10 +225,15 @@ impl SchemaRegistry {
 
     /// Parse a schema JSON into NamespaceSchema
     fn parse_schema(
-        schema: Value,
+        mut schema: Value,
         namespace: &str,
         path: &Path,
     ) -> ValidationResult<Arc<NamespaceSchema>> {
+        // Inject additionalProperties: false to reject unknown options
+        if let Some(obj) = schema.as_object_mut() {
+            obj.insert("additionalProperties".to_string(), json!(false));
+        }
+
         // Use the schema file directly as the validator
         let validator =
             jsonschema::validator_for(&schema).map_err(|e| ValidationError::SchemaError {
@@ -271,7 +277,6 @@ impl Default for SchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use tempfile::TempDir;
 
     fn create_test_schema(temp_dir: &TempDir, namespace: &str, schema_json: &str) -> PathBuf {
@@ -562,5 +567,42 @@ Error: \"version\" is a required property"
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
         let result = registry.validate_values("test", &json!({"count": "not a number"}));
         assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+    }
+
+    #[test]
+    fn test_validate_values_unknown_option() {
+        let temp_dir = TempDir::new().unwrap();
+        // Note: additionalProperties: false is auto-injected by parse_schema
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "known_option": {
+                        "type": "string",
+                        "default": "default",
+                        "description": "A known option"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+        // Valid known option should pass
+        let result = registry.validate_values("test", &json!({"known_option": "value"}));
+        assert!(result.is_ok());
+
+        // Unknown option should fail (additionalProperties: false is auto-injected)
+        let result = registry.validate_values("test", &json!({"unknown_option": "value"}));
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValueError { errors, .. }) => {
+                assert!(errors.contains("Additional properties are not allowed"));
+            }
+            _ => panic!("Expected ValueError for unknown option"),
+        }
     }
 }
