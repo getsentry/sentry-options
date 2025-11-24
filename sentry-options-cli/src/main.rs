@@ -56,10 +56,22 @@ struct Args {
 type OptionsMap = HashMap<String, serde_json::Value>;
 
 /// Represents a filepath and its parsed YAML data
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct FileData {
     path: String,
     data: OptionsMap,
+}
+
+impl Ord for FileData {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.path.cmp(&other.path)
+    }
+}
+
+impl PartialOrd for FileData {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// A map representation of an option namespace
@@ -80,7 +92,14 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
             let path = dir_entry.path();
             let path_string = path.display().to_string();
             // path relative to root
-            let relative_path = path.strip_prefix(root_path).unwrap_or(path);
+            let relative_path = path.strip_prefix(root_path).map_err(|e| {
+                AppError::Validation(format!(
+                    "Failed to get relative path for {}: {} (root: {})",
+                    path.display(),
+                    e,
+                    root_path.display()
+                ))
+            })?;
             let parts: Vec<&str> = relative_path
                 .components()
                 .filter_map(|c| match c {
@@ -129,7 +148,7 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
     // sort files for determinism
     for targets in grouped.values_mut() {
         for by_file in targets.values_mut() {
-            by_file.sort_by(|a, b| a.path.cmp(&b.path));
+            by_file.sort();
         }
     }
 
