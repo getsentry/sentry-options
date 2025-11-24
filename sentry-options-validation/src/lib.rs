@@ -60,10 +60,7 @@ impl NamespaceSchema {
         if output.flag().valid {
             Ok(())
         } else {
-            let errors: Vec<String> = output
-                .iter_errors()
-                .map(|e| e.error.to_string())
-                .collect();
+            let errors: Vec<String> = output.iter_errors().map(|e| e.error.to_string()).collect();
             Err(ValidationError::ValueError {
                 namespace: self.namespace.clone(),
                 errors: errors.join(", "),
