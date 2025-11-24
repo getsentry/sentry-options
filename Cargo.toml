@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "sentry-options-validation",
+    "sentry-options-cli",
 ]
 
 [workspace.package]
