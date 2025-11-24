@@ -496,13 +496,7 @@ mod tests {
     #[test]
     fn test_options_not_a_mapping() {
         let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
-            "test",
-            "default",
-            "bad.yaml",
-            "options: 12345",
-        );
+        create_test_file(&temp_dir, "test", "default", "bad.yaml", "options: 12345");
 
         let result = load_and_validate(temp_dir.path().to_str().unwrap());
         assert!(result.is_err());
