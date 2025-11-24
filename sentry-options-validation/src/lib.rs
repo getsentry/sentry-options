@@ -40,9 +40,10 @@ pub enum ValidationError {
     JSONParse(#[from] serde_json::Error),
 }
 
-/// Schema for a namespace, containing only a validator
+/// Schema for a namespace, containing validator and defaults
 pub struct NamespaceSchema {
     pub namespace: String,
+    defaults: HashMap<String, Value>,
     _validator: jsonschema::Validator,
 }
 
@@ -56,6 +57,12 @@ impl NamespaceSchema {
     /// Returns error if values don't match the schema
     pub fn validate_values(&self, _values: &Value) -> ValidationResult<()> {
         todo!("Implement validation by comparing values against the schema")
+    }
+
+    /// Get the default value for an option key.
+    /// Returns None if the key doesn't exist in the schema.
+    pub fn get_default(&self, key: &str) -> Option<&Value> {
+        self.defaults.get(key)
     }
 }
 
@@ -219,7 +226,8 @@ impl SchemaRegistry {
                 message: format!("Failed to compile validator: {}", e),
             })?;
 
-        // Validate that default values match their types
+        // Extract defaults and validate types
+        let mut defaults = HashMap::new();
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 if let (Some(prop_type), Some(default_value)) = (
@@ -227,14 +235,21 @@ impl SchemaRegistry {
                     prop_value.get("default"),
                 ) {
                     Self::validate_default_type(prop_name, prop_type, default_value, path)?;
+                    defaults.insert(prop_name.clone(), default_value.clone());
                 }
             }
         }
 
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
+            defaults,
             _validator: validator,
         }))
+    }
+
+    /// Get a namespace schema by name
+    pub fn get(&self, namespace: &str) -> Option<&Arc<NamespaceSchema>> {
+        self.schemas.get(namespace)
     }
 }
 
