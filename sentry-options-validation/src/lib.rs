@@ -44,7 +44,7 @@ pub enum ValidationError {
 pub struct NamespaceSchema {
     pub namespace: String,
     defaults: HashMap<String, Value>,
-    _validator: jsonschema::Validator,
+    validator: jsonschema::Validator,
 }
 
 impl NamespaceSchema {
@@ -55,8 +55,20 @@ impl NamespaceSchema {
     ///
     /// # Errors
     /// Returns error if values don't match the schema
-    pub fn validate_values(&self, _values: &Value) -> ValidationResult<()> {
-        todo!("Implement validation by comparing values against the schema")
+    pub fn validate_values(&self, values: &Value) -> ValidationResult<()> {
+        let output = self.validator.evaluate(values);
+        if output.flag().valid {
+            Ok(())
+        } else {
+            let errors: Vec<String> = output
+                .iter_errors()
+                .map(|e| e.error.to_string())
+                .collect();
+            Err(ValidationError::ValueError {
+                namespace: self.namespace.clone(),
+                errors: errors.join(", "),
+            })
+        }
     }
 
     /// Get the default value for an option key.
@@ -243,7 +255,7 @@ impl SchemaRegistry {
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
             defaults,
-            _validator: validator,
+            validator,
         }))
     }
 
@@ -473,5 +485,85 @@ Error: \"version\" is a required property"
             }
             _ => panic!("Expected FileRead error for missing schema.json"),
         }
+    }
+
+    #[test]
+    fn test_get_default() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "string_opt": {
+                        "type": "string",
+                        "default": "hello",
+                        "description": "A string option"
+                    },
+                    "int_opt": {
+                        "type": "integer",
+                        "default": 42,
+                        "description": "An integer option"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let schema = registry.get("test").unwrap();
+
+        assert_eq!(schema.get_default("string_opt"), Some(&json!("hello")));
+        assert_eq!(schema.get_default("int_opt"), Some(&json!(42)));
+        assert_eq!(schema.get_default("unknown"), None);
+    }
+
+    #[test]
+    fn test_validate_values_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable feature"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let result = registry.validate_values("test", &json!({"enabled": true}));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_values_invalid_type() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Count"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let result = registry.validate_values("test", &json!({"count": "not a number"}));
+        assert!(matches!(result, Err(ValidationError::ValueError { .. })));
     }
 }
