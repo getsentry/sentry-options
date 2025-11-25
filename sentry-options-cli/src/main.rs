@@ -297,8 +297,7 @@ fn generate_json(
             schema_registry.validate_values(&namespace, &values_json)?;
 
             // Convert to BTreeMap for sorted keys
-            let sorted_merged: BTreeMap<String, serde_json::Value> =
-                merged.into_iter().collect();
+            let sorted_merged: BTreeMap<String, serde_json::Value> = merged.into_iter().collect();
 
             let mut with_option_key = BTreeMap::new();
             with_option_key.insert("options", sorted_merged);
