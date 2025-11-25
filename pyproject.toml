@@ -38,6 +38,8 @@ dev = [
     "pytest",
     "pre-commit>=4.5.0",
     "mypy>=1.18.2",
+    "types-pyyaml>=6.0.12.20250915",
+    "sentry-devenv>=1.25.0",
 ]
 
 [dependency-groups]
@@ -47,6 +49,8 @@ dev = [
     "pytest",
     "pre-commit>=4.5.0",
     "mypy>=1.18.2",
+    "types-pyyaml>=6.0.12.20250915",
+    "sentry-devenv>=1.25.0",
 ]
 
 [tool.setuptools.packages.find]
