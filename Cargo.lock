@@ -1020,6 +1020,7 @@ name = "sentry-options-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "sentry-options-validation",
  "serde",
  "serde_json",
  "serde_yaml",

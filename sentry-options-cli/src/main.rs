@@ -5,6 +5,7 @@ use std::{
 };
 
 use clap::Parser;
+use sentry_options_validation::SchemaRegistry;
 use walkdir::WalkDir;
 
 /// Result type for operations
@@ -38,6 +39,9 @@ pub enum AppError {
 
     #[error("Directory walk error: {0}")]
     Walk(#[from] walkdir::Error),
+
+    #[error("Schema validation error: {0}")]
+    Schema(#[from] sentry_options_validation::ValidationError),
 }
 
 /// Required CLI arguments
@@ -50,6 +54,13 @@ struct Args {
 
     #[arg(long, required = true, help = "output directory for final json files")]
     out: String,
+
+    #[arg(
+        long,
+        required = true,
+        help = "directory containing namespace schema definitions"
+    )]
+    schemas: String,
 }
 
 /// A key value pair of options and their parsed value
@@ -81,7 +92,7 @@ type NamespaceMap = HashMap<String, HashMap<String, Vec<FileData>>>;
 
 /// Reads all YAML files in the root directory, validating and parsing them, then outputting
 /// the options grouped by namespace and target
-fn load_and_validate(root: &str) -> Result<NamespaceMap> {
+fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<NamespaceMap> {
     let mut grouped = HashMap::new();
     let root_path = Path::new(root);
     for entry in WalkDir::new(root) {
@@ -116,6 +127,14 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
                 )));
             };
 
+            // validate namespace exists in schema registry
+            if schema_registry.get(namespace).is_none() {
+                return Err(AppError::Validation(format!(
+                    "Unknown namespace '{}' in file {}. No schema found for this namespace.",
+                    namespace, path_string
+                )));
+            }
+
             if fname.ends_with(".yml") {
                 return Err(AppError::Validation(format!(
                     "Invalid file {}: expected .yaml, found .yml",
@@ -126,9 +145,6 @@ fn load_and_validate(root: &str) -> Result<NamespaceMap> {
             if !fname.ends_with(".yaml") {
                 continue;
             }
-
-            // TODO: validate namespace name here
-            // if namespace not in list_of_valid_namespaces ...
 
             let parsed_options = validate_and_parse(&path_string)?;
 
@@ -203,12 +219,6 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
     };
 
     for (option, option_value) in options_map {
-        // TODO: verify option exists in schema
-        // if option not in schema[namespace]
-
-        // TODO: verify option value matches schema
-        // if option.type == schema[namespace][target][option].type
-
         // Convert from serde_yaml::Value to serde_json::Value
         let json_value = serde_json::to_value(option_value)?;
 
@@ -260,7 +270,10 @@ fn merge_keys(filedata: &[FileData]) -> OptionsMap {
 
 /// Generates the list of output JSON files
 /// Uses the default target and handles overrides from other targets
-fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
+fn generate_json(
+    maps: NamespaceMap,
+    schema_registry: &SchemaRegistry,
+) -> Result<Vec<(String, String)>> {
     let mut json_outputs: Vec<(String, String)> = Vec::new();
 
     // merge files in the same target together
@@ -279,8 +292,13 @@ fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
             let mut merged = defaults.clone();
             merged.extend(merge_keys(&filedatas));
 
+            // validate options exist and match type
+            let values_json = serde_json::to_value(&merged)?;
+            schema_registry.validate_values(&namespace, &values_json)?;
+
             // Convert to BTreeMap for sorted keys
-            let sorted_merged: BTreeMap<_, _> = merged.into_iter().collect();
+            let sorted_merged: BTreeMap<String, serde_json::Value> =
+                merged.into_iter().collect();
 
             let mut with_option_key = BTreeMap::new();
             with_option_key.insert("options", sorted_merged);
@@ -308,12 +326,13 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let out_path = PathBuf::from(&args.out);
+    let schema_registry = SchemaRegistry::from_directory(Path::new(&args.schemas))?;
 
-    let grouped = load_and_validate(&args.root)?;
+    let grouped = load_and_validate(&args.root, &schema_registry)?;
 
     ensure_no_duplicate_keys(&grouped)?;
 
-    let json_outputs = generate_json(grouped)?;
+    let json_outputs = generate_json(grouped, &schema_registry)?;
 
     write_json(out_path, json_outputs)?;
 
@@ -325,19 +344,64 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// helper function to create a test file
-    fn create_test_file(
-        temp_dir: &TempDir,
-        namespace: &str,
-        target: &str,
-        filename: &str,
-        content: &str,
-    ) -> PathBuf {
-        let dir = temp_dir.path().join(namespace).join(target);
-        fs::create_dir_all(&dir).unwrap();
-        let file_path = dir.join(filename);
-        fs::write(&file_path, content).unwrap();
-        file_path
+    /// Test fixture that manages temp directories and schema registry
+    struct TestFixture {
+        options_dir: TempDir,
+        _schema_dir: TempDir,
+        registry: SchemaRegistry,
+    }
+
+    impl TestFixture {
+        ///create a new test fixture with test schemas for the given namespaces
+        fn new(namespaces: &[&str]) -> Self {
+            let options_dir = TempDir::new().unwrap();
+            let schema_dir = TempDir::new().unwrap();
+
+            for ns in namespaces {
+                let ns_dir = schema_dir.path().join(ns);
+                fs::create_dir_all(&ns_dir).unwrap();
+                // additionalProperties: true to simplify tests
+                // false is tested in the schema validator unit tests
+                let schema_content = r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": true
+                }"#;
+                fs::write(ns_dir.join("schema.json"), schema_content).unwrap();
+            }
+
+            let registry = SchemaRegistry::from_directory(schema_dir.path()).unwrap();
+            Self {
+                options_dir,
+                _schema_dir: schema_dir,
+                registry,
+            }
+        }
+
+        /// create an empty test fixture (no schemas)
+        fn empty() -> Self {
+            let options_dir = TempDir::new().unwrap();
+            let schema_dir = TempDir::new().unwrap();
+            let registry = SchemaRegistry::from_directory(schema_dir.path()).unwrap();
+            Self {
+                options_dir,
+                _schema_dir: schema_dir,
+                registry,
+            }
+        }
+
+        /// create a file in the options directory
+        fn create_file(&self, namespace: &str, target: &str, filename: &str, content: &str) {
+            let dir = self.options_dir.path().join(namespace).join(target);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(filename), content).unwrap();
+        }
+
+        /// helper to call load_and_validate with the given options_dir and registry
+        fn load(&self) -> Result<NamespaceMap> {
+            load_and_validate(self.options_dir.path().to_str().unwrap(), &self.registry)
+        }
     }
 
     /// helper function to build a yaml file
@@ -351,18 +415,19 @@ mod tests {
 
     #[test]
     fn test_load_nonexistent_directory() {
-        let result = load_and_validate("/foo/bar/baz");
+        let f = TestFixture::empty();
+        let result = load_and_validate("/foo/bar/baz", &f.registry);
         assert!(result.is_err());
         assert!(matches!(result, Err(AppError::Walk(_))));
     }
 
     #[test]
     fn test_invalid_directory_structure_too_few_levels() {
-        let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("options.yaml");
+        let f = TestFixture::empty();
+        let path = f.options_dir.path().join("options.yaml");
         fs::write(&path, "options:\n  key: value").unwrap();
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -375,8 +440,9 @@ mod tests {
 
     #[test]
     fn test_invalid_directory_structure_too_many_levels() {
-        let temp_dir = TempDir::new().unwrap();
-        let deep_dir = temp_dir
+        let f = TestFixture::empty();
+        let deep_dir = f
+            .options_dir
             .path()
             .join("namespace")
             .join("target")
@@ -385,7 +451,7 @@ mod tests {
         fs::create_dir_all(&deep_dir).unwrap();
         fs::write(deep_dir.join("file.yaml"), "options:\n  key: value").unwrap();
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -397,16 +463,10 @@ mod tests {
 
     #[test]
     fn test_yml_extension_rejected() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
-            "test",
-            "default",
-            "bad.yml",
-            "options:\n  key: value",
-        );
+        let f = TestFixture::new(&["test"]);
+        f.create_file("test", "default", "bad.yml", "options:\n  key: value");
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -418,18 +478,17 @@ mod tests {
 
     #[test]
     fn test_non_yaml_files_ignored() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(&temp_dir, "test", "default", "README.md", "# Documentation");
-        create_test_file(&temp_dir, "test", "default", "config.txt", "some text");
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file("test", "default", "README.md", "# Documentation");
+        f.create_file("test", "default", "config.txt", "some text");
+        f.create_file(
             "test",
             "default",
             "valid.yaml",
             &valid_yaml(&[("key", "\"value\"")]),
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_ok());
         let grouped = result.unwrap();
         assert_eq!(
@@ -440,10 +499,10 @@ mod tests {
 
     #[test]
     fn test_empty_yaml_file() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(&temp_dir, "test", "default", "empty.yaml", "");
+        let f = TestFixture::new(&["test"]);
+        f.create_file("test", "default", "empty.yaml", "");
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::YamlParse { .. }) | Err(AppError::Validation(_)) => {}
@@ -453,32 +512,25 @@ mod tests {
 
     #[test]
     fn test_invalid_yaml_syntax() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "bad.yaml",
             "options:\n  key: [\n  invalid",
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         assert!(matches!(result, Err(AppError::YamlParse { .. })));
     }
 
     #[test]
     fn test_yaml_missing_options_key() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
-            "test",
-            "default",
-            "bad.yaml",
-            "settings:\n  key: value",
-        );
+        let f = TestFixture::new(&["test"]);
+        f.create_file("test", "default", "bad.yaml", "settings:\n  key: value");
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -491,16 +543,15 @@ mod tests {
 
     #[test]
     fn test_yaml_multiple_top_level_keys() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "bad.yaml",
             "options:\n  key: value\nextra:\n  other: value",
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -512,10 +563,10 @@ mod tests {
 
     #[test]
     fn test_options_not_a_mapping() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(&temp_dir, "test", "default", "bad.yaml", "options: 12345");
+        let f = TestFixture::new(&["test"]);
+        f.create_file("test", "default", "bad.yaml", "options: 12345");
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -527,16 +578,15 @@ mod tests {
 
     #[test]
     fn test_valid_single_namespace() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "base.yaml",
             &valid_yaml(&[("key1", "\"value1\""), ("key2", "42")]),
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_ok());
         let grouped = result.unwrap();
         assert!(grouped.contains_key("test"));
@@ -545,23 +595,21 @@ mod tests {
 
     #[test]
     fn test_valid_multiple_namespaces() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["ns1", "ns2"]);
+        f.create_file(
             "ns1",
             "default",
             "base.yaml",
             &valid_yaml(&[("key1", "\"value1\"")]),
         );
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "ns2",
             "default",
             "base.yaml",
             &valid_yaml(&[("key2", "\"value2\"")]),
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_ok());
         let grouped = result.unwrap();
         assert_eq!(grouped.len(), 2);
@@ -571,23 +619,21 @@ mod tests {
 
     #[test]
     fn test_duplicate_keys_in_same_target() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "file1.yaml",
             &valid_yaml(&[("key1", "\"value1\"")]),
         );
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "test",
             "default",
             "file2.yaml",
             &valid_yaml(&[("key1", "\"value2\"")]),
         );
 
-        let grouped = load_and_validate(temp_dir.path().to_str().unwrap()).unwrap();
+        let grouped = f.load().unwrap();
         let result = ensure_no_duplicate_keys(&grouped);
         assert!(result.is_err());
         match result {
@@ -600,16 +646,15 @@ mod tests {
 
     #[test]
     fn test_namespace_missing_default_target() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "s4s",
             "base.yaml",
             &valid_yaml(&[("key1", "\"value1\"")]),
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
@@ -621,23 +666,21 @@ mod tests {
 
     #[test]
     fn test_multiple_files_in_target() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "file1.yaml",
             &valid_yaml(&[("key1", "\"value1\"")]),
         );
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "test",
             "default",
             "file2.yaml",
             &valid_yaml(&[("key2", "\"value2\"")]),
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_ok());
         let grouped = result.unwrap();
         assert_eq!(
@@ -648,24 +691,22 @@ mod tests {
 
     #[test]
     fn test_target_override() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "base.yaml",
             &valid_yaml(&[("key1", "\"default_value\""), ("key2", "\"default2\"")]),
         );
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "test",
             "s4s",
             "override.yaml",
             &valid_yaml(&[("key1", "\"overridden\"")]),
         );
 
-        let grouped = load_and_validate(temp_dir.path().to_str().unwrap()).unwrap();
-        let json_outputs = generate_json(grouped).unwrap();
+        let grouped = f.load().unwrap();
+        let json_outputs = generate_json(grouped, &f.registry).unwrap();
 
         // Find the s4s output
         let s4s_output = json_outputs
@@ -682,17 +723,16 @@ mod tests {
 
     #[test]
     fn test_output_keys_sorted_alphabetically() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "base.yaml",
             &valid_yaml(&[("charlie", "1"), ("alpha", "2"), ("bravo", "3")]),
         );
 
-        let grouped = load_and_validate(temp_dir.path().to_str().unwrap()).unwrap();
-        let json_outputs = generate_json(grouped).unwrap();
+        let grouped = f.load().unwrap();
+        let json_outputs = generate_json(grouped, &f.registry).unwrap();
         let json_str = &json_outputs[0].1;
 
         // Parse and check that keys are in alphabetical order
@@ -709,9 +749,8 @@ mod tests {
 
     #[test]
     fn test_various_value_types() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_file(
-            &temp_dir,
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
             "test",
             "default",
             "base.yaml",
@@ -723,11 +762,11 @@ mod tests {
 "#,
         );
 
-        let result = load_and_validate(temp_dir.path().to_str().unwrap());
+        let result = f.load();
         assert!(result.is_ok());
 
         let grouped = result.unwrap();
-        let json_outputs = generate_json(grouped).unwrap();
+        let json_outputs = generate_json(grouped, &f.registry).unwrap();
         let json: serde_json::Value = serde_json::from_str(&json_outputs[0].1).unwrap();
 
         assert_eq!(json["options"]["string_val"], "hello");
@@ -738,24 +777,21 @@ mod tests {
 
     #[test]
     fn test_files_sorted_deterministically() {
-        let temp_dir = TempDir::new().unwrap();
+        let f = TestFixture::new(&["test"]);
         // Create files in non-alphabetical order
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "test",
             "default",
             "z_file.yaml",
             &valid_yaml(&[("key1", "\"value1\"")]),
         );
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "test",
             "default",
             "a_file.yaml",
             &valid_yaml(&[("key2", "\"value2\"")]),
         );
-        create_test_file(
-            &temp_dir,
+        f.create_file(
             "test",
             "default",
             "m_file.yaml",
@@ -763,8 +799,8 @@ mod tests {
         );
 
         // Load twice and ensure order is consistent
-        let grouped1 = load_and_validate(temp_dir.path().to_str().unwrap()).unwrap();
-        let grouped2 = load_and_validate(temp_dir.path().to_str().unwrap()).unwrap();
+        let grouped1 = f.load().unwrap();
+        let grouped2 = f.load().unwrap();
 
         let files1 = &grouped1.get("test").unwrap().get("default").unwrap();
         let files2 = &grouped2.get("test").unwrap().get("default").unwrap();
@@ -777,6 +813,27 @@ mod tests {
         // Check alphabetical order
         for i in 0..files1.len() - 1 {
             assert!(files1[i].path < files1[i + 1].path);
+        }
+    }
+
+    #[test]
+    fn test_unknown_namespace_rejected() {
+        let f = TestFixture::empty();
+        f.create_file(
+            "unknown_ns",
+            "default",
+            "base.yaml",
+            &valid_yaml(&[("key1", "\"value1\"")]),
+        );
+
+        let result = f.load();
+        assert!(result.is_err());
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(msg.contains("Unknown namespace"));
+                assert!(msg.contains("unknown_ns"));
+            }
+            _ => panic!("Expected Validation error for unknown namespace"),
         }
     }
 }
