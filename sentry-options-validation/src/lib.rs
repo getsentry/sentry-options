@@ -4,6 +4,7 @@
 //! Schemas are loaded once and stored in Arc for efficient sharing.
 //! Values are validated against schemas as complete objects.
 
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,10 +41,11 @@ pub enum ValidationError {
     JSONParse(#[from] serde_json::Error),
 }
 
-/// Schema for a namespace, containing only a validator
+/// Schema for a namespace, containing validator and defaults
 pub struct NamespaceSchema {
     pub namespace: String,
-    _validator: jsonschema::Validator,
+    defaults: HashMap<String, Value>,
+    validator: jsonschema::Validator,
 }
 
 impl NamespaceSchema {
@@ -54,8 +56,23 @@ impl NamespaceSchema {
     ///
     /// # Errors
     /// Returns error if values don't match the schema
-    pub fn validate_values(&self, _values: &Value) -> ValidationResult<()> {
-        todo!("Implement validation by comparing values against the schema")
+    pub fn validate_values(&self, values: &Value) -> ValidationResult<()> {
+        let output = self.validator.evaluate(values);
+        if output.flag().valid {
+            Ok(())
+        } else {
+            let errors: Vec<String> = output.iter_errors().map(|e| e.error.to_string()).collect();
+            Err(ValidationError::ValueError {
+                namespace: self.namespace.clone(),
+                errors: errors.join(", "),
+            })
+        }
+    }
+
+    /// Get the default value for an option key.
+    /// Returns None if the key doesn't exist in the schema.
+    pub fn get_default(&self, key: &str) -> Option<&Value> {
+        self.defaults.get(key)
     }
 }
 
@@ -208,10 +225,15 @@ impl SchemaRegistry {
 
     /// Parse a schema JSON into NamespaceSchema
     fn parse_schema(
-        schema: Value,
+        mut schema: Value,
         namespace: &str,
         path: &Path,
     ) -> ValidationResult<Arc<NamespaceSchema>> {
+        // Inject additionalProperties: false to reject unknown options
+        if let Some(obj) = schema.as_object_mut() {
+            obj.insert("additionalProperties".to_string(), json!(false));
+        }
+
         // Use the schema file directly as the validator
         let validator =
             jsonschema::validator_for(&schema).map_err(|e| ValidationError::SchemaError {
@@ -219,7 +241,8 @@ impl SchemaRegistry {
                 message: format!("Failed to compile validator: {}", e),
             })?;
 
-        // Validate that default values match their types
+        // Extract defaults and validate types
+        let mut defaults = HashMap::new();
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 if let (Some(prop_type), Some(default_value)) = (
@@ -227,14 +250,21 @@ impl SchemaRegistry {
                     prop_value.get("default"),
                 ) {
                     Self::validate_default_type(prop_name, prop_type, default_value, path)?;
+                    defaults.insert(prop_name.clone(), default_value.clone());
                 }
             }
         }
 
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
-            _validator: validator,
+            defaults,
+            validator,
         }))
+    }
+
+    /// Get a namespace schema by name
+    pub fn get(&self, namespace: &str) -> Option<&Arc<NamespaceSchema>> {
+        self.schemas.get(namespace)
     }
 }
 
@@ -247,7 +277,6 @@ impl Default for SchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use tempfile::TempDir;
 
     fn create_test_schema(temp_dir: &TempDir, namespace: &str, schema_json: &str) -> PathBuf {
@@ -457,6 +486,123 @@ Error: \"version\" is a required property"
                 // Expected error when schema.json file is missing
             }
             _ => panic!("Expected FileRead error for missing schema.json"),
+        }
+    }
+
+    #[test]
+    fn test_get_default() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "string_opt": {
+                        "type": "string",
+                        "default": "hello",
+                        "description": "A string option"
+                    },
+                    "int_opt": {
+                        "type": "integer",
+                        "default": 42,
+                        "description": "An integer option"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let schema = registry.get("test").unwrap();
+
+        assert_eq!(schema.get_default("string_opt"), Some(&json!("hello")));
+        assert_eq!(schema.get_default("int_opt"), Some(&json!(42)));
+        assert_eq!(schema.get_default("unknown"), None);
+    }
+
+    #[test]
+    fn test_validate_values_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable feature"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let result = registry.validate_values("test", &json!({"enabled": true}));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_values_invalid_type() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Count"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let result = registry.validate_values("test", &json!({"count": "not a number"}));
+        assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+    }
+
+    #[test]
+    fn test_validate_values_unknown_option() {
+        let temp_dir = TempDir::new().unwrap();
+        // Note: additionalProperties: false is auto-injected by parse_schema
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "known_option": {
+                        "type": "string",
+                        "default": "default",
+                        "description": "A known option"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+        // Valid known option should pass
+        let result = registry.validate_values("test", &json!({"known_option": "value"}));
+        assert!(result.is_ok());
+
+        // Unknown option should fail (additionalProperties: false is auto-injected)
+        let result = registry.validate_values("test", &json!({"unknown_option": "value"}));
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValueError { errors, .. }) => {
+                assert!(errors.contains("Additional properties are not allowed"));
+            }
+            _ => panic!("Expected ValueError for unknown option"),
         }
     }
 }
