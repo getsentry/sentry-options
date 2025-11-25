@@ -43,7 +43,8 @@ repos:
     rev: v1.17.1
     hooks:
     -   id: mypy
-        entry: python -m mypy
+        entry: .venv/bin/mypy
+        types: [python]
         additional_dependencies: [pytest, types-pyyaml, sentry-devenv]
 -   repo: local
     hooks:

@@ -319,9 +319,6 @@ wheels = [
 name = "sentry-options"
 version = "0.0.0"
 source = { editable = "." }
-dependencies = [
-    { name = "pre-commit" },
-]
 
 [package.optional-dependencies]
 dev = [
@@ -337,17 +334,34 @@ write = [
     { name = "pyyaml" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "covdefaults" },
+    { name = "coverage" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "covdefaults", marker = "extra == 'dev'", specifier = ">=2.1.0" },
     { name = "coverage", marker = "extra == 'dev'" },
     { name = "mypy", marker = "extra == 'typing'", specifier = ">=1.17" },
-    { name = "pre-commit", specifier = ">=4.5.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml", marker = "extra == 'write'", specifier = ">=6.0.1" },
 ]
 provides-extras = ["typing", "write", "dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "covdefaults", specifier = ">=2.1.0" },
+    { name = "coverage" },
+    { name = "mypy", specifier = ">=1.18.2" },
+    { name = "pre-commit", specifier = ">=4.5.0" },
+    { name = "pytest" },
+]
 
 [[package]]
 name = "typing-extensions"
