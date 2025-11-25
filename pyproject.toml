@@ -32,6 +32,13 @@ typing = [
 write = [
     "pyyaml>=6.0.1",
 ]
+dev = [
+    "covdefaults>=2.1.0",
+    "coverage",
+    "pytest",
+    "pre-commit>=4.5.0",
+]
+
 [dependency-groups]
 dev = [
     "covdefaults>=2.1.0",
