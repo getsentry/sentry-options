@@ -3,4 +3,3 @@ options:
   float-option: 1.2
   int-option: 123
   bool-option: false
-  unknown0option: 1
