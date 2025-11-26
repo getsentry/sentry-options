@@ -348,7 +348,6 @@ mod tests {
     /// Test fixture that manages temp directories and schema registry
     struct TestFixture {
         options_dir: TempDir,
-        _schema_dir: TempDir,
         registry: SchemaRegistry,
     }
 
@@ -378,7 +377,6 @@ mod tests {
             let registry = SchemaRegistry::from_directory(schema_dir.path()).unwrap();
             Self {
                 options_dir,
-                _schema_dir: schema_dir,
                 registry,
             }
         }
@@ -407,8 +405,8 @@ mod tests {
 
     #[test]
     fn test_load_nonexistent_directory() {
-        let f = TestFixture::new(&[]);
-        let result = load_and_validate("/foo/bar/baz", &f.registry);
+        let registry = SchemaRegistry::new();
+        let result = load_and_validate("/foo/bar/baz", &registry);
         assert!(result.is_err());
         assert!(matches!(result, Err(AppError::Walk(_))));
     }
