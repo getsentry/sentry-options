@@ -3,3 +3,7 @@
 /.coverage
 */target
 /target
+
+# devenv
+.devenv
+.venv
