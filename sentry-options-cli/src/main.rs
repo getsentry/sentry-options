@@ -383,18 +383,6 @@ mod tests {
             }
         }
 
-        /// create an empty test fixture (no schemas)
-        fn empty() -> Self {
-            let options_dir = TempDir::new().unwrap();
-            let schema_dir = TempDir::new().unwrap();
-            let registry = SchemaRegistry::from_directory(schema_dir.path()).unwrap();
-            Self {
-                options_dir,
-                _schema_dir: schema_dir,
-                registry,
-            }
-        }
-
         /// create a file in the options directory
         fn create_file(&self, namespace: &str, target: &str, filename: &str, content: &str) {
             let dir = self.options_dir.path().join(namespace).join(target);
@@ -419,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_load_nonexistent_directory() {
-        let f = TestFixture::empty();
+        let f = TestFixture::new(&[]);
         let result = load_and_validate("/foo/bar/baz", &f.registry);
         assert!(result.is_err());
         assert!(matches!(result, Err(AppError::Walk(_))));
@@ -427,7 +415,7 @@ mod tests {
 
     #[test]
     fn test_invalid_directory_structure_too_few_levels() {
-        let f = TestFixture::empty();
+        let f = TestFixture::new(&[]);
         let path = f.options_dir.path().join("options.yaml");
         fs::write(&path, "options:\n  key: value").unwrap();
 
@@ -444,7 +432,7 @@ mod tests {
 
     #[test]
     fn test_invalid_directory_structure_too_many_levels() {
-        let f = TestFixture::empty();
+        let f = TestFixture::new(&[]);
         let deep_dir = f
             .options_dir
             .path()
@@ -788,14 +776,14 @@ mod tests {
     }
 
     #[test]
-    fn test_files_sorted_deterministically() {
+    fn test_files_sorted_alphabetically() {
         let f = TestFixture::new(&["test"]);
-        // Create files in non-alphabetical order, each with a different key
+        // Create files in non-alphabetical order
         f.create_file(
             "test",
             "default",
             "z_file.yaml",
-            &valid_yaml(&[("string_val", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"v1\"")]),
         );
         f.create_file(
             "test",
@@ -810,27 +798,18 @@ mod tests {
             &valid_yaml(&[("bool_val", "true")]),
         );
 
-        // Load twice and ensure order is consistent
-        let grouped1 = f.load().unwrap();
-        let grouped2 = f.load().unwrap();
+        let grouped = f.load().unwrap();
+        let files = grouped.get("test").unwrap().get("default").unwrap();
 
-        let files1 = &grouped1.get("test").unwrap().get("default").unwrap();
-        let files2 = &grouped2.get("test").unwrap().get("default").unwrap();
-
-        // Check that file order is the same and sorted
-        for (f1, f2) in files1.iter().zip(files2.iter()) {
-            assert_eq!(f1.path, f2.path);
-        }
-
-        // Check alphabetical order
-        for i in 0..files1.len() - 1 {
-            assert!(files1[i].path < files1[i + 1].path);
+        // Verify files are sorted alphabetically
+        for i in 0..files.len() - 1 {
+            assert!(files[i].path < files[i + 1].path);
         }
     }
 
     #[test]
     fn test_unknown_namespace_rejected() {
-        let f = TestFixture::empty();
+        let f = TestFixture::new(&[]);
         f.create_file(
             "unknown_ns",
             "default",
