@@ -718,7 +718,10 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&s4s_output.1).unwrap();
 
         // Check that string_val was overridden
-        assert_eq!(json["options"]["string_val"].as_str().unwrap(), "overridden");
+        assert_eq!(
+            json["options"]["string_val"].as_str().unwrap(),
+            "overridden"
+        );
         // Check that int_val still has default value
         assert_eq!(json["options"]["int_val"].as_i64().unwrap(), 100);
     }
@@ -731,7 +734,11 @@ mod tests {
             "test",
             "default",
             "base.yaml",
-            &valid_yaml(&[("string_val", "\"z\""), ("bool_val", "true"), ("int_val", "1")]),
+            &valid_yaml(&[
+                ("string_val", "\"z\""),
+                ("bool_val", "true"),
+                ("int_val", "1"),
+            ]),
         );
 
         let grouped = f.load().unwrap();
