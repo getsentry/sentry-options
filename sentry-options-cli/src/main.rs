@@ -351,7 +351,8 @@ mod tests {
     }
 
     impl TestFixture {
-        ///create a new test fixture with test schemas for the given namespaces
+        /// create a new test fixture with test schemas for the given namespaces
+        /// Each namespace gets a schema with the 4 test properties: string_val, int_val, float_val, bool_val
         fn new(namespaces: &[&str]) -> Self {
             let options_dir = TempDir::new().unwrap();
             let schema_dir = TempDir::new().unwrap();
@@ -359,13 +360,15 @@ mod tests {
             for ns in namespaces {
                 let ns_dir = schema_dir.path().join(ns);
                 fs::create_dir_all(&ns_dir).unwrap();
-                // additionalProperties: true to simplify tests
-                // false is tested in the schema validator unit tests
                 let schema_content = r#"{
                     "version": "1.0",
                     "type": "object",
-                    "properties": {},
-                    "additionalProperties": true
+                    "properties": {
+                        "string_val": {"type": "string", "default": "", "description": "test"},
+                        "int_val": {"type": "integer", "default": 0, "description": "test"},
+                        "float_val": {"type": "number", "default": 0.0, "description": "test"},
+                        "bool_val": {"type": "boolean", "default": false, "description": "test"}
+                    }
                 }"#;
                 fs::write(ns_dir.join("schema.json"), schema_content).unwrap();
             }
@@ -484,7 +487,7 @@ mod tests {
             "test",
             "default",
             "valid.yaml",
-            &valid_yaml(&[("key", "\"value\"")]),
+            &valid_yaml(&[("string_val", "\"value\"")]),
         );
 
         let result = f.load();
@@ -582,7 +585,7 @@ mod tests {
             "test",
             "default",
             "base.yaml",
-            &valid_yaml(&[("key1", "\"value1\""), ("key2", "42")]),
+            &valid_yaml(&[("string_val", "\"value1\""), ("int_val", "42")]),
         );
 
         let result = f.load();
@@ -599,13 +602,13 @@ mod tests {
             "ns1",
             "default",
             "base.yaml",
-            &valid_yaml(&[("key1", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"value1\"")]),
         );
         f.create_file(
             "ns2",
             "default",
             "base.yaml",
-            &valid_yaml(&[("key2", "\"value2\"")]),
+            &valid_yaml(&[("int_val", "42")]),
         );
 
         let result = f.load();
@@ -623,13 +626,13 @@ mod tests {
             "test",
             "default",
             "file1.yaml",
-            &valid_yaml(&[("key1", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"value1\"")]),
         );
         f.create_file(
             "test",
             "default",
             "file2.yaml",
-            &valid_yaml(&[("key1", "\"value2\"")]),
+            &valid_yaml(&[("string_val", "\"value2\"")]),
         );
 
         let grouped = f.load().unwrap();
@@ -637,7 +640,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(AppError::DuplicateKey { key, .. }) => {
-                assert_eq!(key, "key1");
+                assert_eq!(key, "string_val");
             }
             _ => panic!("Expected DuplicateKey error"),
         }
@@ -650,7 +653,7 @@ mod tests {
             "test",
             "s4s",
             "base.yaml",
-            &valid_yaml(&[("key1", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"value1\"")]),
         );
 
         let result = f.load();
@@ -670,13 +673,13 @@ mod tests {
             "test",
             "default",
             "file1.yaml",
-            &valid_yaml(&[("key1", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"value1\"")]),
         );
         f.create_file(
             "test",
             "default",
             "file2.yaml",
-            &valid_yaml(&[("key2", "\"value2\"")]),
+            &valid_yaml(&[("int_val", "42")]),
         );
 
         let result = f.load();
@@ -695,13 +698,13 @@ mod tests {
             "test",
             "default",
             "base.yaml",
-            &valid_yaml(&[("key1", "\"default_value\""), ("key2", "\"default2\"")]),
+            &valid_yaml(&[("string_val", "\"default_value\""), ("int_val", "100")]),
         );
         f.create_file(
             "test",
             "s4s",
             "override.yaml",
-            &valid_yaml(&[("key1", "\"overridden\"")]),
+            &valid_yaml(&[("string_val", "\"overridden\"")]),
         );
 
         let grouped = f.load().unwrap();
@@ -714,20 +717,21 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_str(&s4s_output.1).unwrap();
 
-        // Check that key1 was overridden
-        assert_eq!(json["options"]["key1"].as_str().unwrap(), "overridden");
-        // Check that key2 still has default value
-        assert_eq!(json["options"]["key2"].as_str().unwrap(), "default2");
+        // Check that string_val was overridden
+        assert_eq!(json["options"]["string_val"].as_str().unwrap(), "overridden");
+        // Check that int_val still has default value
+        assert_eq!(json["options"]["int_val"].as_i64().unwrap(), 100);
     }
 
     #[test]
     fn test_output_keys_sorted_alphabetically() {
         let f = TestFixture::new(&["test"]);
+        // Insert in non-alphabetical order to verify sorting
         f.create_file(
             "test",
             "default",
             "base.yaml",
-            &valid_yaml(&[("charlie", "1"), ("alpha", "2"), ("bravo", "3")]),
+            &valid_yaml(&[("string_val", "\"z\""), ("bool_val", "true"), ("int_val", "1")]),
         );
 
         let grouped = f.load().unwrap();
@@ -743,7 +747,7 @@ mod tests {
             .map(|s| s.as_str())
             .collect();
 
-        assert_eq!(keys, vec!["alpha", "bravo", "charlie"]);
+        assert_eq!(keys, vec!["bool_val", "int_val", "string_val"]);
     }
 
     #[test]
@@ -777,24 +781,24 @@ mod tests {
     #[test]
     fn test_files_sorted_deterministically() {
         let f = TestFixture::new(&["test"]);
-        // Create files in non-alphabetical order
+        // Create files in non-alphabetical order, each with a different key
         f.create_file(
             "test",
             "default",
             "z_file.yaml",
-            &valid_yaml(&[("key1", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"value1\"")]),
         );
         f.create_file(
             "test",
             "default",
             "a_file.yaml",
-            &valid_yaml(&[("key2", "\"value2\"")]),
+            &valid_yaml(&[("int_val", "42")]),
         );
         f.create_file(
             "test",
             "default",
             "m_file.yaml",
-            &valid_yaml(&[("key3", "\"value3\"")]),
+            &valid_yaml(&[("bool_val", "true")]),
         );
 
         // Load twice and ensure order is consistent
@@ -822,7 +826,7 @@ mod tests {
             "unknown_ns",
             "default",
             "base.yaml",
-            &valid_yaml(&[("key1", "\"value1\"")]),
+            &valid_yaml(&[("string_val", "\"value1\"")]),
         );
 
         let result = f.load();
