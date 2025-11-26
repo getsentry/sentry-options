@@ -90,8 +90,9 @@ impl PartialOrd for FileData {
 /// inner map is keyed by target, value a list of files
 type NamespaceMap = HashMap<String, HashMap<String, Vec<FileData>>>;
 
-/// Reads all YAML files in the root directory, validating and parsing them, then outputting
-/// the options grouped by namespace and target
+/// Reads all YAML files in the root directory, validating and parsing them.
+/// Then outputs options grouped by namespace and target.
+/// Only performs file structure validation, e.g. path, suffix
 fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<NamespaceMap> {
     let mut grouped = HashMap::new();
     let root_path = Path::new(root);
@@ -146,7 +147,7 @@ fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<Nam
                 continue;
             }
 
-            let parsed_options = validate_and_parse(&path_string)?;
+            let parsed_options = validate_and_parse(&path_string, &namespace, &schema_registry)?;
 
             let by_target = grouped
                 .entry(namespace.to_string())
@@ -161,13 +162,6 @@ fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<Nam
         }
     }
 
-    // sort files for determinism
-    for targets in grouped.values_mut() {
-        for by_file in targets.values_mut() {
-            by_file.sort();
-        }
-    }
-
     // validate each namespace has a default target
     for (namespace, targets) in &grouped {
         if !targets.contains_key("default") {
@@ -178,11 +172,23 @@ fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<Nam
         }
     }
 
+    // sort files for determinism
+    for targets in grouped.values_mut() {
+        for by_file in targets.values_mut() {
+            by_file.sort();
+        }
+    }
+
     Ok(grouped)
 }
 
-/// Validates and parses a YAML file containing Options
-fn validate_and_parse(path: &str) -> Result<OptionsMap> {
+/// Validates and parses a YAML file containing Options.
+/// Performs file content validation, including structure and typing.
+fn validate_and_parse(
+    path: &str,
+    namespace: &str,
+    schema_registry: &SchemaRegistry,
+) -> Result<OptionsMap> {
     let file = fs::File::open(path)?;
 
     let data: HashMap<String, serde_yaml::Value> =
@@ -232,6 +238,9 @@ fn validate_and_parse(path: &str) -> Result<OptionsMap> {
         result.insert(option_key.to_string(), json_value);
     }
 
+    let values_json = serde_json::to_value(&result)?;
+    schema_registry.validate_values(namespace, &values_json)?;
+
     Ok(result)
 }
 
@@ -270,10 +279,7 @@ fn merge_keys(filedata: &[FileData]) -> OptionsMap {
 
 /// Generates the list of output JSON files
 /// Uses the default target and handles overrides from other targets
-fn generate_json(
-    maps: NamespaceMap,
-    schema_registry: &SchemaRegistry,
-) -> Result<Vec<(String, String)>> {
+fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
     let mut json_outputs: Vec<(String, String)> = Vec::new();
 
     // merge files in the same target together
@@ -291,10 +297,6 @@ fn generate_json(
         for (target, filedatas) in targets {
             let mut merged = defaults.clone();
             merged.extend(merge_keys(&filedatas));
-
-            // validate options exist and match type
-            let values_json = serde_json::to_value(&merged)?;
-            schema_registry.validate_values(&namespace, &values_json)?;
 
             // Convert to BTreeMap for sorted keys
             let sorted_merged: BTreeMap<String, serde_json::Value> = merged.into_iter().collect();
@@ -331,7 +333,7 @@ fn main() -> Result<()> {
 
     ensure_no_duplicate_keys(&grouped)?;
 
-    let json_outputs = generate_json(grouped, &schema_registry)?;
+    let json_outputs = generate_json(grouped)?;
 
     write_json(out_path, json_outputs)?;
 
@@ -708,7 +710,7 @@ mod tests {
         );
 
         let grouped = f.load().unwrap();
-        let json_outputs = generate_json(grouped, &f.registry).unwrap();
+        let json_outputs = generate_json(grouped).unwrap();
 
         // Find the s4s output
         let s4s_output = json_outputs
@@ -742,7 +744,7 @@ mod tests {
         );
 
         let grouped = f.load().unwrap();
-        let json_outputs = generate_json(grouped, &f.registry).unwrap();
+        let json_outputs = generate_json(grouped).unwrap();
         let json_str = &json_outputs[0].1;
 
         // Parse and check that keys are in alphabetical order
@@ -776,7 +778,7 @@ mod tests {
         assert!(result.is_ok());
 
         let grouped = result.unwrap();
-        let json_outputs = generate_json(grouped, &f.registry).unwrap();
+        let json_outputs = generate_json(grouped).unwrap();
         let json: serde_json::Value = serde_json::from_str(&json_outputs[0].1).unwrap();
 
         assert_eq!(json["options"]["string_val"], "hello");
