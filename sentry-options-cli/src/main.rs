@@ -121,12 +121,12 @@ fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<Nam
                 })
                 .collect();
 
-            let [namespace, target, fname] = parts.as_slice() else {
-                return Err(AppError::Validation(format!(
+            let [namespace, target, fname]: [&str; 3] = parts.try_into().map_err(|_| {
+                AppError::Validation(format!(
                     "Invalid directory structure in {}: expected namespace/target/file.yaml",
                     relative_path.display()
-                )));
-            };
+                ))
+            })?;
 
             // validate namespace exists in schema registry
             if schema_registry.get(namespace).is_none() {
@@ -147,7 +147,7 @@ fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<Nam
                 continue;
             }
 
-            let parsed_options = validate_and_parse(&path_string, &namespace, &schema_registry)?;
+            let parsed_options = validate_and_parse(&path_string, namespace, schema_registry)?;
 
             let by_target = grouped
                 .entry(namespace.to_string())
