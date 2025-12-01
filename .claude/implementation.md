@@ -153,6 +153,17 @@ sentry-options/
 }
 ```
 
+**Input: Values File**
+```json
+// values/getsentry/values.json
+{
+  "options": {
+    "system.url-prefix": "https://custom.sentry.io",
+    "traces.sample-rate": 0.5
+  }
+}
+```
+
 ### Rust Client
 
 **Usage:**
@@ -265,7 +276,7 @@ List := "list[" Primitive "]"
 - Generate JSON files
 
 **Deliverables:**
-- Working CLI: `sentry-options-cli --root configs/`
+- Working CLI: `sentry-options-cli --root <R> --out <O> --schemas <S>`
 - Comprehensive error messages
 
 ---
@@ -468,7 +479,7 @@ fn main() -> anyhow::Result<()> {
 ### Write Tool Usage
 ```bash
 # Validate schemas and definitions
-sentry-options-cli --root /path/to/options
+sentry-options-cli --root <R> --out <O> --schemas <S>
 ```
 
 ---
