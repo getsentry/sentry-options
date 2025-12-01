@@ -96,6 +96,77 @@ JSON schemas define available options with types and defaults:
 | Float | `"type": "number"` | `3.14` |
 | Boolean | `"type": "boolean"` | `true` |
 
+**Future:** Lists (`list[int]`, `list[str]`) and TypedDicts for structured options.
+
+### Schema Requirements
+
+Each schema file must have:
+- `version` - Semver string (e.g., `"1.0"`)
+- `type` - Must be `"object"`
+- `properties` - Map of option definitions
+
+Each property must have:
+- `type` - One of: `string`, `integer`, `number`, `boolean`
+- `default` - Default value (must match declared type)
+- `description` - Human-readable description
+
+`additionalProperties: false` is auto-injected to reject unknown options.
+
+## Values Format
+
+### Input: YAML Files
+
+Configuration values are written as YAML files organized by namespace and target:
+
+```
+configs/
+├── getsentry/
+│   ├── default/           # Base values (required)
+│   │   ├── core.yaml
+│   │   └── features.yaml
+│   └── s4s/               # Target-specific overrides
+│       └── overrides.yaml
+└── relay/
+    └── default/
+        └── settings.yaml
+```
+
+Each YAML file has a single `options` key:
+
+```yaml
+options:
+  system.url-prefix: "https://custom.sentry.io"
+  traces.sample-rate: 0.5
+  feature.enabled: true
+```
+
+### Target Override System
+
+- Every namespace requires a `default` target
+- Non-default targets (e.g., `s4s`, `production`) inherit from `default`
+- Target-specific values override defaults
+
+### Output: JSON Files
+
+The write tool generates merged JSON files per namespace/target:
+
+```
+dist/
+├── sentry-options-getsentry-default.json
+├── sentry-options-getsentry-s4s.json
+└── sentry-options-relay-default.json
+```
+
+Output format:
+```json
+{
+  "options": {
+    "system.url-prefix": "https://custom.sentry.io",
+    "traces.sample-rate": 0.5
+  }
+}
+```
+
 ## Usage
 
 ### Python
