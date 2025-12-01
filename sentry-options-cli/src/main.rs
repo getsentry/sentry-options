@@ -87,6 +87,7 @@ enum Commands {
             help = "directory containing namespace schema definitions"
         )]
         schemas: String,
+
         #[arg(long, required = true, help = "root directory of the sentry options")]
         root: String,
 
