@@ -56,3 +56,7 @@ cargo clippy --workspace --all-features --tests -- -D clippy::all
 - Python: mypy (strict), flake8, autopep8, reorder-python-imports
 - Rust: rustfmt, clippy
 - Pre-commit hooks enforce standards
+
+## Architecture & Design
+
+@docs/architecture.md
