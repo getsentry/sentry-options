@@ -4,7 +4,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use sentry_options_validation::SchemaRegistry;
 use walkdir::WalkDir;
 
@@ -44,23 +44,55 @@ pub enum AppError {
     Schema(#[from] sentry_options_validation::ValidationError),
 }
 
-/// Required CLI arguments
+/// defines the CLI for sentry-options validation and processing
 #[derive(Parser, Debug)]
-#[command(name = "sentry-options")]
+#[command(name = "sentry-options-cli")]
 #[command(version, about, long_about = None)]
-struct Args {
-    #[arg(long, required = true, help = "root directory of the sentry options")]
-    root: String,
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    #[arg(long, required = true, help = "output directory for final json files")]
-    out: String,
+/// Available subcommands
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Validate schema definitions in a directory
+    #[command(name = "validate-schema")]
+    ValidateSchema {
+        #[arg(
+            long,
+            required = true,
+            help = "directory containing namespace schema definitions"
+        )]
+        schemas: String,
+    },
+    /// Validate option values against schemas
+    #[command(name = "validate-values")]
+    ValidateValues {
+        #[arg(
+            long,
+            required = true,
+            help = "directory containing namespace schema definitions"
+        )]
+        schemas: String,
 
-    #[arg(
-        long,
-        required = true,
-        help = "directory containing namespace schema definitions"
-    )]
-    schemas: String,
+        #[arg(long, required = true, help = "root directory of the sentry options")]
+        root: String,
+    },
+    /// Validate and convert YAML values to JSON
+    Write {
+        #[arg(
+            long,
+            required = true,
+            help = "directory containing namespace schema definitions"
+        )]
+        schemas: String,
+        #[arg(long, required = true, help = "root directory of the sentry options")]
+        root: String,
+
+        #[arg(long, required = true, help = "output directory for final json files")]
+        out: String,
+    },
 }
 
 /// A key value pair of options and their parsed value
@@ -325,21 +357,42 @@ fn write_json(out_path: PathBuf, json_outputs: Vec<(String, String)>) -> Result<
     Ok(())
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
+fn cli_validate_schema(schemas: String) -> Result<()> {
+    SchemaRegistry::from_directory(Path::new(&schemas))?;
+    println!("Schema validation successful");
+    Ok(())
+}
 
-    let out_path = PathBuf::from(&args.out);
-    let schema_registry = SchemaRegistry::from_directory(Path::new(&args.schemas))?;
+fn cli_validate_values(schemas: String, root: String) -> Result<()> {
+    let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
+    let grouped = load_and_validate(&root, &schema_registry)?;
+    ensure_no_duplicate_keys(&grouped)?;
+    println!("Values validation successful");
+    Ok(())
+}
 
-    let grouped = load_and_validate(&args.root, &schema_registry)?;
+fn cli_write(schemas: String, root: String, out: String) -> Result<()> {
+    let out_path = PathBuf::from(&out);
+    let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
 
+    let grouped = load_and_validate(&root, &schema_registry)?;
     ensure_no_duplicate_keys(&grouped)?;
 
     let json_outputs = generate_json(grouped)?;
-
+    let num_files = json_outputs.len();
     write_json(out_path, json_outputs)?;
 
+    println!("Successfully wrote {} output files", num_files);
     Ok(())
+}
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::ValidateSchema { schemas } => cli_validate_schema(schemas),
+        Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root),
+        Commands::Write { schemas, root, out } => cli_write(schemas, root, out),
+    }
 }
 
 #[cfg(test)]
