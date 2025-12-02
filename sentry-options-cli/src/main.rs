@@ -49,6 +49,9 @@ pub enum AppError {
 #[command(name = "sentry-options-cli")]
 #[command(version, about, long_about = None)]
 struct Cli {
+    #[arg(long, global = true, help = "suppress output messages")]
+    quiet: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -358,21 +361,27 @@ fn write_json(out_path: PathBuf, json_outputs: Vec<(String, String)>) -> Result<
     Ok(())
 }
 
-fn cli_validate_schema(schemas: String) -> Result<()> {
+fn cli_validate_schema(schemas: String, quiet: bool) -> Result<()> {
     SchemaRegistry::from_directory(Path::new(&schemas))?;
-    println!("Schema validation successful");
+
+    if !quiet {
+        println!("Schema validation successful");
+    }
     Ok(())
 }
 
-fn cli_validate_values(schemas: String, root: String) -> Result<()> {
+fn cli_validate_values(schemas: String, root: String, quiet: bool) -> Result<()> {
     let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
     let grouped = load_and_validate(&root, &schema_registry)?;
     ensure_no_duplicate_keys(&grouped)?;
-    println!("Values validation successful");
+
+    if !quiet {
+        println!("Values validation successful");
+    }
     Ok(())
 }
 
-fn cli_write(schemas: String, root: String, out: String) -> Result<()> {
+fn cli_write(schemas: String, root: String, out: String, quiet: bool) -> Result<()> {
     let out_path = PathBuf::from(&out);
     let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
 
@@ -383,16 +392,24 @@ fn cli_write(schemas: String, root: String, out: String) -> Result<()> {
     let num_files = json_outputs.len();
     write_json(out_path, json_outputs)?;
 
-    println!("Successfully wrote {} output files", num_files);
+    if !quiet {
+        println!("Successfully wrote {} output files", num_files);
+    }
     Ok(())
 }
-fn main() -> Result<()> {
+
+fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::ValidateSchema { schemas } => cli_validate_schema(schemas),
-        Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root),
-        Commands::Write { schemas, root, out } => cli_write(schemas, root, out),
+    let result = match cli.command {
+        Commands::ValidateSchema { schemas } => cli_validate_schema(schemas, cli.quiet),
+        Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
+        Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
+    };
+
+    if let Err(e) = result {
+        eprintln!("{}", e);
+        std::process::exit(1);
     }
 }
 
