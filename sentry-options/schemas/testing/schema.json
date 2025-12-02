@@ -8,7 +8,7 @@
       "description": "An example string option"
     },
     "float-option": {
-      "type": "number",
+      "type": "float",
       "default": 0.0,
       "description": "An example float option"
     },

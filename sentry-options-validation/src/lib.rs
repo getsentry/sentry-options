@@ -15,6 +15,7 @@ use serde_json::Value;
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
+const VALUES_FILE_NAME: &str = "values.json";
 
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
@@ -268,38 +269,28 @@ impl SchemaRegistry {
     }
 
     /// Load and validate JSON values from a directory.
-    /// Expects files named `{namespace}.json` containing option key-value pairs.
-    /// Skips files for unknown namespaces.
+    /// Expects structure: `{values_dir}/{namespace}/values.json`
+    /// Skips namespaces without a values.json file.
     pub fn load_values_json(
         &self,
         values_dir: &Path,
     ) -> ValidationResult<HashMap<String, HashMap<String, Value>>> {
         let mut all_values = HashMap::new();
 
-        for entry in fs::read_dir(values_dir)? {
-            let entry = entry?;
-            let path = entry.path();
+        for (namespace, _schema) in &self.schemas {
+            let values_file = values_dir.join(namespace).join(VALUES_FILE_NAME);
 
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            if !values_file.exists() {
                 continue;
             }
 
-            let namespace = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(ns) => ns.to_string(),
-                None => continue,
-            };
-
-            if !self.schemas.contains_key(&namespace) {
-                continue;
-            }
-
-            let values: Value = serde_json::from_reader(fs::File::open(&path)?)?;
-            self.validate_values(&namespace, &values)?;
+            let values: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
+            self.validate_values(namespace, &values)?;
 
             if let Some(obj) = values.as_object() {
                 let ns_values: HashMap<String, Value> =
                     obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                all_values.insert(namespace, ns_values);
+                all_values.insert(namespace.clone(), ns_values);
             }
         }
 
@@ -674,7 +665,7 @@ Error: \"version\" is a required property"
                         "description": "Count"
                     },
                     "rate": {
-                        "type": "number",
+                        "type": "float",
                         "default": 0.0,
                         "description": "Rate"
                     }
@@ -683,9 +674,10 @@ Error: \"version\" is a required property"
         )
         .unwrap();
 
-        fs::create_dir_all(&values_dir).unwrap();
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
         fs::write(
-            values_dir.join("test.json"),
+            test_values_dir.join("values.json"),
             r#"{
                 "enabled": true,
                 "name": "test-name",
@@ -715,21 +707,25 @@ Error: \"version\" is a required property"
         );
 
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
-        let result = registry.load_values_json(&temp_dir.path().join("nonexistent"));
+        let values = registry
+            .load_values_json(&temp_dir.path().join("nonexistent"))
+            .unwrap();
 
-        assert!(matches!(result, Err(ValidationError::FileRead(..))));
+        // No values.json files found, returns empty
+        assert!(values.is_empty());
     }
 
     #[test]
-    fn test_load_values_json_skips_unknown_namespace() {
+    fn test_load_values_json_skips_missing_values_file() {
         let temp_dir = TempDir::new().unwrap();
         let schemas_dir = temp_dir.path().join("schemas");
         let values_dir = temp_dir.path().join("values");
 
-        let schema_dir = schemas_dir.join("known");
-        fs::create_dir_all(&schema_dir).unwrap();
+        // Create two schemas
+        let schema_dir1 = schemas_dir.join("with_values");
+        fs::create_dir_all(&schema_dir1).unwrap();
         fs::write(
-            schema_dir.join("schema.json"),
+            schema_dir1.join("schema.json"),
             r#"{
                 "version": "1.0",
                 "type": "object",
@@ -740,28 +736,10 @@ Error: \"version\" is a required property"
         )
         .unwrap();
 
-        fs::create_dir_all(&values_dir).unwrap();
-        fs::write(values_dir.join("known.json"), r#"{"opt": "y"}"#).unwrap();
-        fs::write(values_dir.join("unknown.json"), r#"{"foo": "bar"}"#).unwrap();
-
-        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
-        let values = registry.load_values_json(&values_dir).unwrap();
-
-        assert_eq!(values.len(), 1);
-        assert!(values.contains_key("known"));
-        assert!(!values.contains_key("unknown"));
-    }
-
-    #[test]
-    fn test_load_values_json_skips_non_json_files() {
-        let temp_dir = TempDir::new().unwrap();
-        let schemas_dir = temp_dir.path().join("schemas");
-        let values_dir = temp_dir.path().join("values");
-
-        let schema_dir = schemas_dir.join("test");
-        fs::create_dir_all(&schema_dir).unwrap();
+        let schema_dir2 = schemas_dir.join("without_values");
+        fs::create_dir_all(&schema_dir2).unwrap();
         fs::write(
-            schema_dir.join("schema.json"),
+            schema_dir2.join("schema.json"),
             r#"{
                 "version": "1.0",
                 "type": "object",
@@ -772,16 +750,17 @@ Error: \"version\" is a required property"
         )
         .unwrap();
 
-        fs::create_dir_all(&values_dir).unwrap();
-        fs::write(values_dir.join("test.json"), r#"{"opt": "y"}"#).unwrap();
-        fs::write(values_dir.join("test.yaml"), "opt: z").unwrap();
-        fs::write(values_dir.join("readme.txt"), "ignore me").unwrap();
+        // Only create values for one namespace
+        let with_values_dir = values_dir.join("with_values");
+        fs::create_dir_all(&with_values_dir).unwrap();
+        fs::write(with_values_dir.join("values.json"), r#"{"opt": "y"}"#).unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
         let values = registry.load_values_json(&values_dir).unwrap();
 
         assert_eq!(values.len(), 1);
-        assert_eq!(values["test"]["opt"], json!("y"));
+        assert!(values.contains_key("with_values"));
+        assert!(!values.contains_key("without_values"));
     }
 
     #[test]
@@ -804,9 +783,13 @@ Error: \"version\" is a required property"
         )
         .unwrap();
 
-        fs::create_dir_all(&values_dir).unwrap();
-        // Pass a string instead of an integer
-        fs::write(values_dir.join("test.json"), r#"{"count": "not-a-number"}"#).unwrap();
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{"count": "not-a-number"}"#,
+        )
+        .unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
         let result = registry.load_values_json(&values_dir);

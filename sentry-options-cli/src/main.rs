@@ -369,7 +369,7 @@ mod tests {
                     "properties": {
                         "string_val": {"type": "string", "default": "", "description": "test"},
                         "int_val": {"type": "integer", "default": 0, "description": "test"},
-                        "float_val": {"type": "number", "default": 0.0, "description": "test"},
+                        "float_val": {"type": "float", "default": 0.0, "description": "test"},
                         "bool_val": {"type": "boolean", "default": false, "description": "test"}
                     }
                 }"#;
