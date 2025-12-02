@@ -266,6 +266,45 @@ impl SchemaRegistry {
     pub fn get(&self, namespace: &str) -> Option<&Arc<NamespaceSchema>> {
         self.schemas.get(namespace)
     }
+
+    /// Load and validate JSON values from a directory.
+    /// Expects files named `{namespace}.json` containing option key-value pairs.
+    /// Skips files for unknown namespaces.
+    pub fn load_values_json(
+        &self,
+        values_dir: &Path,
+    ) -> ValidationResult<HashMap<String, HashMap<String, Value>>> {
+        let mut all_values = HashMap::new();
+
+        for entry in fs::read_dir(values_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+
+            let namespace = match path.file_stem().and_then(|s| s.to_str()) {
+                Some(ns) => ns.to_string(),
+                None => continue,
+            };
+
+            if !self.schemas.contains_key(&namespace) {
+                continue;
+            }
+
+            let values: Value = serde_json::from_reader(fs::File::open(&path)?)?;
+            self.validate_values(&namespace, &values)?;
+
+            if let Some(obj) = values.as_object() {
+                let ns_values: HashMap<String, Value> =
+                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                all_values.insert(namespace, ns_values);
+            }
+        }
+
+        Ok(all_values)
+    }
 }
 
 impl Default for SchemaRegistry {
@@ -572,7 +611,6 @@ Error: \"version\" is a required property"
     #[test]
     fn test_validate_values_unknown_option() {
         let temp_dir = TempDir::new().unwrap();
-        // Note: additionalProperties: false is auto-injected by parse_schema
         create_test_schema(
             &temp_dir,
             "test",
@@ -595,7 +633,7 @@ Error: \"version\" is a required property"
         let result = registry.validate_values("test", &json!({"known_option": "value"}));
         assert!(result.is_ok());
 
-        // Unknown option should fail (additionalProperties: false is auto-injected)
+        // Unknown option should fail
         let result = registry.validate_values("test", &json!({"unknown_option": "value"}));
         assert!(result.is_err());
         match result {
@@ -604,5 +642,175 @@ Error: \"version\" is a required property"
             }
             _ => panic!("Expected ValueError for unknown option"),
         }
+    }
+
+    #[test]
+    fn test_load_values_json_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable feature"
+                    },
+                    "name": {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Name"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Count"
+                    },
+                    "rate": {
+                        "type": "number",
+                        "default": 0.0,
+                        "description": "Rate"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(&values_dir).unwrap();
+        fs::write(
+            values_dir.join("test.json"),
+            r#"{
+                "enabled": true,
+                "name": "test-name",
+                "count": 42,
+                "rate": 0.75
+            }"#,
+        )
+        .unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let values = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values.len(), 1);
+        assert_eq!(values["test"]["enabled"], json!(true));
+        assert_eq!(values["test"]["name"], json!("test-name"));
+        assert_eq!(values["test"]["count"], json!(42));
+        assert_eq!(values["test"]["rate"], json!(0.75));
+    }
+
+    #[test]
+    fn test_load_values_json_nonexistent_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{"version": "1.0", "type": "object", "properties": {}}"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let result = registry.load_values_json(&temp_dir.path().join("nonexistent"));
+
+        assert!(matches!(result, Err(ValidationError::FileRead(..))));
+    }
+
+    #[test]
+    fn test_load_values_json_skips_unknown_namespace() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("known");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "opt": {"type": "string", "default": "x", "description": "Opt"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(&values_dir).unwrap();
+        fs::write(values_dir.join("known.json"), r#"{"opt": "y"}"#).unwrap();
+        fs::write(values_dir.join("unknown.json"), r#"{"foo": "bar"}"#).unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let values = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values.len(), 1);
+        assert!(values.contains_key("known"));
+        assert!(!values.contains_key("unknown"));
+    }
+
+    #[test]
+    fn test_load_values_json_skips_non_json_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "opt": {"type": "string", "default": "x", "description": "Opt"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(&values_dir).unwrap();
+        fs::write(values_dir.join("test.json"), r#"{"opt": "y"}"#).unwrap();
+        fs::write(values_dir.join("test.yaml"), "opt: z").unwrap();
+        fs::write(values_dir.join("readme.txt"), "ignore me").unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let values = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values.len(), 1);
+        assert_eq!(values["test"]["opt"], json!("y"));
+    }
+
+    #[test]
+    fn test_load_values_json_rejects_wrong_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer", "default": 0, "description": "Count"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(&values_dir).unwrap();
+        // Pass a string instead of an integer
+        fs::write(values_dir.join("test.json"), r#"{"count": "not-a-number"}"#).unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let result = registry.load_values_json(&values_dir);
+
+        assert!(matches!(result, Err(ValidationError::ValueError { .. })));
     }
 }
