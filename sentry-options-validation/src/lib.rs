@@ -665,7 +665,7 @@ Error: \"version\" is a required property"
                         "description": "Count"
                     },
                     "rate": {
-                        "type": "float",
+                        "type": "number",
                         "default": 0.0,
                         "description": "Rate"
                     }

@@ -18,7 +18,7 @@
           "type": "object",
           "properties": {
             "type": {
-              "enum": ["string", "integer", "float", "boolean"]
+              "enum": ["string", "integer", "number", "boolean"]
             },
             "default": {},
             "description": {
