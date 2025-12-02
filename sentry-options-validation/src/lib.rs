@@ -277,7 +277,7 @@ impl SchemaRegistry {
     ) -> ValidationResult<HashMap<String, HashMap<String, Value>>> {
         let mut all_values = HashMap::new();
 
-        for (namespace, _schema) in &self.schemas {
+        for namespace in self.schemas.keys() {
             let values_file = values_dir.join(namespace).join(VALUES_FILE_NAME);
 
             if !values_file.exists() {
