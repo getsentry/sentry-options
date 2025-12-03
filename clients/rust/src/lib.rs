@@ -1,12 +1,15 @@
 //! Options client for reading validated configuration values.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use sentry_options_validation::{SchemaRegistry, ValidationError};
 use serde_json::Value;
 use thiserror::Error;
+
+const DEFAULT_OPTIONS_DIR: &str = "/etc/sentry-options";
+const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
 
 #[derive(Debug, Error)]
 pub enum OptionsError {
@@ -30,12 +33,24 @@ pub struct Options {
 }
 
 impl Options {
-    /// Create options from schema and values directories.
-    /// Loads and validates schemas and values at startup.
-    pub fn new(schemas_dir: &Path, values_dir: &Path) -> Result<Self> {
-        let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir)?);
-        // TODO: This will spin up a background watcher thread to load values
-        let values = registry.load_values_json(values_dir)?;
+    /// Load options from default path (`/etc/sentry-options`) or `SENTRY_OPTIONS_DIR` env var.
+    /// Expects `{dir}/schemas/` and `{dir}/values/` subdirectories.
+    pub fn new() -> Result<Self> {
+        let base_dir = std::env::var(OPTIONS_DIR_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_OPTIONS_DIR));
+
+        Self::from_directory(&base_dir)
+    }
+
+    /// Load options from a specific directory (useful for testing).
+    /// Expects `{base_dir}/schemas/` and `{base_dir}/values/` subdirectories.
+    pub fn from_directory(base_dir: &Path) -> Result<Self> {
+        let schemas_dir = base_dir.join("schemas");
+        let values_dir = base_dir.join("values");
+
+        let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir)?);
+        let values = registry.load_values_json(&values_dir)?;
 
         Ok(Self { registry, values })
     }
@@ -107,7 +122,7 @@ mod tests {
         );
         create_values(&values, "test", r#"{"enabled": true}"#);
 
-        let options = Options::new(&schemas, &values).unwrap();
+        let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
     }
 
@@ -135,7 +150,7 @@ mod tests {
             }"#,
         );
 
-        let options = Options::new(&schemas, &values).unwrap();
+        let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "timeout").unwrap(), json!(30));
     }
 
@@ -153,7 +168,7 @@ mod tests {
             r#"{"version": "1.0", "type": "object", "properties": {}}"#,
         );
 
-        let options = Options::new(&schemas, &values).unwrap();
+        let options = Options::from_directory(temp.path()).unwrap();
         assert!(matches!(
             options.get("unknown", "key"),
             Err(OptionsError::UnknownNamespace(_))
@@ -180,7 +195,7 @@ mod tests {
             }"#,
         );
 
-        let options = Options::new(&schemas, &values).unwrap();
+        let options = Options::from_directory(temp.path()).unwrap();
         assert!(matches!(
             options.get("test", "unknown"),
             Err(OptionsError::UnknownOption { .. })
@@ -191,7 +206,6 @@ mod tests {
     fn test_missing_values_dir() {
         let temp = TempDir::new().unwrap();
         let schemas = temp.path().join("schemas");
-        let values = temp.path().join("nonexistent");
         fs::create_dir_all(&schemas).unwrap();
 
         create_schema(
@@ -206,7 +220,7 @@ mod tests {
             }"#,
         );
 
-        let options = Options::new(&schemas, &values).unwrap();
+        let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "opt").unwrap(), json!("default_val"));
     }
 }
