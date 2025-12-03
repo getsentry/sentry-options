@@ -338,8 +338,6 @@ impl ValuesWatcher {
 
     /// Reloads the file if the modified time has changed.
     fn run(stop_signal: Arc<AtomicBool>, path: PathBuf) {
-        stop_signal.store(false, Ordering::Relaxed);
-
         let mut last_mtime = match fs::metadata(&path).and_then(|m| m.modified()) {
             Ok(mtime) => Some(mtime),
             Err(e) => {
