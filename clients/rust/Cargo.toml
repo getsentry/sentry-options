@@ -1,0 +1,13 @@
+[package]
+name = "sentry-options"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+sentry-options-validation = { path = "../../sentry-options-validation" }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

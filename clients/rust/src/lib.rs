@@ -1,0 +1,212 @@
+//! Options client for reading validated configuration values.
+
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+
+use sentry_options_validation::{SchemaRegistry, ValidationError};
+use serde_json::Value;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum OptionsError {
+    #[error("Unknown namespace: {0}")]
+    UnknownNamespace(String),
+
+    #[error("Unknown option '{key}' in namespace '{namespace}'")]
+    UnknownOption { namespace: String, key: String },
+
+    #[error("Schema error: {0}")]
+    Schema(#[from] ValidationError),
+}
+
+pub type Result<T> = std::result::Result<T, OptionsError>;
+
+/// Options store for reading configuration values.
+pub struct Options {
+    registry: Arc<SchemaRegistry>,
+    // This will use ARC in the future once we introduce background reloading
+    values: HashMap<String, HashMap<String, Value>>,
+}
+
+impl Options {
+    /// Create options from schema and values directories.
+    /// Loads and validates schemas and values at startup.
+    pub fn new(schemas_dir: &Path, values_dir: &Path) -> Result<Self> {
+        let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir)?);
+        // TODO: This will spin up a background watcher thread to load values
+        let values = registry.load_values_json(values_dir)?;
+
+        Ok(Self { registry, values })
+    }
+
+    /// Get an option value, returning the schema default if not set.
+    pub fn get(&self, namespace: &str, key: &str) -> Result<Value> {
+        let schema = self
+            .registry
+            .get(namespace)
+            .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
+
+        let default = schema
+            .get_default(key)
+            .ok_or_else(|| OptionsError::UnknownOption {
+                namespace: namespace.to_string(),
+                key: key.to_string(),
+            })?;
+
+        if let Some(ns_values) = self.values.get(namespace)
+            && let Some(value) = ns_values.get(key)
+        {
+            return Ok(value.clone());
+        }
+
+        Ok(default.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_schema(dir: &Path, namespace: &str, schema: &str) {
+        let schema_dir = dir.join(namespace);
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(schema_dir.join("schema.json"), schema).unwrap();
+    }
+
+    fn create_values(dir: &Path, namespace: &str, values: &str) {
+        let ns_dir = dir.join(namespace);
+        fs::create_dir_all(&ns_dir).unwrap();
+        fs::write(ns_dir.join("values.json"), values).unwrap();
+    }
+
+    #[test]
+    fn test_get_value() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable feature"
+                    }
+                }
+            }"#,
+        );
+        create_values(&values, "test", r#"{"enabled": true}"#);
+
+        let options = Options::new(&schemas, &values).unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+    }
+
+    #[test]
+    fn test_get_default() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        fs::create_dir_all(&values).unwrap();
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "timeout": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "Timeout"
+                    }
+                }
+            }"#,
+        );
+
+        let options = Options::new(&schemas, &values).unwrap();
+        assert_eq!(options.get("test", "timeout").unwrap(), json!(30));
+    }
+
+    #[test]
+    fn test_unknown_namespace() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        fs::create_dir_all(&values).unwrap();
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{"version": "1.0", "type": "object", "properties": {}}"#,
+        );
+
+        let options = Options::new(&schemas, &values).unwrap();
+        assert!(matches!(
+            options.get("unknown", "key"),
+            Err(OptionsError::UnknownNamespace(_))
+        ));
+    }
+
+    #[test]
+    fn test_unknown_option() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        fs::create_dir_all(&values).unwrap();
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "known": {"type": "string", "default": "x", "description": "Known"}
+                }
+            }"#,
+        );
+
+        let options = Options::new(&schemas, &values).unwrap();
+        assert!(matches!(
+            options.get("test", "unknown"),
+            Err(OptionsError::UnknownOption { .. })
+        ));
+    }
+
+    #[test]
+    fn test_missing_values_dir() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("nonexistent");
+        fs::create_dir_all(&schemas).unwrap();
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "opt": {"type": "string", "default": "default_val", "description": "Opt"}
+                }
+            }"#,
+        );
+
+        let options = Options::new(&schemas, &values).unwrap();
+        assert_eq!(options.get("test", "opt").unwrap(), json!("default_val"));
+    }
+}
