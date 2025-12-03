@@ -15,6 +15,7 @@ use serde_json::Value;
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
+const VALUES_FILE_NAME: &str = "values.json";
 
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
@@ -265,6 +266,34 @@ impl SchemaRegistry {
     /// Get a namespace schema by name
     pub fn get(&self, namespace: &str) -> Option<&Arc<NamespaceSchema>> {
         self.schemas.get(namespace)
+    }
+
+    /// Load and validate JSON values from a directory.
+    /// Expects structure: `{values_dir}/{namespace}/values.json`
+    /// Skips namespaces without a values.json file.
+    pub fn load_values_json(
+        &self,
+        values_dir: &Path,
+    ) -> ValidationResult<HashMap<String, HashMap<String, Value>>> {
+        let mut all_values = HashMap::new();
+
+        for namespace in self.schemas.keys() {
+            let values_file = values_dir.join(namespace).join(VALUES_FILE_NAME);
+
+            if !values_file.exists() {
+                continue;
+            }
+
+            let values: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
+            self.validate_values(namespace, &values)?;
+
+            if let Value::Object(obj) = values {
+                let ns_values: HashMap<String, Value> = obj.into_iter().collect();
+                all_values.insert(namespace.clone(), ns_values);
+            }
+        }
+
+        Ok(all_values)
     }
 }
 
@@ -572,7 +601,6 @@ Error: \"version\" is a required property"
     #[test]
     fn test_validate_values_unknown_option() {
         let temp_dir = TempDir::new().unwrap();
-        // Note: additionalProperties: false is auto-injected by parse_schema
         create_test_schema(
             &temp_dir,
             "test",
@@ -595,7 +623,7 @@ Error: \"version\" is a required property"
         let result = registry.validate_values("test", &json!({"known_option": "value"}));
         assert!(result.is_ok());
 
-        // Unknown option should fail (additionalProperties: false is auto-injected)
+        // Unknown option should fail
         let result = registry.validate_values("test", &json!({"unknown_option": "value"}));
         assert!(result.is_err());
         match result {
@@ -604,5 +632,167 @@ Error: \"version\" is a required property"
             }
             _ => panic!("Expected ValueError for unknown option"),
         }
+    }
+
+    #[test]
+    fn test_load_values_json_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable feature"
+                    },
+                    "name": {
+                        "type": "string",
+                        "default": "default",
+                        "description": "Name"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Count"
+                    },
+                    "rate": {
+                        "type": "number",
+                        "default": 0.0,
+                        "description": "Rate"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{
+                "enabled": true,
+                "name": "test-name",
+                "count": 42,
+                "rate": 0.75
+            }"#,
+        )
+        .unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let values = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values.len(), 1);
+        assert_eq!(values["test"]["enabled"], json!(true));
+        assert_eq!(values["test"]["name"], json!("test-name"));
+        assert_eq!(values["test"]["count"], json!(42));
+        assert_eq!(values["test"]["rate"], json!(0.75));
+    }
+
+    #[test]
+    fn test_load_values_json_nonexistent_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{"version": "1.0", "type": "object", "properties": {}}"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+        let values = registry
+            .load_values_json(&temp_dir.path().join("nonexistent"))
+            .unwrap();
+
+        // No values.json files found, returns empty
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn test_load_values_json_skips_missing_values_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        // Create two schemas
+        let schema_dir1 = schemas_dir.join("with_values");
+        fs::create_dir_all(&schema_dir1).unwrap();
+        fs::write(
+            schema_dir1.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "opt": {"type": "string", "default": "x", "description": "Opt"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let schema_dir2 = schemas_dir.join("without_values");
+        fs::create_dir_all(&schema_dir2).unwrap();
+        fs::write(
+            schema_dir2.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "opt": {"type": "string", "default": "x", "description": "Opt"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        // Only create values for one namespace
+        let with_values_dir = values_dir.join("with_values");
+        fs::create_dir_all(&with_values_dir).unwrap();
+        fs::write(with_values_dir.join("values.json"), r#"{"opt": "y"}"#).unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let values = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values.len(), 1);
+        assert!(values.contains_key("with_values"));
+        assert!(!values.contains_key("without_values"));
+    }
+
+    #[test]
+    fn test_load_values_json_rejects_wrong_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer", "default": 0, "description": "Count"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{"count": "not-a-number"}"#,
+        )
+        .unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let result = registry.load_values_json(&values_dir);
+
+        assert!(matches!(result, Err(ValidationError::ValueError { .. })));
     }
 }
