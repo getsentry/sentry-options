@@ -287,9 +287,8 @@ impl SchemaRegistry {
             let values: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
             self.validate_values(namespace, &values)?;
 
-            if let Some(obj) = values.as_object() {
-                let ns_values: HashMap<String, Value> =
-                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            if let Value::Object(obj) = values {
+                let ns_values: HashMap<String, Value> = obj.into_iter().collect();
                 all_values.insert(namespace.clone(), ns_values);
             }
         }
