@@ -318,7 +318,7 @@ pub struct ValuesWatcher {
 
 impl ValuesWatcher {
     /// Creates a new ValuesWatcher struct and spins up the watcher thread
-    pub fn new(path: &Path, reload_callback: Fn()) -> ValidationResult<Self> {
+    pub fn new(path: &Path) -> ValidationResult<Self> {
         // validate permissions and existence of file
         fs::metadata(path)?;
 
