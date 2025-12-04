@@ -62,18 +62,18 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
+        if let Some(ns_values) = self.values.get(namespace)
+            && let Some(value) = ns_values.get(key)
+        {
+            return Ok(value.clone());
+        }
+
         let default = schema
             .get_default(key)
             .ok_or_else(|| OptionsError::UnknownOption {
                 namespace: namespace.to_string(),
                 key: key.to_string(),
             })?;
-
-        if let Some(ns_values) = self.values.get(namespace)
-            && let Some(value) = ns_values.get(key)
-        {
-            return Ok(value.clone());
-        }
 
         Ok(default.clone())
     }
