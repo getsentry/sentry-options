@@ -375,6 +375,12 @@ impl ValuesWatcher {
     }
 }
 
+impl Drop for ValuesWatcher {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 // TODO: add file watcher tests
 
 #[cfg(test)]
