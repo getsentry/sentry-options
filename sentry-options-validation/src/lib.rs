@@ -318,7 +318,7 @@ pub struct ValuesWatcher {
 
 impl ValuesWatcher {
     /// Creates a new ValuesWatcher struct and spins up the watcher thread
-    pub fn new(path: &Path) -> ValidationResult<Self> {
+    pub fn new(path: &Path, reload_callback: Fn()) -> ValidationResult<Self> {
         // validate permissions and existence of file
         fs::metadata(path)?;
 
@@ -350,8 +350,8 @@ impl ValuesWatcher {
             match fs::metadata(&path).and_then(|m| m.modified()) {
                 Ok(current_mtime) => {
                     if Some(current_mtime) != last_mtime {
-                        // TODO: Actually reload the file. We may need to pass in
-                        // the fetch function as a fn pointer.
+                        // TODO: Actually reload the file. Mutate
+                        // the Arc hashmap (which may be guarded by a RWlock)
                         println!("reloading {}", path.display());
                         last_mtime = Some(current_mtime);
                     }
