@@ -345,13 +345,7 @@ impl ValuesWatcher {
     /// Returns an error if we cannot `stat` the file at any point
     /// but will continue looping.
     fn run(stop_signal: Arc<AtomicBool>, path: PathBuf) {
-        let mut last_mtime = match fs::metadata(&path).and_then(|m| m.modified()) {
-            Ok(mtime) => Some(mtime),
-            Err(e) => {
-                eprintln!("Initial stat of {} failed: {}", path.display(), e);
-                None
-            }
-        };
+        let mut last_mtime = None;
 
         while !stop_signal.load(Ordering::Relaxed) {
             match fs::metadata(&path).and_then(|m| m.modified()) {
