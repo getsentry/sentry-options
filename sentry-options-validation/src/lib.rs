@@ -21,6 +21,7 @@ const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
 
+/// Time between file polls in seconds
 const POLLING_DELAY: u64 = 5;
 
 /// Result type for validation operations
@@ -318,6 +319,9 @@ pub struct ValuesWatcher {
 
 impl ValuesWatcher {
     /// Creates a new ValuesWatcher struct and spins up the watcher thread
+    ///
+    /// Returns a FileRead error if we fail to get metadata for the file
+    /// Thread spawning could panic but that would be really bad
     pub fn new(path: &Path) -> ValidationResult<Self> {
         // validate permissions and existence of file
         fs::metadata(path)?;
@@ -337,6 +341,9 @@ impl ValuesWatcher {
     }
 
     /// Reloads the file if the modified time has changed.
+    ///
+    /// Returns an error if we cannot `stat` the file at any point
+    /// but will continue looping.
     fn run(stop_signal: Arc<AtomicBool>, path: PathBuf) {
         let mut last_mtime = match fs::metadata(&path).and_then(|m| m.modified()) {
             Ok(mtime) => Some(mtime),
