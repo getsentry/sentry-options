@@ -4,18 +4,25 @@
 //! Schemas are loaded once and stored in Arc for efficient sharing.
 //! Values are validated against schemas as complete objects.
 
+use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use serde_json::Value;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
+
+/// Time between file polls in seconds
+const POLLING_DELAY: u64 = 5;
 
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
@@ -302,6 +309,80 @@ impl Default for SchemaRegistry {
         Self::new()
     }
 }
+
+/// Watches the values file for changes, reloading if there are any
+/// Uses polling for now, could use `inotify` or similar later on
+pub struct ValuesWatcher {
+    stop_signal: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl ValuesWatcher {
+    /// Creates a new ValuesWatcher struct and spins up the watcher thread
+    ///
+    /// Returns a FileRead error if we fail to get metadata for the file
+    /// Thread spawning could panic but that would be really bad
+    pub fn new(path: &Path) -> ValidationResult<Self> {
+        // validate permissions and existence of file
+        fs::metadata(path)?;
+
+        let stop_signal = Arc::new(AtomicBool::new(false));
+
+        let thread_signal = Arc::clone(&stop_signal);
+        let thread_path = path.to_path_buf();
+        let thread = thread::spawn(move || {
+            Self::run(thread_signal, thread_path);
+        });
+
+        Ok(Self {
+            stop_signal,
+            thread: Some(thread),
+        })
+    }
+
+    /// Reloads the file if the modified time has changed.
+    ///
+    /// Returns an error if we cannot `stat` the file at any point
+    /// but will continue looping.
+    fn run(stop_signal: Arc<AtomicBool>, path: PathBuf) {
+        let mut last_mtime = None;
+
+        while !stop_signal.load(Ordering::Relaxed) {
+            match fs::metadata(&path).and_then(|m| m.modified()) {
+                Ok(current_mtime) => {
+                    if Some(current_mtime) != last_mtime {
+                        // TODO: Actually reload the file. Mutate
+                        // the Arc hashmap (which may be guarded by a RWlock)
+                        println!("reloading {}", path.display());
+                        last_mtime = Some(current_mtime);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to stat file {}: {}", path.display(), e);
+                }
+            }
+
+            thread::sleep(Duration::from_secs(POLLING_DELAY));
+        }
+    }
+
+    /// Stops the watcher thread, waiting for it to join.
+    /// May take up to POLLING_DELAY seconds
+    pub fn stop(&mut self) {
+        self.stop_signal.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for ValuesWatcher {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+// TODO: add file watcher tests
 
 #[cfg(test)]
 mod tests {
