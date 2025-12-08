@@ -434,7 +434,7 @@ impl ValuesWatcher {
 
     /// Update the values map with the new values
     fn update_values(values: &Arc<RwLock<ValuesByNamespace>>, new_values: ValuesByNamespace) {
-        // safe to unwrap, if the lock is poisoned we should panic anyways
+        // safe to unwrap, we only have one thread and if it panics we die anyways
         let mut guard = values.write().unwrap();
         *guard = new_values;
     }
