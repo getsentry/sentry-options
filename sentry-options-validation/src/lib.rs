@@ -366,11 +366,11 @@ impl ValuesWatcher {
 
         while !stop_signal.load(Ordering::Relaxed) {
             // does not reload values if get_mtime fails
-            if let Some(current_mtime) = Self::get_mtime(&values_path) {
-                if Some(current_mtime) != last_mtime {
-                    Self::reload_values(&values_path, &registry, &values);
-                    last_mtime = Some(current_mtime);
-                }
+            if let Some(current_mtime) = Self::get_mtime(&values_path)
+                && Some(current_mtime) != last_mtime
+            {
+                Self::reload_values(&values_path, &registry, &values);
+                last_mtime = Some(current_mtime);
             }
 
             thread::sleep(Duration::from_secs(POLLING_DELAY));
@@ -401,12 +401,11 @@ impl ValuesWatcher {
             }
 
             let values_file = entry.path().join(VALUES_FILE_NAME);
-            if let Ok(metadata) = fs::metadata(&values_file) {
-                if let Ok(mtime) = metadata.modified() {
-                    if latest_mtime.map_or(true, |latest| mtime > latest) {
-                        latest_mtime = Some(mtime);
-                    }
-                }
+            if let Ok(metadata) = fs::metadata(&values_file)
+                && let Ok(mtime) = metadata.modified()
+                && latest_mtime.is_none_or(|latest| mtime > latest)
+            {
+                latest_mtime = Some(mtime);
             }
         }
 
@@ -445,10 +444,10 @@ impl ValuesWatcher {
     /// May take up to POLLING_DELAY seconds
     pub fn stop(&mut self) {
         self.stop_signal.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.thread.take() {
-            if let Err(e) = thread.join() {
-                eprintln!("Thread panicked with {:?}", e);
-            }
+        if let Some(thread) = self.thread.take()
+            && let Err(e) = thread.join()
+        {
+            eprintln!("Thread panicked with {:?}", e);
         }
     }
 }
