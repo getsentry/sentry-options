@@ -437,7 +437,6 @@ impl ValuesWatcher {
         // safe to unwrap, if the lock is poisoned we should panic anyways
         let mut guard = values.write().unwrap();
         *guard = new_values;
-        println!("Successfully reloaded values");
     }
 
     /// Stops the watcher thread, waiting for it to join.
