@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use sentry_options_validation::{SchemaRegistry, ValidationError};
 use serde_json::Value;
@@ -29,7 +29,7 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 pub struct Options {
     registry: Arc<SchemaRegistry>,
     // This will use ARC in the future once we introduce background reloading
-    values: HashMap<String, HashMap<String, Value>>,
+    values: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
 }
 
 impl Options {
@@ -50,7 +50,8 @@ impl Options {
         let values_dir = base_dir.join("values");
 
         let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir)?);
-        let values = registry.load_values_json(&values_dir)?;
+        let loaded_values = registry.load_values_json(&values_dir)?;
+        let values = Arc::new(RwLock::new(loaded_values));
 
         Ok(Self { registry, values })
     }
@@ -62,7 +63,11 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        if let Some(ns_values) = self.values.get(namespace)
+        let values_guard = self
+            .values
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(ns_values) = values_guard.get(namespace)
             && let Some(value) = ns_values.get(key)
         {
             return Ok(value.clone());

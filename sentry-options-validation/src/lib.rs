@@ -9,6 +9,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -26,6 +27,9 @@ const POLLING_DELAY: u64 = 5;
 
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
+
+/// A map of option values keyed by their namespace
+pub type ValuesByNamespace = HashMap<String, HashMap<String, Value>>;
 
 /// Errors that can occur during schema and value validation
 #[derive(Debug, thiserror::Error)]
@@ -278,10 +282,7 @@ impl SchemaRegistry {
     /// Load and validate JSON values from a directory.
     /// Expects structure: `{values_dir}/{namespace}/values.json`
     /// Skips namespaces without a values.json file.
-    pub fn load_values_json(
-        &self,
-        values_dir: &Path,
-    ) -> ValidationResult<HashMap<String, HashMap<String, Value>>> {
+    pub fn load_values_json(&self, values_dir: &Path) -> ValidationResult<ValuesByNamespace> {
         let mut all_values = HashMap::new();
 
         for namespace in self.schemas.keys() {
@@ -310,8 +311,12 @@ impl Default for SchemaRegistry {
     }
 }
 
-/// Watches the values file for changes, reloading if there are any
-/// Uses polling for now, could use `inotify` or similar later on
+/// Watches the values directory for changes, reloading if there are any.
+///
+/// Does not do an initial fetch, assumes the caller has already loaded values.
+/// Child thread may panic if we run out of memory or cannot create more threads.
+///
+/// Uses polling for now, could use `inotify` or similar later on.
 pub struct ValuesWatcher {
     stop_signal: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -320,19 +325,26 @@ pub struct ValuesWatcher {
 impl ValuesWatcher {
     /// Creates a new ValuesWatcher struct and spins up the watcher thread
     ///
-    /// Returns a FileRead error if we fail to get metadata for the file
-    /// Thread spawning could panic but that would be really bad
-    pub fn new(path: &Path) -> ValidationResult<Self> {
-        // validate permissions and existence of file
-        fs::metadata(path)?;
+    /// Returns a FileRead error if we fail to get metadata for the directory
+    pub fn new(
+        values_path: &Path,
+        registry: Arc<SchemaRegistry>,
+        values: Arc<RwLock<ValuesByNamespace>>,
+    ) -> ValidationResult<Self> {
+        // validate permissions and existence of directory
+        fs::metadata(values_path)?;
 
         let stop_signal = Arc::new(AtomicBool::new(false));
 
         let thread_signal = Arc::clone(&stop_signal);
-        let thread_path = path.to_path_buf();
-        let thread = thread::spawn(move || {
-            Self::run(thread_signal, thread_path);
-        });
+        let thread_path = values_path.to_path_buf();
+        let thread_registry = Arc::clone(&registry);
+        let thread_values = Arc::clone(&values);
+        let thread = thread::Builder::new()
+            .name("sentry-options-watcher".into())
+            .spawn(move || {
+                Self::run(thread_signal, thread_path, thread_registry, thread_values);
+            })?;
 
         Ok(Self {
             stop_signal,
@@ -340,25 +352,24 @@ impl ValuesWatcher {
         })
     }
 
-    /// Reloads the file if the modified time has changed.
+    /// Reloads the values if the modified time has changed.
     ///
-    /// Returns an error if we cannot `stat` the file at any point
-    /// but will continue looping.
-    fn run(stop_signal: Arc<AtomicBool>, path: PathBuf) {
-        let mut last_mtime = None;
+    /// Continuously polls the values directory and reloads all values
+    /// if any modification is detected.
+    fn run(
+        stop_signal: Arc<AtomicBool>,
+        values_path: PathBuf,
+        registry: Arc<SchemaRegistry>,
+        values: Arc<RwLock<ValuesByNamespace>>,
+    ) {
+        let mut last_mtime = Self::get_mtime(&values_path);
 
         while !stop_signal.load(Ordering::Relaxed) {
-            match fs::metadata(&path).and_then(|m| m.modified()) {
-                Ok(current_mtime) => {
-                    if Some(current_mtime) != last_mtime {
-                        // TODO: Actually reload the file. Mutate
-                        // the Arc hashmap (which may be guarded by a RWlock)
-                        println!("reloading {}", path.display());
-                        last_mtime = Some(current_mtime);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to stat file {}: {}", path.display(), e);
+            // does not reload values if get_mtime fails
+            if let Some(current_mtime) = Self::get_mtime(&values_path) {
+                if Some(current_mtime) != last_mtime {
+                    Self::reload_values(&values_path, &registry, &values);
+                    last_mtime = Some(current_mtime);
                 }
             }
 
@@ -366,12 +377,78 @@ impl ValuesWatcher {
         }
     }
 
+    /// Get the most recent modification time across all namespace values.json files
+    /// Returns None if no valid values files are found
+    fn get_mtime(values_dir: &Path) -> Option<std::time::SystemTime> {
+        let mut latest_mtime = None;
+
+        let entries = match fs::read_dir(values_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                return None;
+            }
+        };
+
+        for entry in entries.flatten() {
+            // skip if not a dir
+            if !entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let values_file = entry.path().join(VALUES_FILE_NAME);
+            if let Ok(metadata) = fs::metadata(&values_file) {
+                if let Ok(mtime) = metadata.modified() {
+                    if latest_mtime.map_or(true, |latest| mtime > latest) {
+                        latest_mtime = Some(mtime);
+                    }
+                }
+            }
+        }
+
+        latest_mtime
+    }
+
+    /// Reload values from disk, validate them, and update the shared map
+    fn reload_values(
+        values_path: &Path,
+        registry: &SchemaRegistry,
+        values: &Arc<RwLock<ValuesByNamespace>>,
+    ) {
+        match registry.load_values_json(values_path) {
+            Ok(new_values) => {
+                Self::update_values(values, new_values);
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to reload values from {}: {}",
+                    values_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Update the values map with the new values
+    fn update_values(values: &Arc<RwLock<ValuesByNamespace>>, new_values: ValuesByNamespace) {
+        // safe to unwrap, if the lock is poisoned we should panic anyways
+        let mut guard = values.write().unwrap();
+        *guard = new_values;
+        println!("Successfully reloaded values");
+    }
+
     /// Stops the watcher thread, waiting for it to join.
     /// May take up to POLLING_DELAY seconds
     pub fn stop(&mut self) {
         self.stop_signal.store(true, Ordering::Relaxed);
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            if let Err(e) = thread.join() {
+                eprintln!("Thread panicked with {:?}", e);
+            }
         }
     }
 }
