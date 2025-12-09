@@ -361,7 +361,7 @@ impl ValuesWatcher {
         let thread_path = values_path.to_path_buf();
         let thread_registry = Arc::clone(&registry);
         let thread_values = Arc::clone(&values);
-        let thread = thread::Builder::new()
+        let thread = match thread::Builder::new()
             .name("sentry-options-watcher".into())
             .spawn(move || {
                 let result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -371,7 +371,13 @@ impl ValuesWatcher {
                 if let Err(e) = result {
                     eprintln!("Watcher thread panicked with: {:?}", e);
                 }
-            })?;
+            }) {
+            Ok(thread) => thread,
+            Err(e) => {
+                WATCHER_ALIVE.store(false, Ordering::Relaxed);
+                return Err(e.into());
+            }
+        };
 
         Ok(Self {
             stop_signal,
@@ -486,8 +492,6 @@ impl Drop for ValuesWatcher {
         self.stop();
     }
 }
-
-// TODO: add file watcher tests
 
 #[cfg(test)]
 mod tests {
@@ -980,5 +984,170 @@ Error: \"version\" is a required property"
         let result = registry.load_values_json(&values_dir);
 
         assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+    }
+
+    mod watcher_tests {
+        use super::*;
+        use std::thread;
+
+        /// Creates schema and values files for two namespaces: ns1, and ns2
+        fn setup_watcher_test() -> (TempDir, PathBuf, PathBuf) {
+            let temp_dir = TempDir::new().unwrap();
+            let schemas_dir = temp_dir.path().join("schemas");
+            let values_dir = temp_dir.path().join("values");
+
+            let ns1_schema = schemas_dir.join("ns1");
+            fs::create_dir_all(&ns1_schema).unwrap();
+            fs::write(
+                ns1_schema.join("schema.json"),
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                    }
+                }"#,
+            )
+            .unwrap();
+
+            let ns1_values = values_dir.join("ns1");
+            fs::create_dir_all(&ns1_values).unwrap();
+            fs::write(ns1_values.join("values.json"), r#"{"enabled": true}"#).unwrap();
+
+            let ns2_schema = schemas_dir.join("ns2");
+            fs::create_dir_all(&ns2_schema).unwrap();
+            fs::write(
+                ns2_schema.join("schema.json"),
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "count": {"type": "integer", "default": 0, "description": "Count"}
+                    }
+                }"#,
+            )
+            .unwrap();
+
+            let ns2_values = values_dir.join("ns2");
+            fs::create_dir_all(&ns2_values).unwrap();
+            fs::write(ns2_values.join("values.json"), r#"{"count": 42}"#).unwrap();
+
+            (temp_dir, schemas_dir, values_dir)
+        }
+
+        #[test]
+        fn test_get_mtime_returns_most_recent() {
+            let (_temp, _schemas, values_dir) = setup_watcher_test();
+
+            // Get initial mtime
+            let mtime1 = ValuesWatcher::get_mtime(&values_dir);
+            assert!(mtime1.is_some());
+
+            // Modify one namespace
+            thread::sleep(std::time::Duration::from_millis(10));
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"enabled": false}"#,
+            )
+            .unwrap();
+
+            // Should detect the change
+            let mtime2 = ValuesWatcher::get_mtime(&values_dir);
+            assert!(mtime2.is_some());
+            assert!(mtime2 > mtime1);
+        }
+
+        #[test]
+        fn test_get_mtime_with_missing_directory() {
+            let temp = TempDir::new().unwrap();
+            let nonexistent = temp.path().join("nonexistent");
+
+            let mtime = ValuesWatcher::get_mtime(&nonexistent);
+            assert!(mtime.is_none());
+        }
+
+        #[test]
+        fn test_reload_values_updates_map() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            // ensure initial values are correct
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], json!(true));
+                assert_eq!(guard["ns2"]["count"], json!(42));
+            }
+
+            // modify
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"enabled": false}"#,
+            )
+            .unwrap();
+            fs::write(
+                values_dir.join("ns2").join("values.json"),
+                r#"{"count": 100}"#,
+            )
+            .unwrap();
+
+            // force a reload
+            ValuesWatcher::reload_values(&values_dir, &registry, &values);
+
+            // ensure new values are correct
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], json!(false));
+                assert_eq!(guard["ns2"]["count"], json!(100));
+            }
+        }
+
+        #[test]
+        fn test_old_values_persist_with_invalid_data() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let initial_enabled = {
+                let guard = values.read().unwrap();
+                guard["ns1"]["enabled"].clone()
+            };
+
+            // won't pass validation
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"enabled": "not-a-boolean"}"#,
+            )
+            .unwrap();
+
+            ValuesWatcher::reload_values(&values_dir, &registry, &values);
+
+            // ensure old value persists
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], initial_enabled);
+            }
+        }
+
+        #[test]
+        fn test_watcher_creation_and_termination() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let mut watcher =
+                ValuesWatcher::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
+                    .expect("Failed to create watcher");
+
+            assert!(ValuesWatcher::is_alive());
+            watcher.stop();
+            assert!(!ValuesWatcher::is_alive());
+        }
     }
 }
