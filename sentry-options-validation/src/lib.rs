@@ -317,6 +317,13 @@ impl Default for SchemaRegistry {
 /// Child thread may panic if we run out of memory or cannot create more threads.
 ///
 /// Uses polling for now, could use `inotify` or similar later on.
+///
+/// Some important notes:
+/// - If the thread panics and dies, there is no built in mechanism to catch it and restart
+/// - If a config map is unmounted, we won't reload until the next file modification (because we don't catch the deletion event)
+/// - If any namespace fails validation, we keep all old values (even the namespaces that passed validation)
+/// - If we have a steady stream of readers our writer may starve for a while trying to acquire the lock
+/// - stop() will block until the thread gets joined
 pub struct ValuesWatcher {
     stop_signal: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
