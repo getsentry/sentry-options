@@ -8,6 +8,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::sync::{
@@ -24,6 +25,9 @@ const VALUES_FILE_NAME: &str = "values.json";
 
 /// Time between file polls in seconds
 const POLLING_DELAY: u64 = 5;
+
+/// Static flag to track if a watcher is already running
+static WATCHER_ALIVE: AtomicBool = AtomicBool::new(false);
 
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
@@ -338,8 +342,18 @@ impl ValuesWatcher {
         registry: Arc<SchemaRegistry>,
         values: Arc<RwLock<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
+        // check if another thread exists
+        if WATCHER_ALIVE.swap(true, Ordering::Relaxed) {
+            return Err(ValidationError::InternalError(
+                "ValuesWatcher already exists".to_string(),
+            ));
+        }
+
         // validate permissions and existence of directory
-        fs::metadata(values_path)?;
+        if let Err(e) = fs::metadata(values_path) {
+            WATCHER_ALIVE.store(false, Ordering::Relaxed);
+            return Err(e.into());
+        }
 
         let stop_signal = Arc::new(AtomicBool::new(false));
 
@@ -350,7 +364,13 @@ impl ValuesWatcher {
         let thread = thread::Builder::new()
             .name("sentry-options-watcher".into())
             .spawn(move || {
-                Self::run(thread_signal, thread_path, thread_registry, thread_values);
+                let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    Self::run(thread_signal, thread_path, thread_registry, thread_values);
+                }));
+                WATCHER_ALIVE.store(false, Ordering::Relaxed);
+                if let Err(e) = result {
+                    eprintln!("Watcher thread panicked with: {:?}", e);
+                }
             })?;
 
         Ok(Self {
@@ -450,11 +470,14 @@ impl ValuesWatcher {
     /// May take up to POLLING_DELAY seconds
     pub fn stop(&mut self) {
         self.stop_signal.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.thread.take()
-            && let Err(e) = thread.join()
-        {
-            eprintln!("Thread panicked with {:?}", e);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
+    }
+
+    /// Returns whether a watcher thread is currently running
+    pub fn is_alive() -> bool {
+        WATCHER_ALIVE.load(Ordering::Relaxed)
     }
 }
 
