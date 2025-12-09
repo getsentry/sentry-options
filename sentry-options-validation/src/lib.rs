@@ -26,9 +26,6 @@ const VALUES_FILE_NAME: &str = "values.json";
 /// Time between file polls in seconds
 const POLLING_DELAY: u64 = 5;
 
-/// Static flag to track if a watcher is already running
-static WATCHER_ALIVE: AtomicBool = AtomicBool::new(false);
-
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
 
@@ -342,18 +339,8 @@ impl ValuesWatcher {
         registry: Arc<SchemaRegistry>,
         values: Arc<RwLock<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
-        // check if another thread exists
-        if WATCHER_ALIVE.swap(true, Ordering::Relaxed) {
-            return Err(ValidationError::InternalError(
-                "ValuesWatcher already exists".to_string(),
-            ));
-        }
-
         // validate permissions and existence of directory
-        if let Err(e) = fs::metadata(values_path) {
-            WATCHER_ALIVE.store(false, Ordering::Relaxed);
-            return Err(e.into());
-        }
+        fs::metadata(values_path)?;
 
         let stop_signal = Arc::new(AtomicBool::new(false));
 
@@ -361,23 +348,16 @@ impl ValuesWatcher {
         let thread_path = values_path.to_path_buf();
         let thread_registry = Arc::clone(&registry);
         let thread_values = Arc::clone(&values);
-        let thread = match thread::Builder::new()
+        let thread = thread::Builder::new()
             .name("sentry-options-watcher".into())
             .spawn(move || {
                 let result = panic::catch_unwind(AssertUnwindSafe(|| {
                     Self::run(thread_signal, thread_path, thread_registry, thread_values);
                 }));
-                WATCHER_ALIVE.store(false, Ordering::Relaxed);
                 if let Err(e) = result {
                     eprintln!("Watcher thread panicked with: {:?}", e);
                 }
-            }) {
-            Ok(thread) => thread,
-            Err(e) => {
-                WATCHER_ALIVE.store(false, Ordering::Relaxed);
-                return Err(e.into());
-            }
-        };
+            })?;
 
         Ok(Self {
             stop_signal,
@@ -481,9 +461,9 @@ impl ValuesWatcher {
         }
     }
 
-    /// Returns whether a watcher thread is currently running
-    pub fn is_alive() -> bool {
-        WATCHER_ALIVE.load(Ordering::Relaxed)
+    /// Returns whether the watcher thread is still running
+    pub fn is_alive(&self) -> bool {
+        self.thread.as_ref().map_or(false, |t| !t.is_finished())
     }
 }
 
@@ -1145,9 +1125,9 @@ Error: \"version\" is a required property"
                 ValuesWatcher::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
                     .expect("Failed to create watcher");
 
-            assert!(ValuesWatcher::is_alive());
+            assert!(watcher.is_alive());
             watcher.stop();
-            assert!(!ValuesWatcher::is_alive());
+            assert!(!watcher.is_alive());
         }
     }
 }
