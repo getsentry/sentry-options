@@ -463,7 +463,7 @@ impl ValuesWatcher {
 
     /// Returns whether the watcher thread is still running
     pub fn is_alive(&self) -> bool {
-        self.thread.as_ref().map_or(false, |t| !t.is_finished())
+        self.thread.as_ref().is_some_and(|t| !t.is_finished())
     }
 }
 
