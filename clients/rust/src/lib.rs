@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use sentry_options_validation::{SchemaRegistry, ValidationError};
 use serde_json::Value;
@@ -10,6 +10,8 @@ use thiserror::Error;
 
 const DEFAULT_OPTIONS_DIR: &str = "/etc/sentry-options";
 const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
+
+static GLOBAL_OPTIONS: OnceLock<Options> = OnceLock::new();
 
 #[derive(Debug, Error)]
 pub enum OptionsError {
@@ -21,6 +23,9 @@ pub enum OptionsError {
 
     #[error("Schema error: {0}")]
     Schema(#[from] ValidationError),
+
+    #[error("Options already initialized")]
+    AlreadyInitialized,
 }
 
 pub type Result<T> = std::result::Result<T, OptionsError>;
@@ -76,6 +81,41 @@ impl Options {
             })?;
 
         Ok(default.clone())
+    }
+}
+
+/// Initialize global options from default path or `SENTRY_OPTIONS_DIR` env var.
+pub fn init() -> Result<()> {
+    let opts = Options::new()?;
+    GLOBAL_OPTIONS
+        .set(opts)
+        .map_err(|_| OptionsError::AlreadyInitialized)?;
+    Ok(())
+}
+
+/// Get a namespace handle for accessing options.
+///
+/// Panics if `init()` has not been called.
+pub fn options(namespace: &str) -> NamespaceOptions<'static> {
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .expect("options not initialized - call init() first");
+    NamespaceOptions {
+        namespace: namespace.to_string(),
+        options: opts,
+    }
+}
+
+/// Handle for accessing options within a specific namespace.
+pub struct NamespaceOptions<'a> {
+    namespace: String,
+    options: &'a Options,
+}
+
+impl NamespaceOptions<'_> {
+    /// Get an option value, returning the schema default if not set.
+    pub fn get(&self, key: &str) -> Result<Value> {
+        self.options.get(&self.namespace, key)
     }
 }
 
