@@ -313,6 +313,7 @@ impl Default for SchemaRegistry {
 }
 
 /// Watches the values directory for changes, reloading if there are any.
+/// If the directory does not exist we do not panic
 ///
 /// Does not do an initial fetch, assumes the caller has already loaded values.
 /// Child thread may panic if we run out of memory or cannot create more threads.
@@ -332,15 +333,15 @@ pub struct ValuesWatcher {
 
 impl ValuesWatcher {
     /// Creates a new ValuesWatcher struct and spins up the watcher thread
-    ///
-    /// Returns a FileRead error if we fail to get metadata for the directory
     pub fn new(
         values_path: &Path,
         registry: Arc<SchemaRegistry>,
         values: Arc<RwLock<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
-        // validate permissions and existence of directory
-        fs::metadata(values_path)?;
+        // output an error but keep passing
+        if fs::metadata(values_path).is_err() {
+            eprintln!("Values directory does not exist: {}", values_path.display());
+        }
 
         let stop_signal = Arc::new(AtomicBool::new(false));
 

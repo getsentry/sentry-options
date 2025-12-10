@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use sentry_options_validation::{SchemaRegistry, ValidationError};
+use sentry_options_validation::{SchemaRegistry, ValidationError, ValuesWatcher};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -28,7 +28,6 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 /// Options store for reading configuration values.
 pub struct Options {
     registry: Arc<SchemaRegistry>,
-    // This will use ARC in the future once we introduce background reloading
     values: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
 }
 
@@ -52,6 +51,11 @@ impl Options {
         let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir)?);
         let loaded_values = registry.load_values_json(&values_dir)?;
         let values = Arc::new(RwLock::new(loaded_values));
+
+        let watcher_registry = Arc::clone(&registry);
+        let watcher_values = Arc::clone(&values);
+        // will automatically stop thread when dropped out of scope
+        ValuesWatcher::new(values_dir.as_path(), watcher_registry, watcher_values)?;
 
         Ok(Self { registry, values })
     }
