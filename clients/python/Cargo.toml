@@ -5,7 +5,7 @@ edition.workspace = true
 repository.workspace = true
 
 [lib]
-name = "sentry_options_rust"
+name = "sentry_options_new"
 crate-type = ["cdylib"]
 
 [dependencies]

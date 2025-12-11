@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use ::sentry_options::{Options as RustOptions, OptionsError};
+use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
@@ -14,32 +14,32 @@ static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 // Custom exception hierarchy
 pyo3::create_exception!(
     sentry_options_new,
-    OptionsError_,
+    OptionsError,
     PyException,
     "Base exception for sentry-options errors."
 );
 pyo3::create_exception!(
     sentry_options_new,
     SchemaError,
-    OptionsError_,
+    OptionsError,
     "Raised when schema loading or validation fails."
 );
 pyo3::create_exception!(
     sentry_options_new,
     UnknownNamespaceError,
-    OptionsError_,
+    OptionsError,
     "Raised when accessing an unknown namespace."
 );
 pyo3::create_exception!(
     sentry_options_new,
     UnknownOptionError,
-    OptionsError_,
+    OptionsError,
     "Raised when accessing an unknown option."
 );
 pyo3::create_exception!(
     sentry_options_new,
     InitializationError,
-    OptionsError_,
+    OptionsError,
     "Raised when options are already initialized."
 );
 
@@ -63,17 +63,17 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
-fn options_err(err: OptionsError) -> PyErr {
+fn options_err(err: RustOptionsError) -> PyErr {
     match err {
-        OptionsError::UnknownNamespace(ns) => {
+        RustOptionsError::UnknownNamespace(ns) => {
             UnknownNamespaceError::new_err(format!("Unknown namespace: {}", ns))
         }
-        OptionsError::UnknownOption { namespace, key } => UnknownOptionError::new_err(format!(
+        RustOptionsError::UnknownOption { namespace, key } => UnknownOptionError::new_err(format!(
             "Unknown option '{}' in namespace '{}'",
             key, namespace
         )),
-        OptionsError::Schema(e) => SchemaError::new_err(e.to_string()),
-        OptionsError::AlreadyInitialized => {
+        RustOptionsError::Schema(e) => SchemaError::new_err(e.to_string()),
+        RustOptionsError::AlreadyInitialized => {
             InitializationError::new_err("Options already initialized")
         }
     }
@@ -135,7 +135,7 @@ fn sentry_options_new(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<NamespaceOptions>()?;
     // Exceptions
-    m.add("OptionsError", m.py().get_type::<OptionsError_>())?;
+    m.add("OptionsError", m.py().get_type::<OptionsError>())?;
     m.add("SchemaError", m.py().get_type::<SchemaError>())?;
     m.add(
         "UnknownNamespaceError",
