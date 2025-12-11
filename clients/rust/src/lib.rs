@@ -96,7 +96,7 @@ pub fn init() -> Result<()> {
 /// Get a namespace handle for accessing options.
 ///
 /// Panics if `init()` has not been called.
-pub fn options(namespace: &str) -> NamespaceOptions<'static> {
+pub fn options(namespace: &str) -> NamespaceOptions {
     let opts = GLOBAL_OPTIONS
         .get()
         .expect("options not initialized - call init() first");
@@ -107,12 +107,12 @@ pub fn options(namespace: &str) -> NamespaceOptions<'static> {
 }
 
 /// Handle for accessing options within a specific namespace.
-pub struct NamespaceOptions<'a> {
+pub struct NamespaceOptions {
     namespace: String,
-    options: &'a Options,
+    options: &'static Options,
 }
 
-impl NamespaceOptions<'_> {
+impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
         self.options.get(&self.namespace, key)
