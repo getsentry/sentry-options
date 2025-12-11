@@ -4,21 +4,33 @@
 //! Schemas are loaded once and stored in Arc for efficient sharing.
 //! Values are validated against schemas as complete objects.
 
+use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use serde_json::Value;
+use std::sync::RwLock;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
 
+/// Time between file polls in seconds
+const POLLING_DELAY: u64 = 5;
+
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
+
+/// A map of option values keyed by their namespace
+pub type ValuesByNamespace = HashMap<String, HashMap<String, Value>>;
 
 /// Errors that can occur during schema and value validation
 #[derive(Debug, thiserror::Error)]
@@ -271,10 +283,7 @@ impl SchemaRegistry {
     /// Load and validate JSON values from a directory.
     /// Expects structure: `{values_dir}/{namespace}/values.json`
     /// Skips namespaces without a values.json file.
-    pub fn load_values_json(
-        &self,
-        values_dir: &Path,
-    ) -> ValidationResult<HashMap<String, HashMap<String, Value>>> {
+    pub fn load_values_json(&self, values_dir: &Path) -> ValidationResult<ValuesByNamespace> {
         let mut all_values = HashMap::new();
 
         for namespace in self.schemas.keys() {
@@ -300,6 +309,169 @@ impl SchemaRegistry {
 impl Default for SchemaRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Watches the values directory for changes, reloading if there are any.
+/// If the directory does not exist we do not panic
+///
+/// Does not do an initial fetch, assumes the caller has already loaded values.
+/// Child thread may panic if we run out of memory or cannot create more threads.
+///
+/// Uses polling for now, could use `inotify` or similar later on.
+///
+/// Some important notes:
+/// - If the thread panics and dies, there is no built in mechanism to catch it and restart
+/// - If a config map is unmounted, we won't reload until the next file modification (because we don't catch the deletion event)
+/// - If any namespace fails validation, we keep all old values (even the namespaces that passed validation)
+/// - If we have a steady stream of readers our writer may starve for a while trying to acquire the lock
+/// - stop() will block until the thread gets joined
+pub struct ValuesWatcher {
+    stop_signal: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl ValuesWatcher {
+    /// Creates a new ValuesWatcher struct and spins up the watcher thread
+    pub fn new(
+        values_path: &Path,
+        registry: Arc<SchemaRegistry>,
+        values: Arc<RwLock<ValuesByNamespace>>,
+    ) -> ValidationResult<Self> {
+        // output an error but keep passing
+        if fs::metadata(values_path).is_err() {
+            eprintln!("Values directory does not exist: {}", values_path.display());
+        }
+
+        let stop_signal = Arc::new(AtomicBool::new(false));
+
+        let thread_signal = Arc::clone(&stop_signal);
+        let thread_path = values_path.to_path_buf();
+        let thread_registry = Arc::clone(&registry);
+        let thread_values = Arc::clone(&values);
+        let thread = thread::Builder::new()
+            .name("sentry-options-watcher".into())
+            .spawn(move || {
+                let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    Self::run(thread_signal, thread_path, thread_registry, thread_values);
+                }));
+                if let Err(e) = result {
+                    eprintln!("Watcher thread panicked with: {:?}", e);
+                }
+            })?;
+
+        Ok(Self {
+            stop_signal,
+            thread: Some(thread),
+        })
+    }
+
+    /// Reloads the values if the modified time has changed.
+    ///
+    /// Continuously polls the values directory and reloads all values
+    /// if any modification is detected.
+    fn run(
+        stop_signal: Arc<AtomicBool>,
+        values_path: PathBuf,
+        registry: Arc<SchemaRegistry>,
+        values: Arc<RwLock<ValuesByNamespace>>,
+    ) {
+        let mut last_mtime = Self::get_mtime(&values_path);
+
+        while !stop_signal.load(Ordering::Relaxed) {
+            // does not reload values if get_mtime fails
+            if let Some(current_mtime) = Self::get_mtime(&values_path)
+                && Some(current_mtime) != last_mtime
+            {
+                Self::reload_values(&values_path, &registry, &values);
+                last_mtime = Some(current_mtime);
+            }
+
+            thread::sleep(Duration::from_secs(POLLING_DELAY));
+        }
+    }
+
+    /// Get the most recent modification time across all namespace values.json files
+    /// Returns None if no valid values files are found
+    fn get_mtime(values_dir: &Path) -> Option<std::time::SystemTime> {
+        let mut latest_mtime = None;
+
+        let entries = match fs::read_dir(values_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                return None;
+            }
+        };
+
+        for entry in entries.flatten() {
+            // skip if not a dir
+            if !entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let values_file = entry.path().join(VALUES_FILE_NAME);
+            if let Ok(metadata) = fs::metadata(&values_file)
+                && let Ok(mtime) = metadata.modified()
+                && latest_mtime.is_none_or(|latest| mtime > latest)
+            {
+                latest_mtime = Some(mtime);
+            }
+        }
+
+        latest_mtime
+    }
+
+    /// Reload values from disk, validate them, and update the shared map
+    fn reload_values(
+        values_path: &Path,
+        registry: &SchemaRegistry,
+        values: &Arc<RwLock<ValuesByNamespace>>,
+    ) {
+        match registry.load_values_json(values_path) {
+            Ok(new_values) => {
+                Self::update_values(values, new_values);
+                // TODO: add some logging here so we know when options refresh
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to reload values from {}: {}",
+                    values_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Update the values map with the new values
+    fn update_values(values: &Arc<RwLock<ValuesByNamespace>>, new_values: ValuesByNamespace) {
+        // safe to unwrap, we only have one thread and if it panics we die anyways
+        let mut guard = values.write().unwrap();
+        *guard = new_values;
+    }
+
+    /// Stops the watcher thread, waiting for it to join.
+    /// May take up to POLLING_DELAY seconds
+    pub fn stop(&mut self) {
+        self.stop_signal.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+
+    /// Returns whether the watcher thread is still running
+    pub fn is_alive(&self) -> bool {
+        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+    }
+}
+
+impl Drop for ValuesWatcher {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -794,5 +966,170 @@ Error: \"version\" is a required property"
         let result = registry.load_values_json(&values_dir);
 
         assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+    }
+
+    mod watcher_tests {
+        use super::*;
+        use std::thread;
+
+        /// Creates schema and values files for two namespaces: ns1, and ns2
+        fn setup_watcher_test() -> (TempDir, PathBuf, PathBuf) {
+            let temp_dir = TempDir::new().unwrap();
+            let schemas_dir = temp_dir.path().join("schemas");
+            let values_dir = temp_dir.path().join("values");
+
+            let ns1_schema = schemas_dir.join("ns1");
+            fs::create_dir_all(&ns1_schema).unwrap();
+            fs::write(
+                ns1_schema.join("schema.json"),
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                    }
+                }"#,
+            )
+            .unwrap();
+
+            let ns1_values = values_dir.join("ns1");
+            fs::create_dir_all(&ns1_values).unwrap();
+            fs::write(ns1_values.join("values.json"), r#"{"enabled": true}"#).unwrap();
+
+            let ns2_schema = schemas_dir.join("ns2");
+            fs::create_dir_all(&ns2_schema).unwrap();
+            fs::write(
+                ns2_schema.join("schema.json"),
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "count": {"type": "integer", "default": 0, "description": "Count"}
+                    }
+                }"#,
+            )
+            .unwrap();
+
+            let ns2_values = values_dir.join("ns2");
+            fs::create_dir_all(&ns2_values).unwrap();
+            fs::write(ns2_values.join("values.json"), r#"{"count": 42}"#).unwrap();
+
+            (temp_dir, schemas_dir, values_dir)
+        }
+
+        #[test]
+        fn test_get_mtime_returns_most_recent() {
+            let (_temp, _schemas, values_dir) = setup_watcher_test();
+
+            // Get initial mtime
+            let mtime1 = ValuesWatcher::get_mtime(&values_dir);
+            assert!(mtime1.is_some());
+
+            // Modify one namespace
+            thread::sleep(std::time::Duration::from_millis(10));
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"enabled": false}"#,
+            )
+            .unwrap();
+
+            // Should detect the change
+            let mtime2 = ValuesWatcher::get_mtime(&values_dir);
+            assert!(mtime2.is_some());
+            assert!(mtime2 > mtime1);
+        }
+
+        #[test]
+        fn test_get_mtime_with_missing_directory() {
+            let temp = TempDir::new().unwrap();
+            let nonexistent = temp.path().join("nonexistent");
+
+            let mtime = ValuesWatcher::get_mtime(&nonexistent);
+            assert!(mtime.is_none());
+        }
+
+        #[test]
+        fn test_reload_values_updates_map() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            // ensure initial values are correct
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], json!(true));
+                assert_eq!(guard["ns2"]["count"], json!(42));
+            }
+
+            // modify
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"enabled": false}"#,
+            )
+            .unwrap();
+            fs::write(
+                values_dir.join("ns2").join("values.json"),
+                r#"{"count": 100}"#,
+            )
+            .unwrap();
+
+            // force a reload
+            ValuesWatcher::reload_values(&values_dir, &registry, &values);
+
+            // ensure new values are correct
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], json!(false));
+                assert_eq!(guard["ns2"]["count"], json!(100));
+            }
+        }
+
+        #[test]
+        fn test_old_values_persist_with_invalid_data() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let initial_enabled = {
+                let guard = values.read().unwrap();
+                guard["ns1"]["enabled"].clone()
+            };
+
+            // won't pass validation
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"enabled": "not-a-boolean"}"#,
+            )
+            .unwrap();
+
+            ValuesWatcher::reload_values(&values_dir, &registry, &values);
+
+            // ensure old value persists
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], initial_enabled);
+            }
+        }
+
+        #[test]
+        fn test_watcher_creation_and_termination() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let mut watcher =
+                ValuesWatcher::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
+                    .expect("Failed to create watcher");
+
+            assert!(watcher.is_alive());
+            watcher.stop();
+            assert!(!watcher.is_alive());
+        }
     }
 }
