@@ -435,6 +435,7 @@ impl ValuesWatcher {
         match registry.load_values_json(values_path) {
             Ok(new_values) => {
                 Self::update_values(values, new_values);
+                // TODO: add some logging here so we know when options refresh
             }
             Err(e) => {
                 eprintln!(
