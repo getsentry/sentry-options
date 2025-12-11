@@ -29,6 +29,7 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 pub struct Options {
     registry: Arc<SchemaRegistry>,
     values: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
+    _watcher: ValuesWatcher,
 }
 
 impl Options {
@@ -55,9 +56,13 @@ impl Options {
         let watcher_registry = Arc::clone(&registry);
         let watcher_values = Arc::clone(&values);
         // will automatically stop thread when dropped out of scope
-        ValuesWatcher::new(values_dir.as_path(), watcher_registry, watcher_values)?;
+        let watcher = ValuesWatcher::new(values_dir.as_path(), watcher_registry, watcher_values)?;
 
-        Ok(Self { registry, values })
+        Ok(Self {
+            registry,
+            values,
+            _watcher: watcher,
+        })
     }
 
     /// Get an option value, returning the schema default if not set.
