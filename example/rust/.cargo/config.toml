@@ -1,3 +1,0 @@
-[env]
-# Points to example/ directory which contains schemas/ and values/
-SENTRY_OPTIONS_DIR = ".."
