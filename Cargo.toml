@@ -4,6 +4,7 @@ members = [
     "sentry-options-validation",
     "sentry-options-cli",
     "clients/rust",
+    "example",
 ]
 
 [workspace.package]
