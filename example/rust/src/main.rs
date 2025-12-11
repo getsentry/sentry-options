@@ -8,7 +8,7 @@ use sentry_options::{init, options};
 /// Updating values in `../values` will be reflected in stdout
 /// ^C to exit
 fn main() -> anyhow::Result<()> {
-    let _ = init();
+    init()?;
     let sentry_options = options("testing");
 
     loop {
