@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use sentry_options_validation::{SchemaRegistry, ValidationError, ValuesWatcher};
 use serde_json::Value;
