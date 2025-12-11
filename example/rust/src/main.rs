@@ -5,10 +5,10 @@ use sentry_options::Options;
 /// An example usage of the Rust options client library
 /// Every 3 seconds, prints out the value of example-option, float-option, and bool-option
 ///
-/// Updating values in `./values` will be reflected in stdout
+/// Updating values in `../values` will be reflected in stdout
 /// ^C to exit
 fn main() -> anyhow::Result<()> {
-    let options = Options::from_directory("./".as_ref())?;
+    let options = Options::new()?;
 
     loop {
         sleep(Duration::from_secs(3));

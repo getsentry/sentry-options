@@ -5,6 +5,6 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-sentry-options = { path = "../clients/rust" }
+sentry-options = { path = "../../clients/rust" }
 serde_json.workspace = true
 anyhow.workspace = true
