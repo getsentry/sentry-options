@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["maturin", "pytest"]
 
 [project.urls]
 Homepage = "https://github.com/getsentry/sentry-options"
