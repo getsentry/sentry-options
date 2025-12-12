@@ -55,4 +55,4 @@ repos:
       entry: .venv/bin/mypy
       language: system
       types: [python]
-      exclude: ^example/|^clients/python/
+      exclude: ^examples/|^clients/python/
