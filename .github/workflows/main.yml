@@ -114,8 +114,37 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  python-client-test:
+    name: Python Client Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Install Rust Toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - uses: astral-sh/setup-uv@884ad927a57e558e7a70b92f2bccf9198a4be546 # v6
+        with:
+          version: '0.8.2'
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@3a832a9604b3e1a4202ae559248f26867b467cc7 # v2.1.1
+        with:
+          python-version: 3.12
+          cache-dependency-path: clients/python/uv.lock
+          install-cmd: uv sync --frozen --all-extras --directory clients/python
+
+      - uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          key: ${{ github.job }}
+
+      - name: Run tests
+        working-directory: clients/python
+        run: uv run pytest tests -xvs
+
   collector:
-    needs: [build, pre-commit, tox, rust-lint, rust-test]
+    needs: [build, pre-commit, tox, rust-lint, rust-test, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
