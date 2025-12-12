@@ -136,7 +136,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache-dependency-path: clients/python/uv.lock
-          install-cmd: uv sync --frozen --all-extras --directory clients/python
+          install-cmd: uv sync --frozen --extra dev --directory clients/python
+          working-directory: clients/python
 
       - uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
         with:
