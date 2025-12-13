@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "sentry_options"
+version = "0.1.0"
+description = "Python client for sentry-options using Rust validation"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+authors = [
+    { name = "Sentry", email = "oss@sentry.io" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+]
+
+[project.optional-dependencies]
+dev = ["maturin", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/getsentry/sentry-options"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "sentry_options_new"

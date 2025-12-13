@@ -4,6 +4,15 @@ members = [
     "sentry-options-validation",
     "sentry-options-cli",
     "clients/rust",
+    "clients/python",
+    "examples/rust",
+]
+
+# Python bindings must be built with maturin, not cargo build
+default-members = [
+    "sentry-options-validation",
+    "sentry-options-cli",
+    "clients/rust",
     "examples/rust",
 ]
 
