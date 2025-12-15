@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import assert_type
 from typing import Literal
 
-from sentry_options.api import _OptionGroup
-from sentry_options.api import option_group
-from sentry_options.schema.testing import _TD
+from sentry_options_old.api import _OptionGroup
+from sentry_options_old.api import option_group
+from sentry_options_old.schema.testing import _TD
 
 # option groups can be represented by their Literal name
 assert_type(option_group('sentry'), _OptionGroup[Literal['sentry']])

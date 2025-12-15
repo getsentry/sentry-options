@@ -4,11 +4,11 @@ import pathlib
 
 import pytest
 
-from sentry_options.write import _check_overlap
-from sentry_options.write import _FileData
-from sentry_options.write import _load
-from sentry_options.write import _validate
-from sentry_options.write import main
+from sentry_options_old.write import _check_overlap
+from sentry_options_old.write import _FileData
+from sentry_options_old.write import _load
+from sentry_options_old.write import _validate
+from sentry_options_old.write import main
 
 
 def test_validate_not_a_dict(tmp_path: pathlib.Path) -> None:

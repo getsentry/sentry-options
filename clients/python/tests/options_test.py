@@ -4,13 +4,13 @@ import json
 import os
 
 import pytest
-from sentry_options_new import init
-from sentry_options_new import InitializationError
-from sentry_options_new import options
-from sentry_options_new import OptionsError
-from sentry_options_new import SchemaError
-from sentry_options_new import UnknownNamespaceError
-from sentry_options_new import UnknownOptionError
+from sentry_options import init
+from sentry_options import InitializationError
+from sentry_options import options
+from sentry_options import OptionsError
+from sentry_options import SchemaError
+from sentry_options import UnknownNamespaceError
+from sentry_options import UnknownOptionError
 
 
 @pytest.fixture(scope='module', autouse=True)

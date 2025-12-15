@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import LiteralString
 from typing import TypedDict
 
-from sentry_options.schema._option import _Option
-from sentry_options.schema._option import option
+from sentry_options_old.schema._option import _Option
+from sentry_options_old.schema._option import option
 
 
 class _TD(TypedDict):

@@ -13,31 +13,31 @@ static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 
 // Custom exception hierarchy
 pyo3::create_exception!(
-    sentry_options_new,
+    sentry_options,
     OptionsError,
     PyException,
     "Base exception for sentry-options errors."
 );
 pyo3::create_exception!(
-    sentry_options_new,
+    sentry_options,
     SchemaError,
     OptionsError,
     "Raised when schema loading or validation fails."
 );
 pyo3::create_exception!(
-    sentry_options_new,
+    sentry_options,
     UnknownNamespaceError,
     OptionsError,
     "Raised when accessing an unknown namespace."
 );
 pyo3::create_exception!(
-    sentry_options_new,
+    sentry_options,
     UnknownOptionError,
     OptionsError,
     "Raised when accessing an unknown option."
 );
 pyo3::create_exception!(
-    sentry_options_new,
+    sentry_options,
     InitializationError,
     OptionsError,
     "Raised when options are already initialized."
@@ -128,7 +128,7 @@ impl NamespaceOptions {
 
 /// Python module definition.
 #[pymodule]
-fn sentry_options_new(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;

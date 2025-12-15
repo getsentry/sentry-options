@@ -338,7 +338,7 @@ wheels = [
 ]
 
 [[package]]
-name = "sentry-options"
+name = "sentry-options-old"
 version = "0.0.0"
 source = { editable = "." }
 
@@ -349,6 +349,8 @@ dev = [
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
+    { name = "sentry-devenv" },
+    { name = "types-pyyaml" },
 ]
 typing = [
     { name = "mypy" },
@@ -377,6 +379,8 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml", marker = "extra == 'write'", specifier = ">=6.0.1" },
+    { name = "sentry-devenv", marker = "extra == 'dev'", specifier = ">=1.25.0" },
+    { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12.20250915" },
 ]
 provides-extras = ["typing", "write", "dev"]
 

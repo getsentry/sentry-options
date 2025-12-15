@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sentry_options"
+name = "sentry_options_old"
 version = "0.0.0"
 description = "schemas and client libraries for `sentry-options`"
 readme = "README.md"
@@ -23,7 +23,7 @@ classifiers = [
 Homepage = "https://github.com/getsentry/sentry-options"
 
 [project.scripts]
-sentry-options-write = "sentry_options.write:main"
+sentry-options-write = "sentry_options_old.write:main"
 
 [project.optional-dependencies]
 typing = [
@@ -61,5 +61,5 @@ plugins = ["covdefaults"]
 parallel = true
 
 [tool.mypy]
-plugins = ["sentry_options.mypy_plugin"]
+plugins = ["sentry_options_old.mypy_plugin"]
 strict = true

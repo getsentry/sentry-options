@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import time
 
-from sentry_options_new import init
-from sentry_options_new import options
+from sentry_options import init
+from sentry_options import options
 
 init()
 testing = options('testing')
