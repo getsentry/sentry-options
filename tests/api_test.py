@@ -26,4 +26,4 @@ def test_reloading(tmp_path: pathlib.Path) -> None:
 
 def test_repr(tmp_path: pathlib.Path) -> None:
     g = empty_option_group(tmp_path)
-    assert repr(g) == "sentry_options.api.option_group('testing')"
+    assert repr(g) == "sentry_options_old.api.option_group('testing')"

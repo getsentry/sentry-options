@@ -3,7 +3,7 @@ from __future__ import annotations
 import pathlib
 from typing import Literal
 
-from sentry_options.api import _OptionGroup
+from sentry_options_old.api import _OptionGroup
 
 
 def empty_option_group(

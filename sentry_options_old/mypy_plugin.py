@@ -14,7 +14,7 @@ from mypy.types import Instance
 from mypy.types import LiteralType
 from mypy.types import Type
 
-from sentry_options.api import _groups
+from sentry_options_old.api import _groups
 
 
 def _1_string_arg(ctx: FunctionContext | MethodContext) -> str | None:
@@ -90,7 +90,7 @@ class OptionsMypyPlugin(Plugin):
             self,
             fullname: str,
     ) -> Callable[[FunctionContext], Type] | None:
-        if fullname == 'sentry_options.api.option_group':
+        if fullname == 'sentry_options_old.api.option_group':
             return _adjust_option_group
         else:
             return None
@@ -99,7 +99,7 @@ class OptionsMypyPlugin(Plugin):
             self,
             fullname: str,
     ) -> Callable[[MethodContext], Type] | None:
-        if fullname == 'sentry_options.api._OptionGroup.get':
+        if fullname == 'sentry_options_old.api._OptionGroup.get':
             return _adjust_option_value
         else:
             return None

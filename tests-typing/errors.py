@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sentry_options.api import option_group
+from sentry_options_old.api import option_group
 
 option_group(1)  # type: ignore[arg-type]
 

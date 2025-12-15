@@ -6,9 +6,9 @@ from typing import Any
 from typing import LiteralString
 from unittest import mock
 
-from sentry_options.api import _groups
-from sentry_options.api import _OptionGroup
-from sentry_options.validate_type import is_type_valid
+from sentry_options_old.api import _groups
+from sentry_options_old.api import _OptionGroup
+from sentry_options_old.validate_type import is_type_valid
 
 
 @contextlib.contextmanager

@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from sentry_options.testing import override_options
+from sentry_options_old.testing import override_options
 from testing.option_group import empty_option_group
 
 

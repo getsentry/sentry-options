@@ -5,8 +5,8 @@ import os.path
 from typing import Any
 from typing import LiteralString
 
-from sentry_options.schema.sentry import sentry
-from sentry_options.schema.testing import testing
+from sentry_options_old.schema.sentry import sentry
+from sentry_options_old.schema.testing import testing
 
 
 _groups = {

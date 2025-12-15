@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from sentry_options.validate_type import is_type_valid
+from sentry_options_old.validate_type import is_type_valid
 
 
 @pytest.mark.parametrize(

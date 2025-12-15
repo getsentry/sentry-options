@@ -26,4 +26,4 @@ Homepage = "https://github.com/getsentry/sentry-options"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "sentry_options_new"
+module-name = "sentry_options"
