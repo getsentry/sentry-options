@@ -67,7 +67,7 @@ jobs:
 
   build-python:
     name: Build Python (${{ matrix.target }})
-    # if: startsWith(github.ref, 'refs/heads/release/')
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -97,7 +97,7 @@ jobs:
 
   build-python-sdist:
     name: Build Python sdist
-    # if: startsWith(github.ref, 'refs/heads/release/')
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -182,7 +182,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build-python, pre-commit, tox, rust-lint, rust-test, python-client-test]
+    needs: [build-python, build-python-sdist, pre-commit, tox, rust-lint, rust-test, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
