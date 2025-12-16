@@ -73,14 +73,16 @@ jobs:
       with:
         version: '0.8.2'
         enable-cache: false
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
     - name: Install Rust Toolchain
       run: rustup toolchain install stable --profile minimal --no-self-update
+    - uses: getsentry/action-setup-venv@5a9891716811c0f757b9a5d065a0bf022f2e813f # v3.1.0
+      with:
+        python-version: '3.12'
+        cache-dependency-path: clients/python/uv.lock
+        install-cmd: uv sync --frozen --extra dev --project clients/python
+        working-directory: clients/python
     - run: |
-        cd clients/python
-        uv run --extra dev maturin build --release --out ../../dist/
+        uv run maturin build --release --out ../../dist/
     - uses: actions/upload-artifact@v4
       with:
         name: ${{ github.sha }}
