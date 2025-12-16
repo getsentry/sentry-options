@@ -3,6 +3,7 @@ name = "sentry-options-python"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+publish = false
 
 [lib]
 name = "sentry_options"

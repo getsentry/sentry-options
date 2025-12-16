@@ -1,16 +1,17 @@
 [package]
 name = "sentry-options-cli"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
 
 [dependencies]
 clap = { version = "4.5.51", features = ["derive"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+serde.workspace = true
+serde_json.workspace = true
 serde_yaml = "0.9.34"
-sentry-options-validation = { path = "../sentry-options-validation" }
-thiserror = "2.0"
+sentry-options-validation.workspace = true
+thiserror.workspace = true
 walkdir = "2.5.0"
 
 [dev-dependencies]
-tempfile = "3.23.0"
+tempfile.workspace = true
