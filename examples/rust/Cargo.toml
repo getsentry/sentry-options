@@ -3,6 +3,7 @@ name = "example"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+publish = false
 
 [dependencies]
 sentry-options = { path = "../../clients/rust" }

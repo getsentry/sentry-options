@@ -9,6 +9,7 @@ artifactProvider:
   name: github
 targets:
   - name: github
+  - name: crates
   - name: pypi
     includeNames: /^sentry_options.*$/
   - name: sentry-pypi
