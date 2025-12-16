@@ -75,7 +75,7 @@ jobs:
     - name: Install Rust Toolchain
       run: rustup toolchain install stable --profile minimal --no-self-update
     - run: |
-        pip install maturin
+        uv run maturin develop
         cd clients/python
         maturin build --release --out ../../dist/
         cd ../..
