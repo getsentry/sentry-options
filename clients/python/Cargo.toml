@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 sentry-options = { path = "../rust" }
-pyo3 = { version = "0.27.2", features = ["extension-module"] }
+pyo3 = { version = "0.27.2", features = ["extension-module", "abi3-py312"] }
 serde_json.workspace = true
