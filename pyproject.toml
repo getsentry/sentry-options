@@ -8,7 +8,7 @@ version = "0.0.0"
 description = "schemas and client libraries for `sentry-options`"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [
     { name = "Sentry", email = "oss@sentry.io" }
 ]
