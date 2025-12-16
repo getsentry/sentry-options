@@ -3,6 +3,7 @@ name = "sentry-options-validation"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "Schema validation library and CLI for sentry-options"
 
 [dependencies]

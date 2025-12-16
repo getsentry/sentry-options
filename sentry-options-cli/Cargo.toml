@@ -3,6 +3,8 @@ name = "sentry-options-cli"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+license.workspace = true
+description = "CLI tool for sentry-options for validation of schema and values"
 
 [dependencies]
 clap = { version = "4.5.51", features = ["derive"] }
