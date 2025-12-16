@@ -69,12 +69,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: astral-sh/setup-uv@884ad927a57e558e7a70b92f2bccf9198a4be546 # v6
       with:
-        python-version: '3.13'
+        version: '0.8.2'
+        enable-cache: false
+    - name: Install Rust Toolchain
+      run: rustup toolchain install stable --profile minimal --no-self-update
+    - uses: getsentry/action-setup-venv@5a9891716811c0f757b9a5d065a0bf022f2e813f # v3.1.0
+      with:
+        python-version: '3.12'
+        cache-dependency-path: clients/python/uv.lock
+        install-cmd: uv sync --frozen --extra dev --project clients/python
+        working-directory: clients/python
     - run: |
-        pip install build
-        python -m build
+        cd clients/python
+        uv run maturin build --release --out ../../dist/
     - uses: actions/upload-artifact@v4
       with:
         name: ${{ github.sha }}
