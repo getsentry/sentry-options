@@ -1,0 +1,16 @@
+minVersion: 1.2.0
+changelog: CHANGELOG.md
+changelogPolicy: auto
+preReleaseCommand: bash scripts/bump-version.sh
+github:
+  owner: getsentry
+  repo: sentry-options
+artifactProvider:
+  name: github
+targets:
+  - name: github
+  - name: pypi
+    includeNames: /^sentry_options.*$/
+  - name: sentry-pypi
+    includeNames: /^sentry_options.*$/
+    internalPypiRepo: getsentry/pypi
