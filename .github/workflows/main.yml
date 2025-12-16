@@ -80,6 +80,7 @@ jobs:
         python-version: '3.12'
         cache-dependency-path: clients/python/uv.lock
         install-cmd: uv sync --frozen --extra dev --project clients/python
+        working-directory: clients/python
     - run: |
         cd clients/python
         uv run maturin build --release --out ../../dist/
