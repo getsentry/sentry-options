@@ -3,6 +3,8 @@ name = "sentry-options"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+license.workspace = true
+description = "Rust client for sentry-options config system"
 
 [dependencies]
 sentry-options-validation.workspace = true
