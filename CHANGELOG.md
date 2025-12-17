@@ -1,4 +1,17 @@
 # Changelog
+## 0.0.4
+
+### New Features ✨
+
+#### Release
+
+- feat(release): Combine artifacts into one artifact for release by @hubertdeng123 in [#31](https://github.com/getsentry/sentry-options/pull/31)
+- feat(release): Upload sdist and platform specific python wheels by @hubertdeng123 in [#30](https://github.com/getsentry/sentry-options/pull/30)
+
+### Bug Fixes 🐛
+
+- fix(release): Filters out sdist tar.gz for internal pypi by @kenzoengineer in [#32](https://github.com/getsentry/sentry-options/pull/32)
+
 ## 0.0.2
 
 ### New Features ✨
