@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sentry_options"
-version = "0.0.2"
+version = "0.0.4"
 description = "Python client for sentry-options using Rust validation"
 license = "Apache-2.0"
 requires-python = ">=3.11"
