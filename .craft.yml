@@ -19,5 +19,5 @@ targets:
   - name: pypi
     includeNames: /^sentry_options.*$/
   - name: sentry-pypi
-    includeNames: /^sentry_options.*$/
+    includeNames: /^sentry_options.*\.whl$/
     internalPypiRepo: getsentry/pypi
