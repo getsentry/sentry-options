@@ -65,29 +65,50 @@ jobs:
             # Run pre-commit to lint and format check files that were changed (but not deleted)
             xargs pre-commit run --files
 
-  build:
+  build-python:
+    name: Build Python (${{ matrix.target }})
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: auto
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist -m clients/python/Cargo.toml
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+
+  build-python-sdist:
+    name: Build Python sdist
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: astral-sh/setup-uv@884ad927a57e558e7a70b92f2bccf9198a4be546 # v6
-      with:
-        version: '0.8.2'
-        enable-cache: false
-    - name: Install Rust Toolchain
-      run: rustup toolchain install stable --profile minimal --no-self-update
-    - uses: getsentry/action-setup-venv@5a9891716811c0f757b9a5d065a0bf022f2e813f # v3.1.0
-      with:
-        python-version: '3.11'
-        cache-dependency-path: clients/python/uv.lock
-        install-cmd: uv sync --frozen --extra dev --project clients/python
-        working-directory: clients/python
-    - run: |
-        cd clients/python
-        uv run maturin build --release --out ../../dist/
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ${{ github.sha }}
-        path: dist/*
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          command: sdist
+          args: --out dist -m clients/python/Cargo.toml
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: sdist
+          path: dist/*.tar.gz
 
   rust-lint:
     name: Rust Lint
@@ -161,7 +182,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build, pre-commit, tox, rust-lint, rust-test, python-client-test]
+    needs: [build-python, build-python-sdist, pre-commit, tox, rust-lint, rust-test, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:

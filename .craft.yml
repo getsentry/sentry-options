@@ -7,6 +7,12 @@ github:
   repo: sentry-options
 artifactProvider:
   name: github
+requireNames:
+  - /^sentry_options-.*\.tar\.gz$/                  # sdist
+  - /^sentry_options-.*manylinux.*x86_64\.whl$/     # Linux x86_64 wheel
+  - /^sentry_options-.*manylinux.*aarch64\.whl$/    # Linux ARM wheel
+  - /^sentry_options-.*macosx.*x86_64\.whl$/        # macOS Intel wheel
+  - /^sentry_options-.*macosx.*arm64\.whl$/         # macOS ARM wheel
 targets:
   - name: github
   - name: crates
