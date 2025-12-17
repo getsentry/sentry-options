@@ -67,7 +67,7 @@ jobs:
 
   build-python:
     name: Build Python (${{ matrix.target }})
-    if: startsWith(github.ref, 'refs/heads/release/')
+    # if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -97,7 +97,7 @@ jobs:
 
   build-python-sdist:
     name: Build Python sdist
-    if: startsWith(github.ref, 'refs/heads/release/')
+    # if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -109,6 +109,19 @@ jobs:
         with:
           name: sdist
           path: dist/*.tar.gz
+
+  merge-python-artifacts:
+    name: Merge Python artifacts for craft
+    # if: startsWith(github.ref, 'refs/heads/release/')
+    needs: [build-python, build-python-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      # Craft expects release assets to be a single artifact named after the sha.
+      - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ github.sha }}
+          pattern: '{wheel-*,sdist}'
+          delete-merged: true
 
   rust-lint:
     name: Rust Lint
