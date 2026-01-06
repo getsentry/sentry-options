@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::{AppError, Result};
+use crate::Result;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,9 +71,8 @@ mod tests {
 
     #[test]
     fn test_from_file_missing_file() {
-        let result = ReposConfig::from_file(Path::new("/nonexistent/repos.json"));
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AppError::Io(_))));
+        let err = ReposConfig::from_file(Path::new("/nonexistent/repos.json")).unwrap_err();
+        assert!(err.to_string().contains("No such file or directory"));
     }
 
     #[test]
@@ -82,9 +81,8 @@ mod tests {
         let path = dir.path().join("repos.json");
         fs::write(&path, "{ invalid json }").unwrap();
 
-        let result = ReposConfig::from_file(&path);
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AppError::Json(_))));
+        let err = ReposConfig::from_file(&path).unwrap_err();
+        assert!(err.to_string().contains("key must be a string"));
     }
 
     #[test]
@@ -106,9 +104,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = ReposConfig::from_file(&path);
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AppError::Json(_))));
+        let err = ReposConfig::from_file(&path).unwrap_err();
+        assert!(err.to_string().contains("unknown field `unknown_field`"));
     }
 
     #[test]
@@ -138,8 +135,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = ReposConfig::from_file(&path);
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AppError::Json(_))));
+        let err = ReposConfig::from_file(&path).unwrap_err();
+        assert!(err.to_string().contains("missing field `schemas_path`"));
     }
 }

@@ -1,3 +1,5 @@
+mod repos_config;
+
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
