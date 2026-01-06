@@ -1,4 +1,4 @@
-mod repos_config;
+mod repo_schema_config;
 
 use std::{
     collections::{BTreeMap, HashMap},
