@@ -133,23 +133,11 @@ impl SchemaRegistry {
         schema.validate_values(values)
     }
 
-    /// Load all schemas from a directory
-    fn load_all_schemas(
-        schemas_dir: &Path,
-    ) -> ValidationResult<HashMap<String, Arc<NamespaceSchema>>> {
-        // Compile namespace-schema once for all schemas
-        let namespace_schema_value: Value =
-            serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {
-                ValidationError::InternalError(format!("Invalid namespace-schema JSON: {}", e))
-            })?;
-        let namespace_validator =
-            jsonschema::validator_for(&namespace_schema_value).map_err(|e| {
-                ValidationError::InternalError(format!("Failed to compile namespace-schema: {}", e))
-            })?;
+    /// Iterate over namespace directories in a schemas directory
+    /// Returns an iterator of (namespace_name, schema_file_path)
+    pub fn iter_namespace_dirs(schemas_dir: &Path) -> ValidationResult<Vec<(String, PathBuf)>> {
+        let mut namespaces = Vec::new();
 
-        let mut schemas = HashMap::new();
-
-        // TODO: Parallelize the loading of schemas for the performance gainz
         for entry in fs::read_dir(schemas_dir)? {
             let entry = entry?;
 
@@ -167,6 +155,30 @@ impl SchemaRegistry {
                     })?;
 
             let schema_file = entry.path().join(SCHEMA_FILE_NAME);
+            namespaces.push((namespace, schema_file));
+        }
+
+        Ok(namespaces)
+    }
+
+    /// Load all schemas from a directory
+    fn load_all_schemas(
+        schemas_dir: &Path,
+    ) -> ValidationResult<HashMap<String, Arc<NamespaceSchema>>> {
+        // Compile namespace-schema once for all schemas
+        let namespace_schema_value: Value =
+            serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {
+                ValidationError::InternalError(format!("Invalid namespace-schema JSON: {}", e))
+            })?;
+        let namespace_validator =
+            jsonschema::validator_for(&namespace_schema_value).map_err(|e| {
+                ValidationError::InternalError(format!("Failed to compile namespace-schema: {}", e))
+            })?;
+
+        let mut schemas = HashMap::new();
+
+        // TODO: Parallelize the loading of schemas for the performance gainz
+        for (namespace, schema_file) in Self::iter_namespace_dirs(schemas_dir)? {
             let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
             schemas.insert(namespace, schema);
         }

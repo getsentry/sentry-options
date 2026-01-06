@@ -1,3 +1,4 @@
+mod schema_evolution;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -5,6 +6,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
+use schema_evolution::detect_changes;
 use sentry_options_validation::SchemaRegistry;
 use walkdir::WalkDir;
 
@@ -96,6 +98,10 @@ enum Commands {
 
         #[arg(long, required = true, help = "output directory for final json files")]
         out: String,
+    },
+    ValidateSchemaChange {
+        #[arg(long, required = true, help = "foo")]
+        foo: String,
     },
 }
 
@@ -398,6 +404,11 @@ fn cli_write(schemas: String, root: String, out: String, quiet: bool) -> Result<
     Ok(())
 }
 
+fn cli_validate_schema_change(foo: String) -> Result<()> {
+    detect_changes(&Path::new(&foo), &Path::new(&foo))?;
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -405,6 +416,7 @@ fn main() {
         Commands::ValidateSchema { schemas } => cli_validate_schema(schemas, cli.quiet),
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
+        Commands::ValidateSchemaChange { foo } => cli_validate_schema_change(foo),
     };
 
     if let Err(e) = result {
