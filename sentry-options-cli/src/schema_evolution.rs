@@ -71,12 +71,12 @@ fn compare_schemas(
     let old_file = old_dir.join(namespace).join(SCHEMA_FILE_NAME);
     let new_file = new_dir.join(namespace).join(SCHEMA_FILE_NAME);
 
-    let old_options_pair = get_all_options(old_schema, &old_file)?;
-    let new_options_pair = get_all_options(new_schema, &new_file)?;
+    let old_options = get_all_options(old_schema, &old_file)?;
+    let new_options = get_all_options(new_schema, &new_file)?;
 
-    for (key, old_option) in &old_options_pair {
+    for (key, old_option) in &old_options {
         // Skip if option was removed (allowed for now)
-        let Some(new_option) = new_options_pair.get(key) else {
+        let Some(new_option) = new_options.get(key) else {
             continue;
         };
 
@@ -125,11 +125,9 @@ fn compare_schemas(
 /// 5. Changing option types
 /// 6. Changing default values
 pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
-    // Then load raw JSON for comparison
     let old_schemas = load_raw_schemas(old_dir)?;
     let new_schemas = load_raw_schemas(new_dir)?;
 
-    // Check each old namespace exists in new schemas
     for (namespace, old_schema) in &old_schemas {
         let new_schema = new_schemas
             .get(namespace)
