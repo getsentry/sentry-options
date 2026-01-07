@@ -123,7 +123,7 @@ fn compare_schemas(
 /// - Removing namespaces
 /// - Changing property types
 /// - Changing default values
-pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
+fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
     // Then load raw JSON for comparison
     let old_schemas = load_raw_schemas(old_dir)?;
     let new_schemas = load_raw_schemas(new_dir)?;
