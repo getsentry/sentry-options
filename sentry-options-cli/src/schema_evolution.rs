@@ -7,14 +7,14 @@ use std::path::Path;
 const SCHEMA_FILE_NAME: &str = "schema.json";
 
 /// Helper to extract properties from a schema with error handling.
-/// The returned `Value` needs to live as long as `schema`
-fn get_all_options<'a>(
-    schema: &'a Value,
+fn get_all_options(
+    schema: &Value,
     schema_file: &Path,
-) -> ValidationResult<&'a serde_json::Map<String, Value>> {
+) -> ValidationResult<serde_json::Map<String, Value>> {
     schema
         .get("properties")
         .and_then(|p| p.as_object())
+        .cloned()
         .ok_or_else(|| ValidationError::SchemaError {
             file: schema_file.to_path_buf(),
             message: "Schema missing 'properties' field".to_string(),
@@ -22,26 +22,27 @@ fn get_all_options<'a>(
 }
 
 /// Gets the type and default value for an option.
-/// `prop_type` and `default` need to live as long as `property`
-fn extract_option_meta<'a>(
-    property: &'a Value,
+fn extract_option_meta(
+    property: &Value,
     property_name: &str,
     file: &Path,
-) -> ValidationResult<(&'a str, &'a Value)> {
+) -> ValidationResult<(String, Value)> {
     let prop_type = property
         .get("type")
         .and_then(|t| t.as_str())
         .ok_or_else(|| ValidationError::SchemaError {
             file: file.to_path_buf(),
             message: format!("Property '{}' missing 'type' field", property_name),
-        })?;
+        })?
+        .to_string();
 
     let default = property
         .get("default")
         .ok_or_else(|| ValidationError::SchemaError {
             file: file.to_path_buf(),
             message: format!("Property '{}' missing 'default' field", property_name),
-        })?;
+        })?
+        .clone();
 
     Ok((prop_type, default))
 }
@@ -72,7 +73,7 @@ fn compare_schemas(
     let old_props = get_all_options(old_schema, &old_file)?;
     let new_props = get_all_options(new_schema, &new_file)?;
 
-    for (key, old_prop) in old_props {
+    for (key, old_prop) in &old_props {
         // Skip if property was removed (allowed for now)
         let Some(new_prop) = new_props.get(key) else {
             continue;
