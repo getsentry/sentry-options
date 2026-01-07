@@ -1,4 +1,6 @@
+mod repo_schema_config;
 mod schema_evolution;
+
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
