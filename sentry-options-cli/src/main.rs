@@ -1,4 +1,5 @@
 mod repo_schema_config;
+mod schema_retriever;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -44,6 +45,9 @@ pub enum AppError {
 
     #[error("Schema validation error: {0}")]
     Schema(#[from] sentry_options_validation::ValidationError),
+
+    #[error("Git command failed: {0}")]
+    Git(String),
 }
 
 /// defines the CLI for sentry-options validation and processing
@@ -97,6 +101,15 @@ enum Commands {
         root: String,
 
         #[arg(long, required = true, help = "output directory for final json files")]
+        out: String,
+    },
+    /// Fetch schemas from multiple repos via git sparse checkout
+    #[command(name = "fetch-schemas")]
+    FetchSchemas {
+        #[arg(long, required = true, help = "path to repos.json config")]
+        config: String,
+
+        #[arg(long, required = true, help = "output directory for schemas")]
         out: String,
     },
 }
@@ -400,6 +413,15 @@ fn cli_write(schemas: String, root: String, out: String, quiet: bool) -> Result<
     Ok(())
 }
 
+fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
+    let config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
+    schema_retriever::fetch_all_schemas(&config, Path::new(&out), quiet)?;
+    if !quiet {
+        println!("Successfully fetched schemas to {}", out);
+    }
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -407,6 +429,7 @@ fn main() {
         Commands::ValidateSchema { schemas } => cli_validate_schema(schemas, cli.quiet),
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
+        Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
     };
 
     if let Err(e) = result {
