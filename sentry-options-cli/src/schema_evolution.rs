@@ -11,9 +11,12 @@ fn compare_schemas(
     new_options: &HashMap<String, OptionMetadata>,
 ) -> ValidationResult<()> {
     for (key, old_meta) in old_options {
-        // Skip if option was removed (allowed for now)
+        // 3. removing options
         let Some(new_meta) = new_options.get(key) else {
-            continue;
+            return Err(ValidationError::SchemaError {
+                file: format!("schemas/{}/schema.json", namespace).into(),
+                message: format!("Option '{}.{}' was removed", namespace, key),
+            });
         };
 
         // 5. changing option type
@@ -43,17 +46,15 @@ fn compare_schemas(
 }
 
 /// Compares 2 schema folders as old and new versions of a repo's options.
-/// Assumes the schemas themselves are already validated.
 /// Validates that any changes made are allowed, otherwise returns an error.
+/// Also validates the schemas themselves.
 ///
 /// # Allowed changes:
 /// 1. Adding new namespaces
 /// 2. Adding new options
 ///
-/// # Allowed for now:
-/// 3. Removing options
-///
 /// # Forbidden changes (will error):
+/// 3. Removing options
 /// 4. Removing namespaces
 /// 5. Changing option types
 /// 6. Changing default values
@@ -166,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn test_removed_option_passes() {
+    fn test_removed_option_fails() {
         let (old_dir, new_dir) = setup_dirs();
 
         // Build old schema with two options
@@ -184,7 +185,13 @@ mod tests {
         create_schema(&new_dir, "test", &new_schema);
 
         let result = detect_changes(old_dir.path(), new_dir.path());
-        assert!(result.is_ok());
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::SchemaError { message, .. }) => {
+                assert!(message.contains("Option 'test.key2' was removed"));
+            }
+            _ => panic!("Expected SchemaError for removed option"),
+        }
     }
 
     #[test]
