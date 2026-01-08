@@ -1,106 +1,39 @@
-use sentry_options_validation::{SchemaRegistry, ValidationError, ValidationResult};
-use serde_json::Value;
+use sentry_options_validation::{
+    OptionMetadata, SchemaRegistry, ValidationError, ValidationResult,
+};
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
-
-const SCHEMA_FILE_NAME: &str = "schema.json";
-
-/// Load all schema JSON files from a directory and maps namespace -> schema object
-fn load_raw_schemas(schemas_dir: &Path) -> ValidationResult<HashMap<String, Value>> {
-    let mut schemas = HashMap::new();
-
-    for (namespace, schema_file) in SchemaRegistry::iter_namespace_dirs(schemas_dir)? {
-        let schema_json: Value = serde_json::from_reader(fs::File::open(&schema_file)?)?;
-        schemas.insert(namespace, schema_json);
-    }
-
-    Ok(schemas)
-}
-
-/// Helper to get the options Value from the schema Value object.
-/// Options are located in the `properties` field
-fn get_all_options(
-    schema: &Value,
-    schema_file_path: &Path,
-) -> ValidationResult<serde_json::Map<String, Value>> {
-    schema
-        .get("properties")
-        .and_then(|p| p.as_object())
-        .cloned()
-        .ok_or_else(|| ValidationError::SchemaError {
-            file: schema_file_path.to_path_buf(),
-            message: "Schema missing 'properties' field".to_string(),
-        })
-}
-
-/// Gets the type and default value for an option.
-fn extract_option_meta(
-    options: &Value,
-    option_name: &str,
-    file_path: &Path,
-) -> ValidationResult<(String, Value)> {
-    let option_type = options
-        .get("type")
-        .and_then(|t| t.as_str())
-        .ok_or_else(|| ValidationError::SchemaError {
-            file: file_path.to_path_buf(),
-            message: format!("Option '{}' missing 'type' field", option_name),
-        })?
-        .to_string();
-
-    let default = options
-        .get("default")
-        .ok_or_else(|| ValidationError::SchemaError {
-            file: file_path.to_path_buf(),
-            message: format!("Option '{}' missing 'default' field", option_name),
-        })?
-        .clone();
-
-    Ok((option_type, default))
-}
 
 /// Compare two schema files and validate no breaking changes occurred
 fn compare_schemas(
     namespace: &str,
-    old_schema: &Value,
-    new_schema: &Value,
-    old_dir: &Path,
-    new_dir: &Path,
+    old_options: &HashMap<String, OptionMetadata>,
+    new_options: &HashMap<String, OptionMetadata>,
 ) -> ValidationResult<()> {
-    let old_file = old_dir.join(namespace).join(SCHEMA_FILE_NAME);
-    let new_file = new_dir.join(namespace).join(SCHEMA_FILE_NAME);
-
-    let old_options = get_all_options(old_schema, &old_file)?;
-    let new_options = get_all_options(new_schema, &new_file)?;
-
-    for (key, old_option) in &old_options {
+    for (key, old_meta) in old_options {
         // Skip if option was removed (allowed for now)
-        let Some(new_option) = new_options.get(key) else {
+        let Some(new_meta) = new_options.get(key) else {
             continue;
         };
 
-        let (old_type, old_default) = extract_option_meta(old_option, key, &old_file)?;
-        let (new_type, new_default) = extract_option_meta(new_option, key, &new_file)?;
-
         // 5. changing option type
-        if old_type != new_type {
+        if old_meta.option_type != new_meta.option_type {
             return Err(ValidationError::SchemaError {
-                file: new_file.clone(),
+                file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!(
                     "Option '{}.{}' type changed from '{}' to '{}'",
-                    namespace, key, old_type, new_type
+                    namespace, key, old_meta.option_type, new_meta.option_type
                 ),
             });
         }
 
         // 6. changing option default
-        if old_default != new_default {
+        if old_meta.default != new_meta.default {
             return Err(ValidationError::SchemaError {
-                file: new_file.clone(),
+                file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!(
                     "Option '{}.{}' default value changed from {} to {}",
-                    namespace, key, old_default, new_default
+                    namespace, key, old_meta.default, new_meta.default
                 ),
             });
         }
@@ -125,19 +58,22 @@ fn compare_schemas(
 /// 5. Changing option types
 /// 6. Changing default values
 pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
-    let old_schemas = load_raw_schemas(old_dir)?;
-    let new_schemas = load_raw_schemas(new_dir)?;
+    let old_registry = SchemaRegistry::from_directory(old_dir)?;
+    let new_registry = SchemaRegistry::from_directory(new_dir)?;
 
-    for (namespace, old_schema) in &old_schemas {
+    let old_schemas = old_registry.schemas();
+    let new_schemas = new_registry.schemas();
+
+    for (namespace, old_schema) in old_schemas {
         let new_schema = new_schemas
             .get(namespace)
             // 4. removing namespaces
             .ok_or_else(|| ValidationError::SchemaError {
-                file: old_dir.join(namespace).join(SCHEMA_FILE_NAME),
+                file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!("Namespace '{}' was removed", namespace),
             })?;
 
-        compare_schemas(namespace, old_schema, new_schema, old_dir, new_dir)?;
+        compare_schemas(namespace, &old_schema.options, &new_schema.options)?;
     }
 
     Ok(())
@@ -146,7 +82,7 @@ pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::fs;
     use tempfile::TempDir;
 
