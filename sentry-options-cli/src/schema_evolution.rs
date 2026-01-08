@@ -2,26 +2,96 @@ use sentry_options_validation::{
     OptionMetadata, SchemaRegistry, ValidationError, ValidationResult,
 };
 use std::collections::HashMap;
-use std::path::Path;
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug)]
+enum SchemaChangeAction {
+    NamespaceAdded(String),
+    NamespaceRemoved(String),
+    OptionAdded {
+        namespace: String,
+        name: String,
+    },
+    OptionRemoved {
+        namespace: String,
+        name: String,
+    },
+    TypeChanged {
+        context: String, // namespace.option
+        old: String,
+        new: String,
+    },
+    DefaultChanged {
+        context: String, // namespace.option
+        old: String,
+        new: String,
+    },
+}
+
+impl fmt::Display for SchemaChangeAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SchemaChangeAction::NamespaceAdded(name) => {
+                write!(f, "+ Namespace:\t {}", name)
+            }
+            SchemaChangeAction::NamespaceRemoved(name) => {
+                write!(f, "- Namespace:\t {}", name)
+            }
+            SchemaChangeAction::OptionAdded { namespace, name } => {
+                write!(f, "+ Option:\t {}.{}", namespace, name)
+            }
+            SchemaChangeAction::OptionRemoved { namespace, name } => {
+                write!(f, "- Option:\t {}.{}", namespace, name)
+            }
+            SchemaChangeAction::TypeChanged { context, old, new } => {
+                write!(f, "~ Type:\t\t {}: {} -> {}", context, old, new)
+            }
+            SchemaChangeAction::DefaultChanged { context, old, new } => {
+                write!(f, "~ Default:\t {}: {} -> {}", context, old, new)
+            }
+        }
+    }
+}
 
 /// Compare two schema files and validate no breaking changes occurred
 fn compare_schemas(
     namespace: &str,
     old_options: &HashMap<String, OptionMetadata>,
     new_options: &HashMap<String, OptionMetadata>,
-) -> ValidationResult<()> {
-    for (key, old_meta) in old_options {
+    changelog: &mut Vec<SchemaChangeAction>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let mut removed_options = Vec::new();
+    let mut modified_options = Vec::new();
+    let mut added_options = Vec::new();
+
+    let mut old_keys: Vec<_> = old_options.keys().collect();
+    old_keys.sort();
+
+    for key in old_keys {
+        let old_meta = &old_options[key];
         // 3. removing options
         let Some(new_meta) = new_options.get(key) else {
-            return Err(ValidationError::SchemaError {
+            removed_options.push(SchemaChangeAction::OptionRemoved {
+                namespace: namespace.to_string(),
+                name: key.to_string(),
+            });
+            errors.push(ValidationError::SchemaError {
                 file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!("Option '{}.{}' was removed", namespace, key),
             });
+            continue;
         };
 
         // 5. changing option type
         if old_meta.option_type != new_meta.option_type {
-            return Err(ValidationError::SchemaError {
+            modified_options.push(SchemaChangeAction::TypeChanged {
+                context: format!("{}.{}", namespace, key),
+                old: old_meta.option_type.clone(),
+                new: new_meta.option_type.clone(),
+            });
+            errors.push(ValidationError::SchemaError {
                 file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!(
                     "Option '{}.{}' type changed from '{}' to '{}'",
@@ -32,7 +102,12 @@ fn compare_schemas(
 
         // 6. changing option default
         if old_meta.default != new_meta.default {
-            return Err(ValidationError::SchemaError {
+            modified_options.push(SchemaChangeAction::DefaultChanged {
+                context: format!("{}.{}", namespace, key),
+                old: old_meta.default.to_string(),
+                new: new_meta.default.to_string(),
+            });
+            errors.push(ValidationError::SchemaError {
                 file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!(
                     "Option '{}.{}' default value changed from {} to {}",
@@ -42,7 +117,21 @@ fn compare_schemas(
         }
     }
 
-    Ok(())
+    // 2. adding new options
+    let mut new_keys: Vec<_> = new_options.keys().collect();
+    new_keys.sort();
+    for key in new_keys {
+        if !old_options.contains_key(key) {
+            added_options.push(SchemaChangeAction::OptionAdded {
+                namespace: namespace.to_string(),
+                name: key.to_string(),
+            });
+        }
+    }
+
+    changelog.extend(removed_options);
+    changelog.extend(modified_options);
+    changelog.extend(added_options);
 }
 
 /// Compares 2 schema folders as old and new versions of a repo's options.
@@ -65,16 +154,59 @@ pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
     let old_schemas = old_registry.schemas();
     let new_schemas = new_registry.schemas();
 
-    for (namespace, old_schema) in old_schemas {
-        let new_schema = new_schemas
-            .get(namespace)
+    let mut changelog = Vec::new();
+    let mut errors = Vec::new();
+
+    let mut old_namespace_names: Vec<_> = old_schemas.keys().collect();
+    old_namespace_names.sort();
+    for namespace in old_namespace_names {
+        let old_schema = &old_schemas[namespace];
+        let Some(new_schema) = new_schemas.get(namespace) else {
             // 4. removing namespaces
-            .ok_or_else(|| ValidationError::SchemaError {
+            changelog.push(SchemaChangeAction::NamespaceRemoved(namespace.to_string()));
+            errors.push(ValidationError::SchemaError {
                 file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!("Namespace '{}' was removed", namespace),
-            })?;
+            });
+            continue;
+        };
 
-        compare_schemas(namespace, &old_schema.options, &new_schema.options)?;
+        compare_schemas(
+            namespace,
+            &old_schema.options,
+            &new_schema.options,
+            &mut changelog,
+            &mut errors,
+        );
+    }
+
+    // 1. adding new namespaces
+    let mut new_namespace_names: Vec<_> = new_schemas.keys().collect();
+    new_namespace_names.sort();
+    for namespace in new_namespace_names {
+        if !old_schemas.contains_key(namespace) {
+            changelog.push(SchemaChangeAction::NamespaceAdded(namespace.to_string()));
+        }
+    }
+
+    // Print all changes
+    println!("Schema Changes:");
+    if changelog.is_empty() {
+        println!("\tNo changes");
+    }
+    for change in changelog {
+        println!("\t{}", change);
+    }
+
+    if !errors.is_empty() {
+        println!("\nErrors:");
+        for error in &errors {
+            println!("\t{}", error);
+        }
+        return Err(ValidationError::SchemaError {
+            file: PathBuf::from("file(s)"),
+            message: format!("Schema validation failed with {} error(s)", errors.len()),
+        });
     }
 
     Ok(())
@@ -160,7 +292,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Namespace 'test' was removed"));
+                assert!(message.contains("Schema validation failed"));
             }
             _ => panic!("Expected SchemaError for removed namespace"),
         }
@@ -188,7 +320,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Option 'test.key2' was removed"));
+                assert!(message.contains("Schema validation failed"));
             }
             _ => panic!("Expected SchemaError for removed option"),
         }
@@ -215,7 +347,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("type changed from 'string' to 'integer'"));
+                assert!(message.contains("Schema validation failed"));
             }
             _ => panic!("Expected SchemaError for type change"),
         }
@@ -242,9 +374,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("default value changed"));
-                assert!(message.contains("old-value"));
-                assert!(message.contains("new-value"));
+                assert!(message.contains("Schema validation failed"));
             }
             _ => panic!("Expected SchemaError for default value change"),
         }
@@ -308,7 +438,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("type changed from 'integer' to 'number'"));
+                assert!(message.contains("Schema validation failed"));
             }
             _ => panic!("Expected SchemaError for integer to number change"),
         }
