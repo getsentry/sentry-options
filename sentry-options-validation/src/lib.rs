@@ -52,6 +52,9 @@ pub enum ValidationError {
 
     #[error("Failed to parse JSON: {0}")]
     JSONParse(#[from] serde_json::Error),
+
+    #[error("{} validation error(s)", .0.len())]
+    ValidationErrors(Vec<ValidationError>),
 }
 
 /// Metadata for a single option in a namespace schema

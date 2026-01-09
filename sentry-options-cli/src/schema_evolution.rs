@@ -199,14 +199,7 @@ pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
     }
 
     if !errors.is_empty() {
-        println!("\nErrors:");
-        for error in &errors {
-            println!("\t{}", error);
-        }
-        return Err(ValidationError::SchemaError {
-            file: PathBuf::from("file(s)"),
-            message: format!("Schema validation failed with {} error(s)", errors.len()),
-        });
+        return Err(ValidationError::ValidationErrors(errors));
     }
 
     Ok(())
