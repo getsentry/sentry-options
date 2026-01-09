@@ -3,7 +3,7 @@ use sentry_options_validation::{
 };
 use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug)]
 enum SchemaChangeAction {
@@ -217,6 +217,16 @@ mod tests {
         (TempDir::new().unwrap(), TempDir::new().unwrap())
     }
 
+    /// Helper to assert that an error list contains a message with the given text
+    fn assert_error_contains(errors: &[ValidationError], text: &str) {
+        let found = errors.iter().any(|e| e.to_string().contains(text));
+        assert!(
+            found,
+            "Expected error containing '{}' not found in errors",
+            text
+        );
+    }
+
     /// Helper to build an option definition
     fn option(option_type: &str, default: Value) -> Value {
         json!({
@@ -284,10 +294,11 @@ mod tests {
         let result = detect_changes(old_dir.path(), new_dir.path());
         assert!(result.is_err());
         match result {
-            Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Schema validation failed"));
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_eq!(errors.len(), 1);
+                assert_error_contains(&errors, "Namespace 'test' was removed");
             }
-            _ => panic!("Expected SchemaError for removed namespace"),
+            _ => panic!("Expected ValidationErrors for removed namespace"),
         }
     }
 
@@ -312,10 +323,11 @@ mod tests {
         let result = detect_changes(old_dir.path(), new_dir.path());
         assert!(result.is_err());
         match result {
-            Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Schema validation failed"));
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_eq!(errors.len(), 1);
+                assert_error_contains(&errors, "Option 'test.key2' was removed");
             }
-            _ => panic!("Expected SchemaError for removed option"),
+            _ => panic!("Expected ValidationErrors for removed option"),
         }
     }
 
@@ -339,10 +351,11 @@ mod tests {
         let result = detect_changes(old_dir.path(), new_dir.path());
         assert!(result.is_err());
         match result {
-            Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Schema validation failed"));
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_eq!(errors.len(), 2); // Type change + default change
+                assert_error_contains(&errors, "type changed from 'string' to 'integer'");
             }
-            _ => panic!("Expected SchemaError for type change"),
+            _ => panic!("Expected ValidationErrors for type change"),
         }
     }
 
@@ -366,10 +379,13 @@ mod tests {
         let result = detect_changes(old_dir.path(), new_dir.path());
         assert!(result.is_err());
         match result {
-            Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Schema validation failed"));
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_eq!(errors.len(), 1);
+                assert_error_contains(&errors, "default value changed");
+                assert_error_contains(&errors, "old-value");
+                assert_error_contains(&errors, "new-value");
             }
-            _ => panic!("Expected SchemaError for default value change"),
+            _ => panic!("Expected ValidationErrors for default value change"),
         }
     }
 
@@ -430,10 +446,12 @@ mod tests {
         let result = detect_changes(old_dir.path(), new_dir.path());
         assert!(result.is_err());
         match result {
-            Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Schema validation failed"));
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_eq!(errors.len(), 2); // Type change + default change
+                assert_error_contains(&errors, "type changed from 'integer' to 'number'");
+                assert_error_contains(&errors, "default value changed from 42 to 42.0");
             }
-            _ => panic!("Expected SchemaError for integer to number change"),
+            _ => panic!("Expected ValidationErrors for integer to number change"),
         }
     }
 
