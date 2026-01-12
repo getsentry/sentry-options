@@ -113,6 +113,22 @@ enum Commands {
         #[arg(long, required = true, help = "output directory for schemas")]
         out: String,
     },
+    /// Validate schema changes between two git SHAs (for PR validation)
+    #[command(name = "validate-schema-changes")]
+    ValidateSchemaChanges {
+        #[arg(long, required = true, help = "path to repos.json config")]
+        config: String,
+
+        #[arg(
+            long,
+            env = "GITHUB_BASE_SHA",
+            help = "base commit SHA to compare from"
+        )]
+        base_sha: String,
+
+        #[arg(long, env = "GITHUB_HEAD_SHA", help = "head commit SHA to compare to")]
+        head_sha: String,
+    },
 }
 
 /// A key value pair of options and their parsed value
@@ -423,6 +439,86 @@ fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
     Ok(())
 }
 
+fn cli_validate_schema_changes(
+    config: String,
+    base_sha: String,
+    head_sha: String,
+    quiet: bool,
+) -> Result<()> {
+    // Load the base config
+    let mut base_config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
+    let mut head_config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
+
+    // Override SHAs in both configs
+    for repo_config in base_config.repos.values_mut() {
+        repo_config.sha = base_sha.clone();
+    }
+    for repo_config in head_config.repos.values_mut() {
+        repo_config.sha = head_sha.clone();
+    }
+
+    // Create temporary directory paths (but remove them so fetch_all_schemas can create them)
+    let base_temp = tempfile::tempdir()?;
+    let head_temp = tempfile::tempdir()?;
+    let base_dir = base_temp.path().to_path_buf();
+    let head_dir = head_temp.path().to_path_buf();
+
+    // Remove the directories so fetch_all_schemas can create them
+    drop(base_temp);
+    drop(head_temp);
+
+    if !quiet {
+        println!("Fetching base schemas ({})", base_sha);
+    }
+    schema_retriever::fetch_all_schemas(&base_config, &base_dir, quiet)?;
+
+    if !quiet {
+        println!("Fetching head schemas ({})", head_sha);
+    }
+    schema_retriever::fetch_all_schemas(&head_config, &head_dir, quiet)?;
+
+    if !quiet {
+        println!("\nComparing schemas...\n");
+    }
+
+    // Compare all repos
+    let mut has_errors = false;
+    for repo_name in base_config.repos.keys() {
+        let base_schemas = base_dir.join(repo_name);
+        let head_schemas = head_dir.join(repo_name);
+
+        if !quiet {
+            println!("Repository: {}", repo_name);
+        }
+
+        match schema_evolution::detect_changes(&base_schemas, &head_schemas) {
+            Ok(()) => {
+                if !quiet {
+                    println!();
+                }
+            }
+            Err(e) => {
+                has_errors = true;
+                if !quiet {
+                    eprintln!("\nValidation failed:\n{}\n", e);
+                }
+            }
+        }
+    }
+
+    if has_errors {
+        return Err(AppError::Validation(
+            "Schema validation failed with breaking changes".to_string(),
+        ));
+    }
+
+    if !quiet {
+        println!("✓ Schema validation passed");
+    }
+
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -431,6 +527,11 @@ fn main() {
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
+        Commands::ValidateSchemaChanges {
+            config,
+            base_sha,
+            head_sha,
+        } => cli_validate_schema_changes(config, base_sha, head_sha, cli.quiet),
     };
 
     if let Err(e) = result {

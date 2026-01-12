@@ -4,7 +4,7 @@
   "properties": {
     "example-option": {
       "type": "string",
-      "default": "",
+      "default": "bad",
       "description": "An example string option"
     },
     "float-option": {
