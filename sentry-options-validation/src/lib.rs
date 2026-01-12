@@ -52,12 +52,22 @@ pub enum ValidationError {
 
     #[error("Failed to parse JSON: {0}")]
     JSONParse(#[from] serde_json::Error),
+
+    #[error("{} validation error(s)", .0.len())]
+    ValidationErrors(Vec<ValidationError>),
 }
 
-/// Schema for a namespace, containing validator and defaults
+/// Metadata for a single option in a namespace schema
+#[derive(Debug, Clone)]
+pub struct OptionMetadata {
+    pub option_type: String,
+    pub default: Value,
+}
+
+/// Schema for a namespace, containing validator and option metadata
 pub struct NamespaceSchema {
     pub namespace: String,
-    defaults: HashMap<String, Value>,
+    pub options: HashMap<String, OptionMetadata>,
     validator: jsonschema::Validator,
 }
 
@@ -85,7 +95,7 @@ impl NamespaceSchema {
     /// Get the default value for an option key.
     /// Returns None if the key doesn't exist in the schema.
     pub fn get_default(&self, key: &str) -> Option<&Value> {
-        self.defaults.get(key)
+        self.options.get(key).map(|meta| &meta.default)
     }
 }
 
@@ -254,8 +264,8 @@ impl SchemaRegistry {
                 message: format!("Failed to compile validator: {}", e),
             })?;
 
-        // Extract defaults and validate types
-        let mut defaults = HashMap::new();
+        // Extract option metadata and validate types
+        let mut options = HashMap::new();
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 if let (Some(prop_type), Some(default_value)) = (
@@ -263,14 +273,20 @@ impl SchemaRegistry {
                     prop_value.get("default"),
                 ) {
                     Self::validate_default_type(prop_name, prop_type, default_value, path)?;
-                    defaults.insert(prop_name.clone(), default_value.clone());
+                    options.insert(
+                        prop_name.clone(),
+                        OptionMetadata {
+                            option_type: prop_type.to_string(),
+                            default: default_value.clone(),
+                        },
+                    );
                 }
             }
         }
 
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
-            defaults,
+            options,
             validator,
         }))
     }
@@ -278,6 +294,11 @@ impl SchemaRegistry {
     /// Get a namespace schema by name
     pub fn get(&self, namespace: &str) -> Option<&Arc<NamespaceSchema>> {
         self.schemas.get(namespace)
+    }
+
+    /// Get all loaded schemas (for schema evolution validation)
+    pub fn schemas(&self) -> &HashMap<String, Arc<NamespaceSchema>> {
+        &self.schemas
     }
 
     /// Load and validate JSON values from a directory.

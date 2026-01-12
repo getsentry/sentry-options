@@ -1,4 +1,5 @@
 mod repo_schema_config;
+mod schema_evolution;
 mod schema_retriever;
 
 use std::{
