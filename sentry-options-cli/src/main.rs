@@ -474,7 +474,7 @@ fn cli_validate_schema_changes(
     }
 
     if !quiet {
-        println!("✓ Schema validation passed");
+        println!("Schema validation passed");
     }
 
     Ok(())
