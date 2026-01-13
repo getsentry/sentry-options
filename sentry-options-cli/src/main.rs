@@ -113,7 +113,7 @@ enum Commands {
         #[arg(long, required = true, help = "output directory for schemas")]
         out: String,
     },
-    /// Validate schema changes between two git SHAs (for PR validation)
+    /// Validate schema changes between two git SHAs
     #[command(name = "validate-schema-changes")]
     ValidateSchemaChanges {
         #[arg(long, required = true, help = "path to repos.json config")]
@@ -439,17 +439,17 @@ fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
     Ok(())
 }
 
+// head and base sha should be passed in as env variables in CI
+// alternatively, passed in via params for local development
 fn cli_validate_schema_changes(
     config: String,
     base_sha: String,
     head_sha: String,
     quiet: bool,
 ) -> Result<()> {
-    // Load the base config
     let mut base_config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
     let mut head_config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
 
-    // Override SHAs in both configs
     for repo_config in base_config.repos.values_mut() {
         repo_config.sha = base_sha.clone();
     }
@@ -457,59 +457,20 @@ fn cli_validate_schema_changes(
         repo_config.sha = head_sha.clone();
     }
 
-    // Create temporary directory paths (but remove them so fetch_all_schemas can create them)
     let base_temp = tempfile::tempdir()?;
     let head_temp = tempfile::tempdir()?;
-    let base_dir = base_temp.path().to_path_buf();
-    let head_dir = head_temp.path().to_path_buf();
 
-    // Remove the directories so fetch_all_schemas can create them
-    drop(base_temp);
-    drop(head_temp);
+    // requires a non-existent subdir so fetch_all_schemas doesn't complain
+    let base_dir = base_temp.path().join("schemas");
+    let head_dir = head_temp.path().join("schemas");
 
-    if !quiet {
-        println!("Fetching base schemas ({})", base_sha);
-    }
     schema_retriever::fetch_all_schemas(&base_config, &base_dir, quiet)?;
-
-    if !quiet {
-        println!("Fetching head schemas ({})", head_sha);
-    }
     schema_retriever::fetch_all_schemas(&head_config, &head_dir, quiet)?;
 
-    if !quiet {
-        println!("\nComparing schemas...\n");
-    }
-
-    // Compare all repos
-    let mut has_errors = false;
     for repo_name in base_config.repos.keys() {
         let base_schemas = base_dir.join(repo_name);
         let head_schemas = head_dir.join(repo_name);
-
-        if !quiet {
-            println!("Repository: {}", repo_name);
-        }
-
-        match schema_evolution::detect_changes(&base_schemas, &head_schemas) {
-            Ok(()) => {
-                if !quiet {
-                    println!();
-                }
-            }
-            Err(e) => {
-                has_errors = true;
-                if !quiet {
-                    eprintln!("\nValidation failed:\n{}\n", e);
-                }
-            }
-        }
-    }
-
-    if has_errors {
-        return Err(AppError::Validation(
-            "Schema validation failed with breaking changes".to_string(),
-        ));
+        schema_evolution::detect_changes(&base_schemas, &head_schemas)?;
     }
 
     if !quiet {
