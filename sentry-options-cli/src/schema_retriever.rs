@@ -96,7 +96,7 @@ fn fetch_repo_schemas(repo_name: &str, source: &RepoSchemaConfig, out_dir: &Path
     )?;
     git(&["checkout", &source.sha], Some(&repo_path), repo_name)?;
 
-    copy_schemas(&repo_path.join(&source.path), &out_dir.join(repo_name))?;
+    copy_schemas(&repo_path.join(&source.path), out_dir)?;
     Ok(())
 }
 
