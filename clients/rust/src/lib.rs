@@ -8,7 +8,8 @@ use sentry_options_validation::{SchemaRegistry, ValidationError, ValuesWatcher};
 use serde_json::Value;
 use thiserror::Error;
 
-const DEFAULT_OPTIONS_DIR: &str = "/etc/sentry-options";
+const PRODUCTION_OPTIONS_DIR: &str = "/etc/sentry-options";
+const LOCAL_OPTIONS_DIR: &str = "sentry-options";
 const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
 
 static GLOBAL_OPTIONS: OnceLock<Options> = OnceLock::new();
@@ -37,15 +38,29 @@ pub struct Options {
     _watcher: ValuesWatcher,
 }
 
+/// Resolve options directory using fallback chain:
+/// 1. `SENTRY_OPTIONS_DIR` env var (if set)
+/// 2. `/etc/sentry-options` (if exists)
+/// 3. `sentry-options/` (local fallback)
+fn resolve_options_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var(OPTIONS_DIR_ENV) {
+        return PathBuf::from(dir);
+    }
+
+    let prod_path = PathBuf::from(PRODUCTION_OPTIONS_DIR);
+    if prod_path.exists() {
+        return prod_path;
+    }
+
+    PathBuf::from(LOCAL_OPTIONS_DIR)
+}
+
 impl Options {
-    /// Load options from default path (`/etc/sentry-options`) or `SENTRY_OPTIONS_DIR` env var.
+    /// Load options using fallback chain: `SENTRY_OPTIONS_DIR` env var, then `/etc/sentry-options`
+    /// if it exists, otherwise `sentry-options/`.
     /// Expects `{dir}/schemas/` and `{dir}/values/` subdirectories.
     pub fn new() -> Result<Self> {
-        let base_dir = std::env::var(OPTIONS_DIR_ENV)
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(DEFAULT_OPTIONS_DIR));
-
-        Self::from_directory(&base_dir)
+        Self::from_directory(&resolve_options_dir())
     }
 
     /// Load options from a specific directory (useful for testing).
@@ -98,7 +113,8 @@ impl Options {
     }
 }
 
-/// Initialize global options from default path or `SENTRY_OPTIONS_DIR` env var.
+/// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
+/// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 pub fn init() -> Result<()> {
     let opts = Options::new()?;
     GLOBAL_OPTIONS

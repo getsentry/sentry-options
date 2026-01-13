@@ -79,7 +79,8 @@ fn options_err(err: RustOptionsError) -> PyErr {
     }
 }
 
-/// Initialize global options from default path or SENTRY_OPTIONS_DIR env var.
+/// Initialize global options using fallback chain: SENTRY_OPTIONS_DIR env var,
+/// then /etc/sentry-options if it exists, otherwise sentry-options/.
 #[pyfunction]
 fn init() -> PyResult<()> {
     let opts = RustOptions::new().map_err(options_err)?;
