@@ -470,7 +470,7 @@ fn cli_validate_schema_changes(
     for repo_name in base_config.repos.keys() {
         let base_schemas = base_dir.join(repo_name);
         let head_schemas = head_dir.join(repo_name);
-        schema_evolution::detect_changes(&base_schemas, &head_schemas)?;
+        schema_evolution::detect_changes(&base_schemas, &head_schemas, quiet)?;
     }
 
     if !quiet {

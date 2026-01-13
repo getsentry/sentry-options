@@ -147,7 +147,7 @@ fn compare_schemas(
 /// 4. Removing namespaces
 /// 5. Changing option types
 /// 6. Changing default values
-pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
+pub fn detect_changes(old_dir: &Path, new_dir: &Path, quiet: bool) -> ValidationResult<()> {
     let old_registry = SchemaRegistry::from_directory(old_dir)?;
     let new_registry = SchemaRegistry::from_directory(new_dir)?;
 
@@ -189,13 +189,14 @@ pub fn detect_changes(old_dir: &Path, new_dir: &Path) -> ValidationResult<()> {
         }
     }
 
-    // Print all changes
-    println!("Schema Changes:");
-    if changelog.is_empty() {
-        println!("\tNo changes");
-    }
-    for change in changelog {
-        println!("\t{}", change);
+    if !quiet {
+        println!("Schema Changes:");
+        if changelog.is_empty() {
+            println!("\tNo changes");
+        }
+        for change in changelog {
+            println!("\t{}", change);
+        }
     }
 
     if !errors.is_empty() {
@@ -276,7 +277,7 @@ mod tests {
         create_schema(&old_dir, "test", &schema);
         create_schema(&new_dir, "test", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_ok());
     }
 
@@ -291,7 +292,7 @@ mod tests {
         create_schema(&old_dir, "test", &schema);
         // new_dir is empty - namespace was removed
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -320,7 +321,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -348,7 +349,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -376,7 +377,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -401,7 +402,7 @@ mod tests {
         create_schema(&new_dir, "test", &schema);
         create_schema(&new_dir, "new-namespace", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_ok());
     }
 
@@ -422,7 +423,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_ok());
     }
 
@@ -443,7 +444,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -474,7 +475,7 @@ mod tests {
         create_schema(&new_dir, "ns1", &schema1);
         create_schema(&new_dir, "ns2", &schema2);
 
-        let result = detect_changes(old_dir.path(), new_dir.path());
+        let result = detect_changes(old_dir.path(), new_dir.path(), true);
         assert!(result.is_ok());
     }
 }
