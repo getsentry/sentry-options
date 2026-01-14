@@ -113,6 +113,19 @@ enum Commands {
         #[arg(long, required = true, help = "output directory for schemas")]
         out: String,
     },
+    /// Validate schema changes between two git SHAs
+    #[command(name = "validate-schema-changes")]
+    ValidateSchemaChanges {
+        #[arg(
+            long,
+            env = "GITHUB_BASE_SHA",
+            help = "base commit SHA to compare from"
+        )]
+        base_sha: String,
+
+        #[arg(long, env = "GITHUB_HEAD_SHA", help = "head commit SHA to compare to")]
+        head_sha: String,
+    },
 }
 
 /// A key value pair of options and their parsed value
@@ -423,6 +436,34 @@ fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
     Ok(())
 }
 
+// head and base sha should be passed in as env variables in CI
+// alternatively, passed in via params for local development
+fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) -> Result<()> {
+    let base_temp = tempfile::tempdir()?;
+    let head_temp = tempfile::tempdir()?;
+
+    // Get schemas path from env or use default
+    let schemas_path = std::env::var("SENTRY_OPTIONS_DIR")
+        .unwrap_or_else(|_| "sentry-options/schemas".to_string());
+
+    // for git archive to work we need to ensure shas are pre-fetched
+    schema_retriever::fetch_shas(&[&base_sha, &head_sha])?;
+
+    schema_retriever::extract_schemas_at_sha(&base_sha, &schemas_path, base_temp.path())?;
+    schema_retriever::extract_schemas_at_sha(&head_sha, &schemas_path, head_temp.path())?;
+
+    let base_extracted = base_temp.path().join(&schemas_path);
+    let head_extracted = head_temp.path().join(&schemas_path);
+
+    schema_evolution::detect_changes(&base_extracted, &head_extracted, quiet)?;
+
+    if !quiet {
+        println!("Schema validation passed");
+    }
+
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -431,6 +472,9 @@ fn main() {
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
+        Commands::ValidateSchemaChanges { base_sha, head_sha } => {
+            cli_validate_schema_changes(base_sha, head_sha, cli.quiet)
+        }
     };
 
     if let Err(e) = result {

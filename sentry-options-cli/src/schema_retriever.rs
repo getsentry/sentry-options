@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 
 use crate::repo_schema_config::{RepoSchemaConfig, RepoSchemaConfigs};
@@ -138,6 +139,65 @@ fn copy_schemas(src: &Path, dest: &Path) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+/// Fetch multiple SHAs from origin
+pub fn fetch_shas(shas: &[&str]) -> Result<()> {
+    for sha in shas {
+        let output = Command::new("git")
+            .args(["fetch", "origin", sha])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(AppError::Git(format!(
+                "Failed to fetch {}: {}",
+                sha,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Extract schemas directory from the current git repository at a specific SHA
+/// SHA must already be fetched (call fetch_shas to ensure this)
+pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> Result<()> {
+    fs::create_dir_all(out_dir)?;
+
+    // git archive will output a tarball of the specified directory
+    let archive_output = Command::new("git")
+        .args(["archive", sha, schemas_path])
+        .output()?;
+
+    if !archive_output.status.success() {
+        return Err(AppError::Git(format!(
+            "Failed to archive {} at {}: {}",
+            schemas_path,
+            sha,
+            String::from_utf8_lossy(&archive_output.stderr).trim()
+        )));
+    }
+
+    let mut tar_child = Command::new("tar")
+        .args(["-xf", "-", "-C"])
+        .arg(out_dir)
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    // avoids writing to a temp file between the git archive and tar -xf
+    if let Some(mut stdin) = tar_child.stdin.take() {
+        stdin.write_all(&archive_output.stdout)?;
+    }
+
+    let status = tar_child.wait()?;
+    if !status.success() {
+        return Err(AppError::Validation(format!(
+            "Failed to extract tar archive for {} at {}",
+            schemas_path, sha
+        )));
+    }
+
     Ok(())
 }
 
