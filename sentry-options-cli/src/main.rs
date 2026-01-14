@@ -442,9 +442,6 @@ fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) 
     let base_temp = tempfile::tempdir()?;
     let head_temp = tempfile::tempdir()?;
 
-    let base_dir = base_temp.path().join("schemas");
-    let head_dir = head_temp.path().join("schemas");
-
     // Get schemas path from env or use default
     let schemas_path = std::env::var("SENTRY_OPTIONS_DIR")
         .unwrap_or_else(|_| "sentry-options/schemas".to_string());
@@ -452,10 +449,13 @@ fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) 
     // for git archive to work we need to ensure shas are pre-fetched
     schema_retriever::fetch_shas(&[&base_sha, &head_sha])?;
 
-    schema_retriever::extract_schemas_at_sha(&base_sha, &schemas_path, &base_dir)?;
-    schema_retriever::extract_schemas_at_sha(&head_sha, &schemas_path, &head_dir)?;
+    schema_retriever::extract_schemas_at_sha(&base_sha, &schemas_path, base_temp.path())?;
+    schema_retriever::extract_schemas_at_sha(&head_sha, &schemas_path, head_temp.path())?;
 
-    schema_evolution::detect_changes(&base_dir, &head_dir, quiet)?;
+    let base_extracted = base_temp.path().join(&schemas_path);
+    let head_extracted = head_temp.path().join(&schemas_path);
+
+    schema_evolution::detect_changes(&base_extracted, &head_extracted, quiet)?;
 
     if !quiet {
         println!("Schema validation passed");
