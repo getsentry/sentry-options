@@ -1,16 +1,14 @@
 //! Options client for reading validated configuration values.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use sentry_options_validation::{SchemaRegistry, ValidationError, ValuesWatcher};
+use sentry_options_validation::{
+    SchemaRegistry, ValidationError, ValuesWatcher, resolve_options_dir,
+};
 use serde_json::Value;
 use thiserror::Error;
-
-const PRODUCTION_OPTIONS_DIR: &str = "/etc/sentry-options";
-const LOCAL_OPTIONS_DIR: &str = "sentry-options";
-const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
 
 static GLOBAL_OPTIONS: OnceLock<Options> = OnceLock::new();
 
@@ -36,23 +34,6 @@ pub struct Options {
     registry: Arc<SchemaRegistry>,
     values: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
     _watcher: ValuesWatcher,
-}
-
-/// Resolve options directory using fallback chain:
-/// 1. `SENTRY_OPTIONS_DIR` env var (if set)
-/// 2. `/etc/sentry-options` (if exists)
-/// 3. `sentry-options/` (local fallback)
-fn resolve_options_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var(OPTIONS_DIR_ENV) {
-        return PathBuf::from(dir);
-    }
-
-    let prod_path = PathBuf::from(PRODUCTION_OPTIONS_DIR);
-    if prod_path.exists() {
-        return prod_path;
-    }
-
-    PathBuf::from(LOCAL_OPTIONS_DIR)
 }
 
 impl Options {
