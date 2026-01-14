@@ -116,15 +116,18 @@ enum Commands {
     /// Validate schema changes between two git SHAs
     #[command(name = "validate-schema-changes")]
     ValidateSchemaChanges {
-        #[arg(
-            long,
-            env = "GITHUB_BASE_SHA",
-            help = "base commit SHA to compare from"
-        )]
+        #[arg(long, required = true, help = "base commit SHA to compare from")]
         base_sha: String,
 
-        #[arg(long, env = "GITHUB_HEAD_SHA", help = "head commit SHA to compare to")]
+        #[arg(long, required = true, help = "head commit SHA to compare to")]
         head_sha: String,
+
+        #[arg(
+            long,
+            required = true,
+            help = "repository name for namespace prefix validation"
+        )]
+        repo: String,
     },
 }
 
@@ -436,9 +439,12 @@ fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
     Ok(())
 }
 
-// head and base sha should be passed in as env variables in CI
-// alternatively, passed in via params for local development
-fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) -> Result<()> {
+fn cli_validate_schema_changes(
+    base_sha: String,
+    head_sha: String,
+    repo: String,
+    quiet: bool,
+) -> Result<()> {
     let base_temp = tempfile::tempdir()?;
     let head_temp = tempfile::tempdir()?;
 
@@ -455,7 +461,7 @@ fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) 
     let base_extracted = base_temp.path().join(&schemas_path);
     let head_extracted = head_temp.path().join(&schemas_path);
 
-    schema_evolution::detect_changes(&base_extracted, &head_extracted, quiet)?;
+    schema_evolution::detect_changes(&base_extracted, &head_extracted, &repo, quiet)?;
 
     if !quiet {
         println!("Schema validation passed");
@@ -472,9 +478,11 @@ fn main() {
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
-        Commands::ValidateSchemaChanges { base_sha, head_sha } => {
-            cli_validate_schema_changes(base_sha, head_sha, cli.quiet)
-        }
+        Commands::ValidateSchemaChanges {
+            base_sha,
+            head_sha,
+            repo,
+        } => cli_validate_schema_changes(base_sha, head_sha, repo, cli.quiet),
     };
 
     if let Err(e) = result {
