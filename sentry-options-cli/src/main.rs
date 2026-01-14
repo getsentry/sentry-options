@@ -9,7 +9,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use sentry_options_validation::SchemaRegistry;
+use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegistry};
 use walkdir::WalkDir;
 
 /// Result type for operations
@@ -443,8 +443,8 @@ fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) 
     let head_temp = tempfile::tempdir()?;
 
     // Get schemas path from env or use default
-    let schemas_path = std::env::var("SENTRY_OPTIONS_DIR")
-        .unwrap_or_else(|_| "sentry-options/schemas".to_string());
+    let schemas_path =
+        std::env::var(OPTIONS_DIR_ENV).unwrap_or_else(|_| format!("{}/schemas", LOCAL_OPTIONS_DIR));
 
     // for git archive to work we need to ensure shas are pre-fetched
     schema_retriever::fetch_shas(&[&base_sha, &head_sha])?;

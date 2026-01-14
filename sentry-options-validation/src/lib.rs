@@ -26,6 +26,32 @@ const VALUES_FILE_NAME: &str = "values.json";
 /// Time between file polls in seconds
 const POLLING_DELAY: u64 = 5;
 
+/// Production path where options are deployed via config map
+pub const PRODUCTION_OPTIONS_DIR: &str = "/etc/sentry-options";
+
+/// Local fallback path for development
+pub const LOCAL_OPTIONS_DIR: &str = "sentry-options";
+
+/// Environment variable to override options directory
+pub const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
+
+/// Resolve options directory using fallback chain:
+/// 1. `SENTRY_OPTIONS_DIR` env var (if set)
+/// 2. `/etc/sentry-options` (if exists)
+/// 3. `sentry-options/` (local fallback)
+pub fn resolve_options_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var(OPTIONS_DIR_ENV) {
+        return PathBuf::from(dir);
+    }
+
+    let prod_path = PathBuf::from(PRODUCTION_OPTIONS_DIR);
+    if prod_path.exists() {
+        return prod_path;
+    }
+
+    PathBuf::from(LOCAL_OPTIONS_DIR)
+}
+
 /// Result type for validation operations
 pub type ValidationResult<T> = Result<T, ValidationError>;
 
