@@ -146,7 +146,7 @@ fn copy_schemas(src: &Path, dest: &Path) -> Result<()> {
 pub fn fetch_shas(shas: &[&str]) -> Result<()> {
     for sha in shas {
         let output = Command::new("git")
-            .args(&["fetch", "origin", sha])
+            .args(["fetch", "origin", sha])
             .output()?;
 
         if !output.status.success() {
@@ -167,7 +167,7 @@ pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> 
 
     // git archive will output a tarball of the specified directory
     let archive_output = Command::new("git")
-        .args(&["archive", sha, schemas_path])
+        .args(["archive", sha, schemas_path])
         .output()?;
 
     if !archive_output.status.success() {
@@ -180,7 +180,7 @@ pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> 
     }
 
     let mut tar_child = Command::new("tar")
-        .args(&["-xf", "-", "-C"])
+        .args(["-xf", "-", "-C"])
         .arg(out_dir)
         .stdin(Stdio::piped())
         .spawn()?;
