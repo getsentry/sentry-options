@@ -116,9 +116,6 @@ enum Commands {
     /// Validate schema changes between two git SHAs
     #[command(name = "validate-schema-changes")]
     ValidateSchemaChanges {
-        #[arg(long, required = true, help = "path to repos.json config")]
-        config: String,
-
         #[arg(
             long,
             env = "GITHUB_BASE_SHA",
@@ -441,37 +438,24 @@ fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
 
 // head and base sha should be passed in as env variables in CI
 // alternatively, passed in via params for local development
-fn cli_validate_schema_changes(
-    config: String,
-    base_sha: String,
-    head_sha: String,
-    quiet: bool,
-) -> Result<()> {
-    let mut base_config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
-    let mut head_config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
-
-    for repo_config in base_config.repos.values_mut() {
-        repo_config.sha = base_sha.clone();
-    }
-    for repo_config in head_config.repos.values_mut() {
-        repo_config.sha = head_sha.clone();
-    }
-
+fn cli_validate_schema_changes(base_sha: String, head_sha: String, quiet: bool) -> Result<()> {
     let base_temp = tempfile::tempdir()?;
     let head_temp = tempfile::tempdir()?;
 
-    // requires a non-existent subdir so fetch_all_schemas doesn't complain
     let base_dir = base_temp.path().join("schemas");
     let head_dir = head_temp.path().join("schemas");
 
-    schema_retriever::fetch_all_schemas(&base_config, &base_dir, quiet)?;
-    schema_retriever::fetch_all_schemas(&head_config, &head_dir, quiet)?;
+    // Get schemas path from env or use default
+    let schemas_path = std::env::var("SENTRY_OPTIONS_DIR")
+        .unwrap_or_else(|_| "sentry-options/schemas".to_string());
 
-    for repo_name in base_config.repos.keys() {
-        let base_schemas = base_dir.join(repo_name);
-        let head_schemas = head_dir.join(repo_name);
-        schema_evolution::detect_changes(&base_schemas, &head_schemas, quiet)?;
-    }
+    // for git archive to work we need to ensure shas are pre-fetched
+    schema_retriever::fetch_shas(&[&base_sha, &head_sha])?;
+
+    schema_retriever::extract_schemas_at_sha(&base_sha, &schemas_path, &base_dir)?;
+    schema_retriever::extract_schemas_at_sha(&head_sha, &schemas_path, &head_dir)?;
+
+    schema_evolution::detect_changes(&base_dir, &head_dir, quiet)?;
 
     if !quiet {
         println!("Schema validation passed");
@@ -488,11 +472,9 @@ fn main() {
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write { schemas, root, out } => cli_write(schemas, root, out, cli.quiet),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
-        Commands::ValidateSchemaChanges {
-            config,
-            base_sha,
-            head_sha,
-        } => cli_validate_schema_changes(config, base_sha, head_sha, cli.quiet),
+        Commands::ValidateSchemaChanges { base_sha, head_sha } => {
+            cli_validate_schema_changes(base_sha, head_sha, cli.quiet)
+        }
     };
 
     if let Err(e) = result {
