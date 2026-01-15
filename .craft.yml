@@ -13,6 +13,7 @@ requireNames:
   - /^sentry_options-.*manylinux.*aarch64\.whl$/    # Linux ARM wheel
   - /^sentry_options-.*macosx.*x86_64\.whl$/        # macOS Intel wheel
   - /^sentry_options-.*macosx.*arm64\.whl$/         # macOS ARM wheel
+  - /^sentry-options-cli$/                          # Rust CLI binary
 targets:
   - name: github
   - name: crates
