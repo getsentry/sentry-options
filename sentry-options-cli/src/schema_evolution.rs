@@ -147,7 +147,12 @@ fn compare_schemas(
 /// 4. Removing namespaces
 /// 5. Changing option types
 /// 6. Changing default values
-pub fn detect_changes(old_dir: &Path, new_dir: &Path, quiet: bool) -> ValidationResult<()> {
+pub fn detect_changes(
+    old_dir: &Path,
+    new_dir: &Path,
+    repo_name: &str,
+    quiet: bool,
+) -> ValidationResult<()> {
     let old_registry = SchemaRegistry::from_directory(old_dir)?;
     let new_registry = SchemaRegistry::from_directory(new_dir)?;
 
@@ -156,6 +161,26 @@ pub fn detect_changes(old_dir: &Path, new_dir: &Path, quiet: bool) -> Validation
 
     let mut changelog = Vec::new();
     let mut errors = Vec::new();
+
+    // Validate namespace prefixes in new schemas
+    let expected_prefix = format!("{}-", repo_name);
+    let mut new_namespace_names_sorted: Vec<_> = new_schemas.keys().collect();
+    new_namespace_names_sorted.sort();
+
+    for namespace in new_namespace_names_sorted {
+        let is_exact_match = namespace == repo_name;
+        let has_valid_prefix = namespace.starts_with(&expected_prefix);
+
+        if !is_exact_match && !has_valid_prefix {
+            errors.push(ValidationError::SchemaError {
+                file: format!("schemas/{}/schema.json", namespace).into(),
+                message: format!(
+                    "Namespace '{}' is invalid. Expected either '{}' or '{}*' (e.g., '{}-testing')",
+                    namespace, repo_name, expected_prefix, repo_name
+                ),
+            });
+        }
+    }
 
     let mut old_namespace_names: Vec<_> = old_schemas.keys().collect();
     old_namespace_names.sort();
@@ -277,7 +302,7 @@ mod tests {
         create_schema(&old_dir, "test", &schema);
         create_schema(&new_dir, "test", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_ok());
     }
 
@@ -292,7 +317,7 @@ mod tests {
         create_schema(&old_dir, "test", &schema);
         // new_dir is empty - namespace was removed
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -321,7 +346,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -349,7 +374,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -377,7 +402,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -400,9 +425,9 @@ mod tests {
 
         create_schema(&old_dir, "test", &schema);
         create_schema(&new_dir, "test", &schema);
-        create_schema(&new_dir, "new-namespace", &schema);
+        create_schema(&new_dir, "test-new", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_ok());
     }
 
@@ -423,7 +448,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_ok());
     }
 
@@ -444,7 +469,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -460,22 +485,92 @@ mod tests {
     fn test_multiple_namespaces() {
         let (old_dir, new_dir) = setup_dirs();
 
-        // Build schema1 for ns1
+        // Build schema1 for test-ns1
         let mut options1 = serde_json::Map::new();
         options1.insert("key1".to_string(), option("string", json!("test")));
         let schema1 = build_schema(options1);
 
-        // Build schema2 for ns2
+        // Build schema2 for test-ns2
         let mut options2 = serde_json::Map::new();
         options2.insert("key2".to_string(), option("boolean", json!(true)));
         let schema2 = build_schema(options2);
 
-        create_schema(&old_dir, "ns1", &schema1);
-        create_schema(&old_dir, "ns2", &schema2);
-        create_schema(&new_dir, "ns1", &schema1);
-        create_schema(&new_dir, "ns2", &schema2);
+        create_schema(&old_dir, "test-ns1", &schema1);
+        create_schema(&old_dir, "test-ns2", &schema2);
+        create_schema(&new_dir, "test-ns1", &schema1);
+        create_schema(&new_dir, "test-ns2", &schema2);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_namespace_prefix_exact_match_passes() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut options = serde_json::Map::new();
+        options.insert("key1".to_string(), option("string", json!("test")));
+        let schema = build_schema(options);
+
+        create_schema(&old_dir, "myrepo", &schema);
+        create_schema(&new_dir, "myrepo", &schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_namespace_prefix_with_suffix_passes() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut options = serde_json::Map::new();
+        options.insert("key1".to_string(), option("string", json!("test")));
+        let schema = build_schema(options);
+
+        create_schema(&old_dir, "myrepo-testing", &schema);
+        create_schema(&new_dir, "myrepo-testing", &schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_namespace_prefix_invalid_fails() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut options = serde_json::Map::new();
+        options.insert("key1".to_string(), option("string", json!("test")));
+        let schema = build_schema(options);
+
+        create_schema(&new_dir, "other-testing", &schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "is invalid. Expected either");
+            }
+            _ => panic!("Expected ValidationErrors for invalid namespace prefix"),
+        }
+    }
+
+    #[test]
+    fn test_namespace_prefix_no_prefix_fails() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut options = serde_json::Map::new();
+        options.insert("key1".to_string(), option("string", json!("test")));
+        let schema = build_schema(options);
+
+        create_schema(&new_dir, "testing", &schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "is invalid. Expected either");
+            }
+            _ => panic!("Expected ValidationErrors for missing namespace prefix"),
+        }
     }
 }
