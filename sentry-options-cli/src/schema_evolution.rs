@@ -167,16 +167,16 @@ pub fn detect_changes(
     let mut new_namespace_names_sorted: Vec<_> = new_schemas.keys().collect();
     new_namespace_names_sorted.sort();
 
-    for namespace in &new_namespace_names_sorted {
-        let is_exact_match = *namespace == repo_name;
+    for namespace in new_namespace_names_sorted {
+        let is_exact_match = namespace == repo_name;
         let has_valid_prefix = namespace.starts_with(&expected_prefix);
 
         if !is_exact_match && !has_valid_prefix {
             errors.push(ValidationError::SchemaError {
                 file: format!("schemas/{}/schema.json", namespace).into(),
                 message: format!(
-                    "Namespace '{}' must start with repo prefix '{}'. Valid formats: '{}' or '{}<suffix>'",
-                    namespace, repo_name, repo_name, expected_prefix
+                    "Namespace '{}' is invalid. Expected either '{}' or '{}*' (e.g., '{}-testing')",
+                    namespace, repo_name, expected_prefix, repo_name
                 ),
             });
         }
@@ -548,7 +548,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
-                assert_error_contains(&errors, "must start with repo prefix");
+                assert_error_contains(&errors, "is invalid. Expected either");
             }
             _ => panic!("Expected ValidationErrors for invalid namespace prefix"),
         }
@@ -568,7 +568,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
-                assert_error_contains(&errors, "must start with repo prefix");
+                assert_error_contains(&errors, "is invalid. Expected either");
             }
             _ => panic!("Expected ValidationErrors for missing namespace prefix"),
         }
