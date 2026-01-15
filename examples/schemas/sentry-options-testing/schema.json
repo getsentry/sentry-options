@@ -4,7 +4,7 @@
   "properties": {
     "example-option": {
       "type": "string",
-      "default": "",
+      "default": "im changing the default",
       "description": "An example string option"
     },
     "float-option": {
@@ -16,11 +16,6 @@
       "type": "integer",
       "default": 0,
       "description": "An example integer option"
-    },
-    "bool-option": {
-      "type": "boolean",
-      "default": false,
-      "description": "An example boolean option"
     }
   }
 }
