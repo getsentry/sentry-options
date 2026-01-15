@@ -10,6 +10,9 @@ use serde::Serialize;
 
 use crate::{AppError, FileData, NamespaceMap, OptionsMap, Result};
 
+/// Maximum length for a Kubernetes ConfigMap name (DNS subdomain)
+const MAX_CONFIGMAP_NAME_LEN: usize = 253;
+
 /// Output format for the write command
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 pub enum OutputFormat {
@@ -93,10 +96,10 @@ pub fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
 /// Validate a Kubernetes ConfigMap name (DNS subdomain): lowercase alphanumeric,
 /// '-', or '.', start/end with alphanumeric, max 253 characters.
 fn validate_configmap_name(name: &str) -> Result<()> {
-    if name.len() > 253 {
+    if name.len() > MAX_CONFIGMAP_NAME_LEN {
         return Err(AppError::Validation(format!(
-            "ConfigMap name '{}' exceeds 253 character limit",
-            name
+            "ConfigMap name '{}' exceeds {} character limit",
+            name, MAX_CONFIGMAP_NAME_LEN
         )));
     }
     if let Some(c) = name
@@ -135,12 +138,12 @@ pub fn generate_configmaps(
             let values_json = serde_json::to_string(&wrapper)?;
 
             let mut annotations: BTreeMap<_, _> =
-                [("sentry-options/generated-at", generated_at.to_string())].into();
+                [("generated_at", generated_at.to_string())].into();
             if let Some(sha) = commit_sha {
-                annotations.insert("sentry-options/commit-sha", sha.to_string());
+                annotations.insert("commit_sha", sha.to_string());
             }
             if let Some(ts) = commit_timestamp {
-                annotations.insert("sentry-options/commit-timestamp", ts.to_string());
+                annotations.insert("commit_timestamp", ts.to_string());
             }
 
             Ok(ConfigMap {
@@ -246,16 +249,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_configmap_name_rejects_over_253_chars() {
-        assert!(validate_configmap_name(&"a".repeat(253)).is_ok());
-        let result = validate_configmap_name(&"a".repeat(254));
+    fn test_validate_configmap_name_rejects_over_max_len() {
+        assert!(validate_configmap_name(&"a".repeat(MAX_CONFIGMAP_NAME_LEN)).is_ok());
+        let result = validate_configmap_name(&"a".repeat(MAX_CONFIGMAP_NAME_LEN + 1));
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("exceeds 253 character limit")
-        );
+        assert!(result.unwrap_err().to_string().contains("character limit"));
     }
 
     fn make_namespace_map(
@@ -311,17 +309,15 @@ mod tests {
         );
 
         assert_eq!(
-            cm.metadata.annotations.get("sentry-options/commit-sha"),
+            cm.metadata.annotations.get("commit_sha"),
             Some(&"abc123".to_string())
         );
         assert_eq!(
-            cm.metadata
-                .annotations
-                .get("sentry-options/commit-timestamp"),
+            cm.metadata.annotations.get("commit_timestamp"),
             Some(&"1705180800".to_string())
         );
         assert_eq!(
-            cm.metadata.annotations.get("sentry-options/generated-at"),
+            cm.metadata.annotations.get("generated_at"),
             Some(&"2026-01-14T00:00:00Z".to_string())
         );
 
