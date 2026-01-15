@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegistry};
 
 use loader::{ensure_no_duplicate_keys, load_and_validate};
@@ -66,6 +66,55 @@ struct Cli {
     command: Commands,
 }
 
+/// Arguments for the write command
+#[derive(Args, Debug)]
+struct WriteArgs {
+    #[arg(
+        long,
+        required = true,
+        help = "directory containing namespace schema definitions"
+    )]
+    schemas: String,
+
+    #[arg(long, required = true, help = "root directory of the sentry options")]
+    root: String,
+
+    #[arg(long, help = "output path (directory for json, file for configmap)")]
+    out: Option<String>,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value = "json",
+        help = "output format: json (files) or configmap (stdout YAML)"
+    )]
+    output_format: OutputFormat,
+
+    #[arg(
+        long,
+        help = "git commit SHA for traceability (used in configmap annotations)"
+    )]
+    commit_sha: Option<String>,
+
+    #[arg(
+        long,
+        help = "git commit timestamp for SLO tracking (used in configmap annotations)"
+    )]
+    commit_timestamp: Option<String>,
+
+    #[arg(
+        long,
+        help = "namespace to generate ConfigMap for (required for configmap format)"
+    )]
+    namespace: Option<String>,
+
+    #[arg(
+        long,
+        help = "target to generate ConfigMap for (required for configmap format)"
+    )]
+    target: Option<String>,
+}
+
 /// Available subcommands
 #[derive(Subcommand, Debug)]
 enum Commands {
@@ -93,52 +142,7 @@ enum Commands {
         root: String,
     },
     /// Validate and convert YAML values to JSON or ConfigMap
-    Write {
-        #[arg(
-            long,
-            required = true,
-            help = "directory containing namespace schema definitions"
-        )]
-        schemas: String,
-
-        #[arg(long, required = true, help = "root directory of the sentry options")]
-        root: String,
-
-        #[arg(long, help = "output directory for files (required for json format)")]
-        out: Option<String>,
-
-        #[arg(
-            long,
-            value_enum,
-            default_value = "json",
-            help = "output format: json (files) or configmap (stdout YAML)"
-        )]
-        output_format: OutputFormat,
-
-        #[arg(
-            long,
-            help = "git commit SHA for traceability (used in configmap annotations)"
-        )]
-        commit_sha: Option<String>,
-
-        #[arg(
-            long,
-            help = "git commit timestamp for SLO tracking (used in configmap annotations)"
-        )]
-        commit_timestamp: Option<String>,
-
-        #[arg(
-            long,
-            help = "namespace to generate ConfigMap for (required for configmap format)"
-        )]
-        namespace: Option<String>,
-
-        #[arg(
-            long,
-            help = "target to generate ConfigMap for (required for configmap format)"
-        )]
-        target: Option<String>,
-    },
+    Write(WriteArgs),
     /// Fetch schemas from multiple repos via git sparse checkout
     #[command(name = "fetch-schemas")]
     FetchSchemas {
@@ -210,25 +214,15 @@ fn cli_validate_values(schemas: String, root: String, quiet: bool) -> Result<()>
     Ok(())
 }
 
-fn cli_write(
-    schemas: String,
-    root: String,
-    out: Option<String>,
-    output_format: OutputFormat,
-    commit_sha: Option<String>,
-    commit_timestamp: Option<String>,
-    namespace: Option<String>,
-    target: Option<String>,
-    quiet: bool,
-) -> Result<()> {
-    let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
+fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
+    let schema_registry = SchemaRegistry::from_directory(Path::new(&args.schemas))?;
 
-    let grouped = load_and_validate(&root, &schema_registry)?;
+    let grouped = load_and_validate(&args.root, &schema_registry)?;
     ensure_no_duplicate_keys(&grouped)?;
 
-    match output_format {
+    match args.output_format {
         OutputFormat::Json => {
-            let out_path = out.ok_or_else(|| {
+            let out_path = args.out.ok_or_else(|| {
                 AppError::Validation("--out is required for json output format".to_string())
             })?;
             let json_outputs = generate_json(grouped)?;
@@ -240,10 +234,10 @@ fn cli_write(
             }
         }
         OutputFormat::Configmap => {
-            let namespace = namespace.ok_or_else(|| {
+            let namespace = args.namespace.ok_or_else(|| {
                 AppError::Validation("--namespace is required for configmap output format".into())
             })?;
-            let target = target.ok_or_else(|| {
+            let target = args.target.ok_or_else(|| {
                 AppError::Validation("--target is required for configmap output format".into())
             })?;
 
@@ -252,17 +246,22 @@ fn cli_write(
                 &grouped,
                 &namespace,
                 &target,
-                commit_sha.as_deref(),
-                commit_timestamp.as_deref(),
+                args.commit_sha.as_deref(),
+                args.commit_timestamp.as_deref(),
                 &generated_at,
             )?;
-            write_configmap_yaml(&configmap)?;
+
+            let out_path = args.out.as_ref().map(Path::new);
+            write_configmap_yaml(&configmap, out_path)?;
 
             if !quiet {
-                eprintln!(
-                    "Successfully generated ConfigMap: sentry-options-{}-{}",
-                    namespace, target
-                );
+                match out_path {
+                    Some(path) => eprintln!("Successfully wrote ConfigMap to {}", path.display()),
+                    None => eprintln!(
+                        "Successfully generated ConfigMap: sentry-options-{}-{}",
+                        namespace, target
+                    ),
+                }
             }
         }
     }
@@ -312,26 +311,7 @@ fn main() {
     let result = match cli.command {
         Commands::ValidateSchema { schemas } => cli_validate_schema(schemas, cli.quiet),
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
-        Commands::Write {
-            schemas,
-            root,
-            out,
-            output_format,
-            commit_sha,
-            commit_timestamp,
-            namespace,
-            target,
-        } => cli_write(
-            schemas,
-            root,
-            out,
-            output_format,
-            commit_sha,
-            commit_timestamp,
-            namespace,
-            target,
-            cli.quiet,
-        ),
+        Commands::Write(args) => cli_write(args, cli.quiet),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
         Commands::ValidateSchemaChanges { base_sha, head_sha } => {
             cli_validate_schema_changes(base_sha, head_sha, cli.quiet)

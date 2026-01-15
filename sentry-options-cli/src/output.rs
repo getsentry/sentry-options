@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use clap::ValueEnum;
 use serde::Serialize;
@@ -180,11 +184,21 @@ pub fn generate_configmap(
     })
 }
 
-pub fn write_configmap_yaml(configmap: &ConfigMap) -> Result<()> {
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-    serde_yaml::to_writer(&mut handle, configmap)
+pub fn write_configmap_yaml(configmap: &ConfigMap, out_path: Option<&Path>) -> Result<()> {
+    let yaml = serde_yaml::to_string(configmap)
         .map_err(|e| AppError::Validation(format!("YAML serialization error: {}", e)))?;
+
+    match out_path {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, yaml)?;
+        }
+        None => {
+            print!("{}", yaml);
+        }
+    }
     Ok(())
 }
 
@@ -265,6 +279,7 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("character limit"));
     }
 
+    #[allow(clippy::type_complexity)]
     fn make_namespace_map(
         entries: Vec<(&str, &str, Vec<(&str, serde_json::Value)>)>,
     ) -> NamespaceMap {
