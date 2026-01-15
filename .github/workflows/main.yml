@@ -160,6 +160,8 @@ jobs:
     name: Validate Schema Changes
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    env:
+      SENTRY_OPTIONS_DIR: examples/schemas
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
