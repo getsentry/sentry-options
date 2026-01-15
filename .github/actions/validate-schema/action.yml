@@ -13,10 +13,10 @@ runs:
 
     - name: Install sentry-options-cli
       shell: bash
-      run: cargo install sentry-options-cli --version "0.0.4" --locked
+      run: cargo install sentry-options-cli --version "0.0.5" --locked
 
     - name: Validate schema changes
       shell: bash
       run: |
         set -euo pipefail
-        sentry-options-cli validate-schema-changes --base-sha ${{github.base_ref}} --head-sha ${{github.head_ref}}
+        sentry-options-cli validate-schema-changes --base-sha ${{github.event.pull_request.base.sha}} --head-sha ${{github.event.pull_request.head.sha}} --repo ${{github.event.repository.name}}
