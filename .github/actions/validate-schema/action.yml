@@ -1,22 +1,32 @@
 name: "Validate Sentry Options Schema"
 description: "Installs sentry-options-cli and runs validate-schema-changes"
+inputs:
+  schemas-path:
+    description: "Path to the schemas directory"
+    default: "sentry-options/schemas"
 
 runs:
   using: "composite"
   steps:
     - name: Install Rust Toolchain
+      if: github.event_name == 'pull_request' # ensures this action is skipped when not on a PR
       shell: bash
       run: rustup toolchain install stable --profile minimal --no-self-update
 
     - name: Cache Cargo
+      if: github.event_name == 'pull_request'
       uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
 
     - name: Install sentry-options-cli
+      if: github.event_name == 'pull_request'
       shell: bash
       run: cargo install sentry-options-cli --version "0.0.5" --locked
 
     - name: Validate schema changes
+      if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        SENTRY_OPTIONS_DIR: "${{inputs.schemas-path}}"
       run: |
         set -euo pipefail
-        sentry-options-cli validate-schema-changes --base-sha ${{github.event.pull_request.base.sha}} --head-sha ${{github.event.pull_request.head.sha}} --repo ${{github.event.repository.name}}
+        sentry-options-cli validate-schema-changes --base-sha "${{github.event.pull_request.base.sha}}" --head-sha "${{github.event.pull_request.head.sha}}" --repo "${{github.event.repository.name}}"
