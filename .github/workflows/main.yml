@@ -156,6 +156,18 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  validate-schema-changes:
+    name: Validate Schema Changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/validate-schema
+
   python-client-test:
     name: Python Client Tests
     runs-on: ubuntu-latest
@@ -194,7 +206,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build-python, build-python-sdist, pre-commit, tox, rust-lint, rust-test, python-client-test]
+    needs: [build-python, build-python-sdist, pre-commit, tox, rust-lint, rust-test, validate-schema-changes, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
