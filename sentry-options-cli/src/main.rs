@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand};
 use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegistry};
 
 use loader::{ensure_no_duplicate_keys, load_and_validate};
-use output::{OutputFormat, generate_configmaps, generate_json, write_configmaps_yaml, write_json};
+use output::{OutputFormat, generate_configmap, generate_json, write_configmap_yaml, write_json};
 
 /// Result type for operations
 pub type Result<T> = std::result::Result<T, AppError>;
@@ -127,6 +127,18 @@ enum Commands {
             help = "git commit timestamp for SLO tracking (used in configmap annotations)"
         )]
         commit_timestamp: Option<String>,
+
+        #[arg(
+            long,
+            help = "namespace to generate ConfigMap for (required for configmap format)"
+        )]
+        namespace: Option<String>,
+
+        #[arg(
+            long,
+            help = "target to generate ConfigMap for (required for configmap format)"
+        )]
+        target: Option<String>,
     },
     /// Fetch schemas from multiple repos via git sparse checkout
     #[command(name = "fetch-schemas")]
@@ -206,6 +218,8 @@ fn cli_write(
     output_format: OutputFormat,
     commit_sha: Option<String>,
     commit_timestamp: Option<String>,
+    namespace: Option<String>,
+    target: Option<String>,
     quiet: bool,
 ) -> Result<()> {
     let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
@@ -227,18 +241,29 @@ fn cli_write(
             }
         }
         OutputFormat::Configmap => {
+            let namespace = namespace.ok_or_else(|| {
+                AppError::Validation("--namespace is required for configmap output format".into())
+            })?;
+            let target = target.ok_or_else(|| {
+                AppError::Validation("--target is required for configmap output format".into())
+            })?;
+
             let generated_at = chrono::Utc::now().to_rfc3339();
-            let configmaps = generate_configmaps(
-                grouped,
+            let configmap = generate_configmap(
+                &grouped,
+                &namespace,
+                &target,
                 commit_sha.as_deref(),
                 commit_timestamp.as_deref(),
                 &generated_at,
             )?;
-            let num_configmaps = configmaps.len();
-            write_configmaps_yaml(&configmaps)?;
+            write_configmap_yaml(&configmap)?;
 
             if !quiet {
-                eprintln!("Successfully generated {} ConfigMaps", num_configmaps);
+                eprintln!(
+                    "Successfully generated ConfigMap: sentry-options-{}-{}",
+                    namespace, target
+                );
             }
         }
     }
@@ -295,6 +320,8 @@ fn main() {
             output_format,
             commit_sha,
             commit_timestamp,
+            namespace,
+            target,
         } => cli_write(
             schemas,
             root,
@@ -302,6 +329,8 @@ fn main() {
             output_format,
             commit_sha,
             commit_timestamp,
+            namespace,
+            target,
             cli.quiet,
         ),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),

@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
-    io::Write,
     path::PathBuf,
 };
 
@@ -52,26 +51,47 @@ fn merge_keys(filedata: &[FileData]) -> OptionsMap {
         .collect()
 }
 
+/// Merge options for a single namespace/target, applying default then target overrides.
+fn merge_options_for_target(
+    maps: &NamespaceMap,
+    namespace: &str,
+    target: &str,
+) -> Result<BTreeMap<String, serde_json::Value>> {
+    let targets = maps.get(namespace).ok_or_else(|| {
+        AppError::Validation(format!("Namespace '{}' not found in values", namespace))
+    })?;
+
+    let default_files = targets.get("default").ok_or_else(|| {
+        AppError::Validation(format!(
+            "Namespace '{}' is missing required 'default' target",
+            namespace
+        ))
+    })?;
+
+    let mut merged = merge_keys(default_files);
+
+    if target != "default" {
+        let target_files = targets.get(target).ok_or_else(|| {
+            AppError::Validation(format!(
+                "Target '{}' not found in namespace '{}'",
+                target, namespace
+            ))
+        })?;
+        merged.extend(merge_keys(target_files));
+    }
+
+    Ok(merged.into_iter().collect())
+}
+
 fn merge_all_options(maps: NamespaceMap) -> Result<Vec<MergedOptions>> {
     let mut results = Vec::new();
 
-    for (namespace, targets) in maps {
-        let default_target = targets.get("default").ok_or_else(|| {
-            AppError::Validation(format!(
-                "Namespace '{}' is missing required 'default' target",
-                namespace
-            ))
-        })?;
-        let defaults = merge_keys(default_target);
-
-        for (target, filedatas) in targets {
-            let mut merged = defaults.clone();
-            merged.extend(merge_keys(&filedatas));
-
+    for (namespace, targets) in &maps {
+        for target in targets.keys() {
             results.push(MergedOptions {
                 namespace: namespace.clone(),
-                target,
-                options: merged.into_iter().collect(),
+                target: target.clone(),
+                options: merge_options_for_target(&maps, namespace, target)?,
             });
         }
     }
@@ -122,62 +142,53 @@ fn validate_configmap_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn generate_configmaps(
-    maps: NamespaceMap,
+pub fn generate_configmap(
+    maps: &NamespaceMap,
+    namespace: &str,
+    target: &str,
     commit_sha: Option<&str>,
     commit_timestamp: Option<&str>,
     generated_at: &str,
-) -> Result<Vec<ConfigMap>> {
-    merge_all_options(maps)?
-        .into_iter()
-        .map(|m| {
-            let name = format!("sentry-options-{}-{}", m.namespace, m.target);
-            validate_configmap_name(&name)?;
+) -> Result<ConfigMap> {
+    let name = format!("sentry-options-{}-{}", namespace, target);
+    validate_configmap_name(&name)?;
 
-            let wrapper = BTreeMap::from([("options", &m.options)]);
-            let values_json = serde_json::to_string(&wrapper)?;
+    let options = merge_options_for_target(maps, namespace, target)?;
+    let wrapper = BTreeMap::from([("options", &options)]);
+    let values_json = serde_json::to_string(&wrapper)?;
 
-            let mut annotations: BTreeMap<_, _> =
-                [("generated_at", generated_at.to_string())].into();
-            if let Some(sha) = commit_sha {
-                annotations.insert("commit_sha", sha.to_string());
-            }
-            if let Some(ts) = commit_timestamp {
-                annotations.insert("commit_timestamp", ts.to_string());
-            }
+    let mut annotations: BTreeMap<_, _> = [("generated_at", generated_at.to_string())].into();
+    if let Some(sha) = commit_sha {
+        annotations.insert("commit_sha", sha.to_string());
+    }
+    if let Some(ts) = commit_timestamp {
+        annotations.insert("commit_timestamp", ts.to_string());
+    }
 
-            Ok(ConfigMap {
-                api_version: "v1".to_string(),
-                kind: "ConfigMap".to_string(),
-                metadata: ConfigMapMetadata {
-                    name,
-                    labels: [(
-                        "app.kubernetes.io/managed-by".to_string(),
-                        "sentry-options".to_string(),
-                    )]
-                    .into(),
-                    annotations: annotations
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), v))
-                        .collect(),
-                },
-                data: [("values.json".to_string(), values_json)].into(),
-            })
-        })
-        .collect()
+    Ok(ConfigMap {
+        api_version: "v1".to_string(),
+        kind: "ConfigMap".to_string(),
+        metadata: ConfigMapMetadata {
+            name,
+            labels: [(
+                "app.kubernetes.io/managed-by".to_string(),
+                "sentry-options".to_string(),
+            )]
+            .into(),
+            annotations: annotations
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        },
+        data: [("values.json".to_string(), values_json)].into(),
+    })
 }
 
-pub fn write_configmaps_yaml(configmaps: &[ConfigMap]) -> Result<()> {
+pub fn write_configmap_yaml(configmap: &ConfigMap) -> Result<()> {
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
-
-    for (i, cm) in configmaps.iter().enumerate() {
-        if i > 0 {
-            writeln!(handle, "---")?;
-        }
-        serde_yaml::to_writer(&mut handle, cm)
-            .map_err(|e| AppError::Validation(format!("YAML serialization error: {}", e)))?;
-    }
+    serde_yaml::to_writer(&mut handle, configmap)
+        .map_err(|e| AppError::Validation(format!("YAML serialization error: {}", e)))?;
     Ok(())
 }
 
@@ -277,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_configmaps() {
+    fn test_generate_configmap() {
         let maps = make_namespace_map(vec![(
             "myns",
             "default",
@@ -287,16 +298,15 @@ mod tests {
             ],
         )]);
 
-        let configmaps = generate_configmaps(
-            maps,
+        let cm = generate_configmap(
+            &maps,
+            "myns",
+            "default",
             Some("abc123"),
             Some("1705180800"),
             "2026-01-14T00:00:00Z",
         )
         .unwrap();
-
-        assert_eq!(configmaps.len(), 1);
-        let cm = &configmaps[0];
 
         assert_eq!(cm.api_version, "v1");
         assert_eq!(cm.kind, "ConfigMap");
@@ -328,24 +338,42 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_configmaps_sorted_deterministically() {
-        let maps = make_namespace_map(vec![
-            (
-                "zns",
-                "default",
-                vec![("string_val", serde_json::json!("z"))],
-            ),
-            (
-                "ans",
-                "default",
-                vec![("string_val", serde_json::json!("a"))],
-            ),
-        ]);
+    fn test_generate_configmap_nonexistent_namespace() {
+        let maps = make_namespace_map(vec![(
+            "myns",
+            "default",
+            vec![("string_val", serde_json::json!("hello"))],
+        )]);
 
-        let configmaps = generate_configmaps(maps, None, None, "2026-01-14T00:00:00Z").unwrap();
+        let result = generate_configmap(
+            &maps,
+            "nonexistent",
+            "default",
+            None,
+            None,
+            "2026-01-14T00:00:00Z",
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
 
-        assert_eq!(configmaps.len(), 2);
-        assert_eq!(configmaps[0].metadata.name, "sentry-options-ans-default");
-        assert_eq!(configmaps[1].metadata.name, "sentry-options-zns-default");
+    #[test]
+    fn test_generate_configmap_nonexistent_target() {
+        let maps = make_namespace_map(vec![(
+            "myns",
+            "default",
+            vec![("string_val", serde_json::json!("hello"))],
+        )]);
+
+        let result = generate_configmap(
+            &maps,
+            "myns",
+            "nonexistent",
+            None,
+            None,
+            "2026-01-14T00:00:00Z",
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 }
