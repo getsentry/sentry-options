@@ -1,4 +1,26 @@
 # Changelog
+## 0.0.5
+
+### New Features ✨
+
+#### Cli
+
+- Add namespace name validation by @hubertdeng123 in [#41](https://github.com/getsentry/sentry-options/pull/41)
+- Adds schema change validation CLI command by @kenzoengineer in [#37](https://github.com/getsentry/sentry-options/pull/37)
+- Flatten schema fetching by @hubertdeng123 in [#38](https://github.com/getsentry/sentry-options/pull/38)
+- Implement fetch-schemas command by @hubertdeng123 in [#36](https://github.com/getsentry/sentry-options/pull/36)
+
+#### Other
+
+- (ci) Validate schema changes between shas by @kenzoengineer in [#34](https://github.com/getsentry/sentry-options/pull/34)
+- (config) Add logic for parsing repo config by @hubertdeng123 in [#35](https://github.com/getsentry/sentry-options/pull/35)
+- (default) Add local default path sentry-options/ by @hubertdeng123 in [#39](https://github.com/getsentry/sentry-options/pull/39)
+
+### Build / dependencies / internal 🔧
+
+- (validation) Move path resolution logic to shared library by @kenzoengineer in [#40](https://github.com/getsentry/sentry-options/pull/40)
+- Upgrade to action-setup-venv 3.2.0 and pin python to 3.14.2 by @joshuarli in [#33](https://github.com/getsentry/sentry-options/pull/33)
+
 ## 0.0.4
 
 ### New Features ✨
