@@ -6,7 +6,6 @@ mod schema_retriever;
 
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -347,6 +346,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use tempfile::TempDir;
 

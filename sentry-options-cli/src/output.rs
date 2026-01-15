@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fs,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use clap::ValueEnum;
 use serde::Serialize;
@@ -202,6 +198,8 @@ pub fn write_json(out_path: PathBuf, json_outputs: Vec<(String, String)>) -> Res
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
