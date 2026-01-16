@@ -157,12 +157,12 @@ pub fn generate_configmap(
     let wrapper = BTreeMap::from([("options", &options)]);
     let values_json = serde_json::to_string(&wrapper)?;
 
-    let mut annotations: BTreeMap<_, _> = [("generated_at", generated_at.to_string())].into();
+    let mut annotations = BTreeMap::from([("generated_at".to_string(), generated_at.to_string())]);
     if let Some(sha) = commit_sha {
-        annotations.insert("commit_sha", sha.to_string());
+        annotations.insert("commit_sha".to_string(), sha.to_string());
     }
     if let Some(ts) = commit_timestamp {
-        annotations.insert("commit_timestamp", ts.to_string());
+        annotations.insert("commit_timestamp".to_string(), ts.to_string());
     }
 
     Ok(ConfigMap {
@@ -170,17 +170,13 @@ pub fn generate_configmap(
         kind: "ConfigMap".to_string(),
         metadata: ConfigMapMetadata {
             name,
-            labels: [(
+            labels: BTreeMap::from([(
                 "app.kubernetes.io/managed-by".to_string(),
                 "sentry-options".to_string(),
-            )]
-            .into(),
-            annotations: annotations
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect(),
+            )]),
+            annotations,
         },
-        data: [("values.json".to_string(), values_json)].into(),
+        data: BTreeMap::from([("values.json".to_string(), values_json)]),
     })
 }
 
