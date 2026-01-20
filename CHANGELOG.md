@@ -1,4 +1,18 @@
 # Changelog
+## 0.0.6
+
+### New Features ✨
+
+#### Ci
+
+- Fix mac builds by @hubertdeng123 in [#45](https://github.com/getsentry/sentry-options/pull/45)
+- Create composite action for schema validation by @kenzoengineer in [#42](https://github.com/getsentry/sentry-options/pull/42)
+
+#### Other
+
+- (cli) Add configmap output by @hubertdeng123 in [#43](https://github.com/getsentry/sentry-options/pull/43)
+- (release) Upload CLI artifacts to github by @kenzoengineer in [#44](https://github.com/getsentry/sentry-options/pull/44)
+
 ## 0.0.5
 
 ### New Features ✨
