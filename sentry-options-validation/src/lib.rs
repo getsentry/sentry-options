@@ -81,6 +81,40 @@ pub enum ValidationError {
 
     #[error("{} validation error(s)", .0.len())]
     ValidationErrors(Vec<ValidationError>),
+
+    #[error("Invalid {label} '{name}': {reason}")]
+    InvalidName {
+        label: String,
+        name: String,
+        reason: String,
+    },
+}
+
+/// Validate a name component is valid for K8s (lowercase alphanumeric, '-', '.')
+pub fn validate_k8s_name_component(name: &str, label: &str) -> ValidationResult<()> {
+    if let Some(c) = name
+        .chars()
+        .find(|&c| !matches!(c, 'a'..='z' | '0'..='9' | '-' | '.'))
+    {
+        return Err(ValidationError::InvalidName {
+            label: label.to_string(),
+            name: name.to_string(),
+            reason: format!(
+                "character '{}' not allowed. Use lowercase alphanumeric, '-', or '.'",
+                c
+            ),
+        });
+    }
+    if !name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        || !name.ends_with(|c: char| c.is_ascii_alphanumeric())
+    {
+        return Err(ValidationError::InvalidName {
+            label: label.to_string(),
+            name: name.to_string(),
+            reason: "must start and end with alphanumeric".to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Metadata for a single option in a namespace schema
@@ -201,6 +235,8 @@ impl SchemaRegistry {
                         file: entry.path(),
                         message: "Directory name contains invalid UTF-8".to_string(),
                     })?;
+
+            validate_k8s_name_component(&namespace, "namespace name")?;
 
             let schema_file = entry.path().join(SCHEMA_FILE_NAME);
             let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
@@ -536,6 +572,52 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_k8s_name_component_valid() {
+        assert!(validate_k8s_name_component("relay", "namespace").is_ok());
+        assert!(validate_k8s_name_component("my-service", "namespace").is_ok());
+        assert!(validate_k8s_name_component("my.service", "namespace").is_ok());
+        assert!(validate_k8s_name_component("a1-b2.c3", "namespace").is_ok());
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_uppercase() {
+        let result = validate_k8s_name_component("MyService", "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(result.unwrap_err().to_string().contains("'M' not allowed"));
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_underscore() {
+        let result = validate_k8s_name_component("my_service", "target");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(result.unwrap_err().to_string().contains("'_' not allowed"));
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_leading_hyphen() {
+        let result = validate_k8s_name_component("-service", "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("start and end with alphanumeric")
+        );
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_trailing_dot() {
+        let result = validate_k8s_name_component("service.", "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("start and end with alphanumeric")
+        );
+    }
+
+    #[test]
     fn test_load_schema_valid() {
         let temp_dir = TempDir::new().unwrap();
         create_test_schema(
@@ -724,7 +806,7 @@ Error: \"version\" is a required property"
     fn test_invalid_directory_structure() {
         let temp_dir = TempDir::new().unwrap();
         // Create a namespace directory without schema.json file
-        let schema_dir = temp_dir.path().join("missing_schema");
+        let schema_dir = temp_dir.path().join("missing-schema");
         fs::create_dir_all(&schema_dir).unwrap();
 
         let result = SchemaRegistry::from_directory(temp_dir.path());
@@ -940,7 +1022,7 @@ Error: \"version\" is a required property"
         let values_dir = temp_dir.path().join("values");
 
         // Create two schemas
-        let schema_dir1 = schemas_dir.join("with_values");
+        let schema_dir1 = schemas_dir.join("with-values");
         fs::create_dir_all(&schema_dir1).unwrap();
         fs::write(
             schema_dir1.join("schema.json"),
@@ -954,7 +1036,7 @@ Error: \"version\" is a required property"
         )
         .unwrap();
 
-        let schema_dir2 = schemas_dir.join("without_values");
+        let schema_dir2 = schemas_dir.join("without-values");
         fs::create_dir_all(&schema_dir2).unwrap();
         fs::write(
             schema_dir2.join("schema.json"),
@@ -969,7 +1051,7 @@ Error: \"version\" is a required property"
         .unwrap();
 
         // Only create values for one namespace
-        let with_values_dir = values_dir.join("with_values");
+        let with_values_dir = values_dir.join("with-values");
         fs::create_dir_all(&with_values_dir).unwrap();
         fs::write(with_values_dir.join("values.json"), r#"{"opt": "y"}"#).unwrap();
 
@@ -977,8 +1059,8 @@ Error: \"version\" is a required property"
         let values = registry.load_values_json(&values_dir).unwrap();
 
         assert_eq!(values.len(), 1);
-        assert!(values.contains_key("with_values"));
-        assert!(!values.contains_key("without_values"));
+        assert!(values.contains_key("with-values"));
+        assert!(!values.contains_key("without-values"));
     }
 
     #[test]
