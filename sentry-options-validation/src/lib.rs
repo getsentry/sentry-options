@@ -572,6 +572,52 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_k8s_name_component_valid() {
+        assert!(validate_k8s_name_component("relay", "namespace").is_ok());
+        assert!(validate_k8s_name_component("my-service", "namespace").is_ok());
+        assert!(validate_k8s_name_component("my.service", "namespace").is_ok());
+        assert!(validate_k8s_name_component("a1-b2.c3", "namespace").is_ok());
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_uppercase() {
+        let result = validate_k8s_name_component("MyService", "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(result.unwrap_err().to_string().contains("'M' not allowed"));
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_underscore() {
+        let result = validate_k8s_name_component("my_service", "target");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(result.unwrap_err().to_string().contains("'_' not allowed"));
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_leading_hyphen() {
+        let result = validate_k8s_name_component("-service", "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("start and end with alphanumeric")
+        );
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_trailing_dot() {
+        let result = validate_k8s_name_component("service.", "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("start and end with alphanumeric")
+        );
+    }
+
+    #[test]
     fn test_load_schema_valid() {
         let temp_dir = TempDir::new().unwrap();
         create_test_schema(
