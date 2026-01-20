@@ -9,9 +9,6 @@ use serde::Serialize;
 
 use crate::{AppError, FileData, NamespaceMap, OptionsMap, Result};
 
-/// Maximum length for a Kubernetes ConfigMap name (DNS subdomain)
-const MAX_CONFIGMAP_NAME_LEN: usize = 253;
-
 /// Output format for the write command
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 pub enum OutputFormat {
@@ -113,35 +110,6 @@ pub fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
         .collect()
 }
 
-/// Validate a Kubernetes ConfigMap name (DNS subdomain): lowercase alphanumeric,
-/// '-', or '.', start/end with alphanumeric, max 253 characters.
-fn validate_configmap_name(name: &str) -> Result<()> {
-    if name.len() > MAX_CONFIGMAP_NAME_LEN {
-        return Err(AppError::Validation(format!(
-            "ConfigMap name '{}' exceeds {} character limit",
-            name, MAX_CONFIGMAP_NAME_LEN
-        )));
-    }
-    if let Some(c) = name
-        .chars()
-        .find(|&c| !matches!(c, 'a'..='z' | '0'..='9' | '-' | '.'))
-    {
-        return Err(AppError::Validation(format!(
-            "Invalid ConfigMap name '{}': invalid character '{}'. Use lowercase alphanumeric, '-', or '.'",
-            name, c
-        )));
-    }
-    if !name.starts_with(|c: char| c.is_ascii_alphanumeric())
-        || !name.ends_with(|c: char| c.is_ascii_alphanumeric())
-    {
-        return Err(AppError::Validation(format!(
-            "Invalid ConfigMap name '{}': must start and end with alphanumeric character",
-            name
-        )));
-    }
-    Ok(())
-}
-
 pub fn generate_configmap(
     maps: &NamespaceMap,
     namespace: &str,
@@ -151,7 +119,6 @@ pub fn generate_configmap(
     generated_at: &str,
 ) -> Result<ConfigMap> {
     let name = format!("sentry-options-{}-{}", namespace, target);
-    validate_configmap_name(&name)?;
 
     let options = merge_options_for_target(maps, namespace, target)?;
     let wrapper = BTreeMap::from([("options", &options)]);
@@ -211,69 +178,6 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-
-    #[test]
-    fn test_validate_configmap_name_valid() {
-        assert!(validate_configmap_name("sentry-options-relay-default").is_ok());
-        assert!(validate_configmap_name("sentry-options-my.service-prod").is_ok());
-        assert!(validate_configmap_name("a1-b2").is_ok());
-    }
-
-    #[test]
-    fn test_validate_configmap_name_rejects_uppercase() {
-        let result = validate_configmap_name("sentry-options-MyService-default");
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("invalid character")
-        );
-    }
-
-    #[test]
-    fn test_validate_configmap_name_rejects_underscore() {
-        let result = validate_configmap_name("sentry-options-my_service-default");
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("invalid character")
-        );
-    }
-
-    #[test]
-    fn test_validate_configmap_name_rejects_leading_hyphen() {
-        let result = validate_configmap_name("-sentry-options");
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("start and end with alphanumeric")
-        );
-    }
-
-    #[test]
-    fn test_validate_configmap_name_rejects_trailing_hyphen() {
-        let result = validate_configmap_name("sentry-options-");
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("start and end with alphanumeric")
-        );
-    }
-
-    #[test]
-    fn test_validate_configmap_name_rejects_over_max_len() {
-        assert!(validate_configmap_name(&"a".repeat(MAX_CONFIGMAP_NAME_LEN)).is_ok());
-        let result = validate_configmap_name(&"a".repeat(MAX_CONFIGMAP_NAME_LEN + 1));
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("character limit"));
-    }
 
     #[allow(clippy::type_complexity)]
     fn make_namespace_map(

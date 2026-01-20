@@ -4,7 +4,7 @@ use std::{
     path::{Component, Path},
 };
 
-use sentry_options_validation::SchemaRegistry;
+use sentry_options_validation::{SchemaRegistry, validate_k8s_name_component};
 use walkdir::WalkDir;
 
 use crate::{AppError, FileData, NamespaceMap, OptionsMap, Result};
@@ -46,6 +46,9 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
                     relative_path.display()
                 ))
             })?;
+
+            // validate target name is valid for K8s ConfigMap
+            validate_k8s_name_component(target, "target name")?;
 
             // validate namespace exists in schema registry
             if schema_registry.get(namespace).is_none() {
