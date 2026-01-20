@@ -112,18 +112,34 @@ jobs:
   build-rust:
     name: Build Rust CLI
     if: startsWith(github.ref, 'refs/heads/release/')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Install Rust Toolchain
-        run: rustup toolchain install stable --profile minimal --no-self-update
+        run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }} --no-self-update
       - uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       - name: Build CLI tool
-        run: cargo build --release -p sentry-options-cli
+        run: cargo build --release --target ${{ matrix.target }} -p sentry-options-cli
+      - name: Rename binary with platform suffix # cargo encodes this in the filepath, not filename
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/sentry-options-cli dist/sentry-options-cli-${{ matrix.target }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: cli-x86_64-unknown-linux-gnu
-          path: target/release/sentry-options-cli
+          name: cli-${{ matrix.target }}
+          path: dist/sentry-options-cli-${{ matrix.target }}
 
   merge-artifacts:
     name: Merge artifacts for craft
