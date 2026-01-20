@@ -15,8 +15,8 @@ requireNames:
   - /^sentry_options-.*macosx.*arm64\.whl$/             # macOS ARM wheel
   - /^sentry-options-cli-x86_64-unknown-linux-gnu$/     # Linux x86_64 CLI
   - /^sentry-options-cli-aarch64-unknown-linux-gnu$/    # Linux ARM CLI
-  - /^sentry-options-cli-x86_64-darwin$/                # macOS Intel CLI
-  - /^sentry-options-cli-aarch64-darwin$/               # macOS ARM CLI
+  - /^sentry-options-cli-x86_64-apple-darwin$/          # macOS Intel CLI
+  - /^sentry-options-cli-aarch64-apple-darwin$/         # macOS ARM CLI
 targets:
   - name: github
   - name: crates
