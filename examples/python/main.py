@@ -14,7 +14,7 @@ from sentry_options import init
 from sentry_options import options
 
 init()
-testing = options('testing')
+testing = options('sentry-options-testing')
 
 while True:
     time.sleep(3)

@@ -171,7 +171,7 @@ mod tests {
                 }
             }"#,
         );
-        create_values(&values, "test", r#"{"enabled": true}"#);
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
