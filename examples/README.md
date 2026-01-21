@@ -15,17 +15,25 @@ The deployment model:
 - kubectl configured and connected to your cluster
 - sentry-options-cli built: `cargo build --release -p sentry-options-cli`
 
-## 1. Build Docker Image
+## 1. Build and Push Docker Image
 
 ```bash
 # From the repo root
 docker build -t sentry-options-example -f examples/Dockerfile .
 
-# Tag for your registry (example with GCR)
-docker tag sentry-options-example gcr.io/PROJECT_ID/sentry-options-example:latest
+# Tag for Artifact Registry (replace REGION, PROJECT_ID, REPO)
+docker tag sentry-options-example \
+  REGION-docker.pkg.dev/PROJECT_ID/REPO/sentry-options-test:latest
 
 # Push to registry
-docker push gcr.io/PROJECT_ID/sentry-options-example:latest
+docker push REGION-docker.pkg.dev/PROJECT_ID/REPO/sentry-options-test:latest
+```
+
+Example for sandbox `sbx-hdeng-1`:
+```bash
+docker tag sentry-options-example \
+  us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
+docker push us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
 ```
 
 ## 2. Generate and Apply ConfigMap
@@ -57,36 +65,38 @@ kubectl apply -f configmap.yaml
 
 ## 3. Deploy Example Pod
 
-Create a deployment that mounts the ConfigMap:
+An example deployment exists in `terraform-sandboxes.private`:
+
+```
+terraform-sandboxes.private/personal-sandbox/env/sbx-hdeng-1/k8s/deployment.yaml
+```
+
+The deployment mounts the ConfigMap as a volume:
 
 ```yaml
-# deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sentry-options-example
+  name: sentry-options-test
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sentry-options-example
+      app: sentry-options-test
   template:
     metadata:
       labels:
-        app: sentry-options-example
+        app: sentry-options-test
     spec:
       containers:
-      - name: app
-        image: gcr.io/PROJECT_ID/sentry-options-example:latest
-        env:
-        - name: SENTRY_OPTIONS_DIR
-          value: /etc/sentry-options
+      - name: test
+        image: us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
         volumeMounts:
-        - name: options-values
+        - name: values
           mountPath: /etc/sentry-options/values/sentry-options-testing
           readOnly: true
       volumes:
-      - name: options-values
+      - name: values
         configMap:
           name: sentry-options-sentry-options-testing-default
 ```
