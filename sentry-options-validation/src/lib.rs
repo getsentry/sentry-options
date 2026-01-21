@@ -365,6 +365,7 @@ impl SchemaRegistry {
 
     /// Load and validate JSON values from a directory.
     /// Expects structure: `{values_dir}/{namespace}/values.json`
+    /// Values file must have format: `{"options": {"key": value, ...}}`
     /// Skips namespaces without a values.json file.
     pub fn load_values_json(&self, values_dir: &Path) -> ValidationResult<ValuesByNamespace> {
         let mut all_values = HashMap::new();
@@ -376,10 +377,18 @@ impl SchemaRegistry {
                 continue;
             }
 
-            let values: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
-            self.validate_values(namespace, &values)?;
+            let parsed: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
 
-            if let Value::Object(obj) = values {
+            let values = parsed
+                .get("options")
+                .ok_or_else(|| ValidationError::ValueError {
+                    namespace: namespace.clone(),
+                    errors: "values.json must have an 'options' key".to_string(),
+                })?;
+
+            self.validate_values(namespace, values)?;
+
+            if let Value::Object(obj) = values.clone() {
                 let ns_values: HashMap<String, Value> = obj.into_iter().collect();
                 all_values.insert(namespace.clone(), ns_values);
             }
@@ -979,10 +988,12 @@ Error: \"version\" is a required property"
         fs::write(
             test_values_dir.join("values.json"),
             r#"{
-                "enabled": true,
-                "name": "test-name",
-                "count": 42,
-                "rate": 0.75
+                "options": {
+                    "enabled": true,
+                    "name": "test-name",
+                    "count": 42,
+                    "rate": 0.75
+                }
             }"#,
         )
         .unwrap();
@@ -1053,7 +1064,11 @@ Error: \"version\" is a required property"
         // Only create values for one namespace
         let with_values_dir = values_dir.join("with-values");
         fs::create_dir_all(&with_values_dir).unwrap();
-        fs::write(with_values_dir.join("values.json"), r#"{"opt": "y"}"#).unwrap();
+        fs::write(
+            with_values_dir.join("values.json"),
+            r#"{"options": {"opt": "y"}}"#,
+        )
+        .unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
         let values = registry.load_values_json(&values_dir).unwrap();
@@ -1087,7 +1102,7 @@ Error: \"version\" is a required property"
         fs::create_dir_all(&test_values_dir).unwrap();
         fs::write(
             test_values_dir.join("values.json"),
-            r#"{"count": "not-a-number"}"#,
+            r#"{"options": {"count": "not-a-number"}}"#,
         )
         .unwrap();
 
@@ -1123,7 +1138,11 @@ Error: \"version\" is a required property"
 
             let ns1_values = values_dir.join("ns1");
             fs::create_dir_all(&ns1_values).unwrap();
-            fs::write(ns1_values.join("values.json"), r#"{"enabled": true}"#).unwrap();
+            fs::write(
+                ns1_values.join("values.json"),
+                r#"{"options": {"enabled": true}}"#,
+            )
+            .unwrap();
 
             let ns2_schema = schemas_dir.join("ns2");
             fs::create_dir_all(&ns2_schema).unwrap();
@@ -1141,7 +1160,11 @@ Error: \"version\" is a required property"
 
             let ns2_values = values_dir.join("ns2");
             fs::create_dir_all(&ns2_values).unwrap();
-            fs::write(ns2_values.join("values.json"), r#"{"count": 42}"#).unwrap();
+            fs::write(
+                ns2_values.join("values.json"),
+                r#"{"options": {"count": 42}}"#,
+            )
+            .unwrap();
 
             (temp_dir, schemas_dir, values_dir)
         }
@@ -1158,7 +1181,7 @@ Error: \"version\" is a required property"
             thread::sleep(std::time::Duration::from_millis(10));
             fs::write(
                 values_dir.join("ns1").join("values.json"),
-                r#"{"enabled": false}"#,
+                r#"{"options": {"enabled": false}}"#,
             )
             .unwrap();
 
@@ -1195,12 +1218,12 @@ Error: \"version\" is a required property"
             // modify
             fs::write(
                 values_dir.join("ns1").join("values.json"),
-                r#"{"enabled": false}"#,
+                r#"{"options": {"enabled": false}}"#,
             )
             .unwrap();
             fs::write(
                 values_dir.join("ns2").join("values.json"),
-                r#"{"count": 100}"#,
+                r#"{"options": {"count": 100}}"#,
             )
             .unwrap();
 
@@ -1231,7 +1254,7 @@ Error: \"version\" is a required property"
             // won't pass validation
             fs::write(
                 values_dir.join("ns1").join("values.json"),
-                r#"{"enabled": "not-a-boolean"}"#,
+                r#"{"options": {"enabled": "not-a-boolean"}}"#,
             )
             .unwrap();
 
