@@ -1,0 +1,4 @@
+options:
+  example-option: "UPDATED-VALUE"
+  float-option: 0.99
+  bool-option: false
