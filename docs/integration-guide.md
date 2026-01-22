@@ -226,23 +226,23 @@ PR: Update schema.json    →    PR: Update repos.json SHA
 
 Can happen anytime - use `optional: true` so pods start without ConfigMap.
 
-The ops repo uses Jinja2 templating. The region is available via `customer.sentry_region` (defined in cluster config files like `k8s/clusters/us/default.yaml`):
+The ops repo uses Jinja2 templating with cluster-specific variables for the region/target:
 
-```jinja2
+```yaml
 # deployment.yaml
 volumeMounts:
 - name: sentry-options-values
-  mountPath: /etc/sentry-options/values/seer
+  mountPath: /etc/sentry-options/values/{service}
   readOnly: true
 
 volumes:
 - name: sentry-options-values
   configMap:
-    name: sentry-options-seer-{{ customer.sentry_region }}
+    name: sentry-options-{service}-{{ region }}
     optional: true  # Pod starts with defaults if ConfigMap missing
 ```
 
-This produces the correct ConfigMap name per cluster (e.g., `sentry-options-seer-us` in US, `sentry-options-seer-s4s` in S4S).
+This produces the correct ConfigMap name per cluster (e.g., `sentry-options-seer-us`, `sentry-options-seer-de`).
 
 ## ConfigMap Generation
 
@@ -251,12 +251,12 @@ The `default/` directory contains base values inherited by all targets. Region d
 ```
 option_values/
 ├── seer/
-│   ├── default/options.yaml    → Base values (inherited, not deployed directly)
-│   ├── s4s/options.yaml        → ConfigMap: sentry-options-seer-s4s (default + s4s merged)
-│   └── us/options.yaml         → ConfigMap: sentry-options-seer-us (default + us merged)
+│   ├── default/options.yaml      → Base values (inherited, not deployed directly)
+│   ├── us/options.yaml           → ConfigMap: sentry-options-seer-us (default + us merged)
+│   └── de/options.yaml           → ConfigMap: sentry-options-seer-de (default + de merged)
 └── relay/
-    ├── default/options.yaml    → Base values (inherited, not deployed directly)
-    └── s4s/options.yaml        → ConfigMap: sentry-options-relay-s4s (default + s4s merged)
+    ├── default/options.yaml      → Base values (inherited, not deployed directly)
+    └── us/options.yaml           → ConfigMap: sentry-options-relay-us (default + us merged)
 ```
 
 The CD pipeline iterates over each namespace and non-default target to generate and apply ConfigMaps.
@@ -276,11 +276,11 @@ sentry-options-cli write \
   --root option_values/ \
   --output-format configmap \
   --namespace seer \
-  --target s4s \
+  --target us \
   --commit-sha "$COMMIT_SHA" \
   --commit-timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Output: ConfigMap named "sentry-options-seer-s4s"
+# Output: ConfigMap named "sentry-options-seer-us"
 ```
 
 The CLI generates one ConfigMap per invocation by merging `default/` values with the specified target's overrides. The CD pipeline calls it once per namespace/target combination (excluding default).
