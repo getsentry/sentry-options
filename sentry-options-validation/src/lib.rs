@@ -397,13 +397,13 @@ impl SchemaRegistry {
     /// Expects structure: `{values_dir}/{namespace}/values.json`
     /// Values file must have format: `{"options": {"key": value, ...}, "generated_at": "..."}`
     /// Skips namespaces without a values.json file.
-    /// Returns the values and the most recent `generated_at` timestamp found (if any).
+    /// Returns the values and a map of namespace -> `generated_at` timestamp.
     pub fn load_values_json(
         &self,
         values_dir: &Path,
-    ) -> ValidationResult<(ValuesByNamespace, Option<String>)> {
+    ) -> ValidationResult<(ValuesByNamespace, HashMap<String, String>)> {
         let mut all_values = HashMap::new();
-        let mut generated_at: Option<String> = None;
+        let mut generated_at_by_namespace: HashMap<String, String> = HashMap::new();
 
         for namespace in self.schemas.keys() {
             let values_file = values_dir.join(namespace).join(VALUES_FILE_NAME);
@@ -414,11 +414,9 @@ impl SchemaRegistry {
 
             let parsed: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
 
-            // Extract generated_at if present (take first one found)
-            if generated_at.is_none() {
-                if let Some(ts) = parsed.get("generated_at").and_then(|v| v.as_str()) {
-                    generated_at = Some(ts.to_string());
-                }
+            // Extract generated_at if present
+            if let Some(ts) = parsed.get("generated_at").and_then(|v| v.as_str()) {
+                generated_at_by_namespace.insert(namespace.clone(), ts.to_string());
             }
 
             let values = parsed
@@ -436,7 +434,7 @@ impl SchemaRegistry {
             }
         }
 
-        Ok((all_values, generated_at))
+        Ok((all_values, generated_at_by_namespace))
     }
 }
 
@@ -570,12 +568,12 @@ impl ValuesWatcher {
         let reload_start = Instant::now();
 
         match registry.load_values_json(values_path) {
-            Ok((new_values, generated_at)) => {
+            Ok((new_values, generated_at_by_namespace)) => {
                 let namespaces: Vec<String> = new_values.keys().cloned().collect();
                 Self::update_values(values, new_values);
 
                 let reload_duration = reload_start.elapsed();
-                Self::emit_reload_spans(&namespaces, reload_duration, generated_at.as_deref());
+                Self::emit_reload_spans(&namespaces, reload_duration, &generated_at_by_namespace);
             }
             Err(e) => {
                 eprintln!(
@@ -592,7 +590,7 @@ impl ValuesWatcher {
     fn emit_reload_spans(
         namespaces: &[String],
         reload_duration: Duration,
-        generated_at: Option<&str>,
+        generated_at_by_namespace: &HashMap<String, String>,
     ) {
         let hub = get_sentry_hub();
         let applied_at = Utc::now();
@@ -606,8 +604,8 @@ impl ValuesWatcher {
             transaction.set_data("reload_duration_ms", reload_duration_ms.into());
             transaction.set_data("applied_at", applied_at.to_rfc3339().into());
 
-            if let Some(ts) = generated_at {
-                transaction.set_data("generated_at", ts.into());
+            if let Some(ts) = generated_at_by_namespace.get(namespace) {
+                transaction.set_data("generated_at", ts.as_str().into());
 
                 if let Ok(generated_time) = DateTime::parse_from_rfc3339(ts) {
                     let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
@@ -1081,14 +1079,14 @@ Error: \"version\" is a required property"
         .unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
-        let (values, generated_at) = registry.load_values_json(&values_dir).unwrap();
+        let (values, generated_at_by_namespace) = registry.load_values_json(&values_dir).unwrap();
 
         assert_eq!(values.len(), 1);
         assert_eq!(values["test"]["enabled"], json!(true));
         assert_eq!(values["test"]["name"], json!("test-name"));
         assert_eq!(values["test"]["count"], json!(42));
         assert_eq!(values["test"]["rate"], json!(0.75));
-        assert!(generated_at.is_none());
+        assert!(generated_at_by_namespace.is_empty());
     }
 
     #[test]
@@ -1101,13 +1099,13 @@ Error: \"version\" is a required property"
         );
 
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
-        let (values, generated_at) = registry
+        let (values, generated_at_by_namespace) = registry
             .load_values_json(&temp_dir.path().join("nonexistent"))
             .unwrap();
 
         // No values.json files found, returns empty
         assert!(values.is_empty());
-        assert!(generated_at.is_none());
+        assert!(generated_at_by_namespace.is_empty());
     }
 
     #[test]
@@ -1191,12 +1189,12 @@ Error: \"version\" is a required property"
         .unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
-        let (values, generated_at) = registry.load_values_json(&values_dir).unwrap();
+        let (values, generated_at_by_namespace) = registry.load_values_json(&values_dir).unwrap();
 
         assert_eq!(values["test"]["enabled"], json!(true));
         assert_eq!(
-            generated_at,
-            Some("2024-01-21T18:30:00.123456+00:00".to_string())
+            generated_at_by_namespace.get("test"),
+            Some(&"2024-01-21T18:30:00.123456+00:00".to_string())
         );
     }
 
