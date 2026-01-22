@@ -9,7 +9,7 @@ use sentry_options::{init, options};
 /// ^C to exit
 fn main() -> anyhow::Result<()> {
     init()?;
-    let sentry_options = options("testing");
+    let sentry_options = options("sentry-options-testing");
 
     loop {
         sleep(Duration::from_secs(3));
