@@ -7,7 +7,7 @@ File-based configuration system for Sentry services. Provides validated, hot-rel
 sentry-options replaces database-stored configuration with git-managed, schema-validated config files. Services read options directly from mounted files with automatic hot-reload when values change.
 
 **Key benefits:**
-- **Fast reads** - No database queries, just file reads
+- **Fast reads** - Options loaded in memory, file reads only on init and updates
 - **Schema validation** - Type-safe options with defaults
 - **Hot-reload** - Values update without pod restart (~1-2 min propagation)
 - **Audit trail** - All changes tracked in git
@@ -83,7 +83,7 @@ All these changes can be deployed together - the library uses schema defaults wh
 }
 ```
 
-**Supported types:** `string`, `integer`, `number`, `boolean`
+**Supported types:** `string`, `integer`, `number`, `boolean` (arrays and objects coming soon)
 
 **Namespace naming:** The namespace directory must be either `{repo}` (exact match) or `{repo}-*` (prefixed). For example, in the `seer` repo: `seer`, `seer-autofix`, `seer-grouping` are valid; `autofix` alone is not.
 
@@ -172,7 +172,7 @@ Add your service to `repos.json`:
   "repos": {
     "seer": {
       "url": "https://github.com/getsentry/seer",
-      "path": "schemas/seer/schema.json",
+      "path": "sentry-options/",
       "sha": "abc123def456..."
     }
   }
@@ -181,7 +181,7 @@ Add your service to `repos.json`:
 
 **Fields:**
 - `url` - GitHub repo URL
-- `path` - Path to schema.json within the repo
+- `path` - Path to schemas directory within the repo (contains `{namespace}/schema.json`)
 - `sha` - Commit SHA (pinned for reproducibility)
 
 **Important:** When you update your schema, you must also update the SHA in repos.json to point to the commit containing the new schema.
@@ -258,6 +258,8 @@ option_values/
     ├── default/options.yaml      → Base values (inherited, not deployed directly)
     └── us/options.yaml           → ConfigMap: sentry-options-relay-us (default + us merged)
 ```
+
+**What is a target?** A target represents a deployment environment or region (e.g., `us`, `de`, `s4s`). Each target gets its own ConfigMap with values merged from `default/` plus target-specific overrides. The mapping of targets to Kubernetes clusters is configured in the CD pipeline.
 
 The CD pipeline iterates over each namespace and non-default target to generate and apply ConfigMaps.
 
