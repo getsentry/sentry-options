@@ -1,0 +1,8 @@
+{
+  "options": {
+    "example-option": "wow",
+    "float-option": 1.2,
+    "int-option": 123,
+    "bool-option": false
+  }
+}

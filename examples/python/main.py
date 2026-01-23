@@ -10,15 +10,26 @@ from __future__ import annotations
 
 import time
 
-from sentry_options import init
 from sentry_options import options
 
-init()
-testing = options('sentry-options-testing')
 
-while True:
-    time.sleep(3)
-    string_value = testing.get('example-option')
-    float_value = testing.get('float-option')
-    bool_value = testing.get('bool-option')
-    print(f"values: {string_value} | {float_value} | {bool_value}", flush=True)
+def get_string_value():
+    return options('sentry-options-testing').get('example-option')
+
+
+def get_float_value():
+    return options('sentry-options-testing').get('float-option')
+
+
+def get_bool_value():
+    return options('sentry-options-testing').get('bool-option')
+
+
+if __name__ == '__main__':
+    from sentry_options import init
+    init()
+
+    while True:
+        time.sleep(3)
+        s, f, b = get_string_value(), get_float_value(), get_bool_value()
+        print(f"values: {s} | {f} | {b}", flush=True)
