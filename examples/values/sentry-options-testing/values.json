@@ -1,6 +1,6 @@
 {
   "options": {
-    "example-option": "TEST WITH GLOBAL INIT"
+    "example-option": "this is my string value"
   },
   "generated_at": "2026-01-21T17:00:00+00:00"
 }

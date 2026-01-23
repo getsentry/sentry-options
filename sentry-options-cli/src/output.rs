@@ -97,6 +97,10 @@ fn merge_all_options(maps: NamespaceMap) -> Result<Vec<MergedOptions>> {
     Ok(results)
 }
 
+/// Generate JSON output files for all namespace/target combinations.
+///
+/// # Arguments
+/// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
 pub fn generate_json(maps: NamespaceMap, generated_at: &str) -> Result<Vec<(String, String)>> {
     merge_all_options(maps)?
         .into_iter()
@@ -112,6 +116,10 @@ pub fn generate_json(maps: NamespaceMap, generated_at: &str) -> Result<Vec<(Stri
         .collect()
 }
 
+/// Generate a Kubernetes ConfigMap for a specific namespace/target.
+///
+/// # Arguments
+/// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
 pub fn generate_configmap(
     maps: &NamespaceMap,
     namespace: &str,
