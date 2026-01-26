@@ -13,8 +13,8 @@ requireNames:
   - /^sentry_options-.*manylinux.*aarch64\.whl$/        # Linux ARM wheel
   - /^sentry_options-.*macosx.*x86_64\.whl$/            # macOS Intel wheel
   - /^sentry_options-.*macosx.*arm64\.whl$/             # macOS ARM wheel
-  - /^sentry-options-cli-x86_64-unknown-linux-gnu$/     # Linux x86_64 CLI
-  - /^sentry-options-cli-aarch64-unknown-linux-gnu$/    # Linux ARM CLI
+  - /^sentry-options-cli-x86_64-unknown-linux-musl$/     # Linux x86_64 CLI
+  - /^sentry-options-cli-aarch64-unknown-linux-musl$/    # Linux ARM CLI
   - /^sentry-options-cli-x86_64-apple-darwin$/          # macOS Intel CLI
   - /^sentry-options-cli-aarch64-apple-darwin$/         # macOS ARM CLI
 targets:
