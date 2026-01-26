@@ -1,0 +1,35 @@
+pipelines:
+  new-sentry-options:
+    environment_variables:
+      # Required for checkruns.
+      GITHUB_TOKEN: "{{SECRET:[devinfra-github][token]}}"
+    group: new-sentry-options
+    lock_behavior: unlockWhenFinished
+    materials:
+      new-sentry-options:
+        git: git@github.com:getsentry/sentry-options.git
+        shallow_clone: true
+        auto_update: true
+        branch: main
+        destination: src
+
+    stages:
+      - regions:
+          fetch_materials: true
+          jobs:
+            apply-sandbox:
+              environment_variables:
+                # gcp config
+                DEPLOYMENT: sandbox
+                GCP_PROJECT: eng-dev-sbx--hdeng-2
+                GKE_CLUSTER: gke
+                GKE_REGION: us-west1
+                GKE_CLUSTER_ZONE: a
+                # config map config
+                NAMESPACE: sentry-options-testing
+                TARGET: default
+                SCHEMAS_DIR: sentry-options/schemas
+                CONFIGS_DIR: examples/configs
+              elastic_profile_id: new-sentry-options
+              tasks:
+                - script: ./src/gocd/pipelines/new-sentry-options.sh
