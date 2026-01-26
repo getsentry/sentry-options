@@ -111,7 +111,7 @@ jobs:
 
   build-rust:
     name: Build Rust CLI
-    if: startsWith(github.ref, 'refs/heads/release/')
+    # if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
