@@ -1,0 +1,3 @@
+options:
+  example-option: "sandbox-string"
+  float-option: 0.67
