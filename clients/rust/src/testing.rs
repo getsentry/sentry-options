@@ -262,7 +262,7 @@ mod integration_tests {
 
         // Normal operation - reads from values/defaults
         assert_eq!(get_rate_limit(&opts), 500); // from values.json
-        assert_eq!(is_feature_enabled(&opts), false); // default
+        assert!(!is_feature_enabled(&opts)); // default
 
         // Test with override
         {
@@ -274,11 +274,11 @@ mod integration_tests {
 
             // App code sees overridden values
             assert_eq!(get_rate_limit(&opts), 1000);
-            assert_eq!(is_feature_enabled(&opts), true);
+            assert!(is_feature_enabled(&opts));
         }
 
         // After test - back to normal
         assert_eq!(get_rate_limit(&opts), 500);
-        assert_eq!(is_feature_enabled(&opts), false);
+        assert!(!is_feature_enabled(&opts));
     }
 }

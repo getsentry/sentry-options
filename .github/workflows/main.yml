@@ -199,7 +199,7 @@ jobs:
 
       - uses: ./.github/actions/validate-schema
         with:
-          schemas-path: examples/schemas
+          schemas-path: sentry-options/schemas
 
   python-client-test:
     name: Python Client Tests
