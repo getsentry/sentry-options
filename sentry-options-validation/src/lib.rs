@@ -70,6 +70,9 @@ pub enum ValidationError {
     #[error("Unknown namespace: {0}")]
     UnknownNamespace(String),
 
+    #[error("Unknown option '{key}' in namespace '{namespace}'")]
+    UnknownOption { namespace: String, key: String },
+
     #[error("Internal error: {0}")]
     InternalError(String),
 
@@ -156,6 +159,21 @@ impl NamespaceSchema {
     /// Returns None if the key doesn't exist in the schema.
     pub fn get_default(&self, key: &str) -> Option<&Value> {
         self.options.get(key).map(|meta| &meta.default)
+    }
+
+    /// Validate a single key-value pair against the schema.
+    ///
+    /// # Errors
+    /// Returns error if the key doesn't exist or the value doesn't match the expected type.
+    pub fn validate_option(&self, key: &str, value: &Value) -> ValidationResult<()> {
+        if !self.options.contains_key(key) {
+            return Err(ValidationError::UnknownOption {
+                namespace: self.namespace.clone(),
+                key: key.to_string(),
+            });
+        }
+        let test_obj = json!({ key: value });
+        self.validate_values(&test_obj)
     }
 }
 
