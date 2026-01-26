@@ -1,4 +1,20 @@
 # Changelog
+## 0.0.7
+
+### New Features ✨
+
+- (cli) Statically compile binary by @hubertdeng123 in [#53](https://github.com/getsentry/sentry-options/pull/53)
+- (craft) Update craft to use musl by @hubertdeng123 in [#54](https://github.com/getsentry/sentry-options/pull/54)
+- (docs) Add integration guide by @hubertdeng123 in [#49](https://github.com/getsentry/sentry-options/pull/49)
+
+### Bug Fixes 🐛
+
+- (library) Client library loads json that is compatible with cli output by @hubertdeng123 in [#46](https://github.com/getsentry/sentry-options/pull/46)
+
+### Internal Changes 🔧
+
+- (sandbox) Some instructions for testing in sandbox by @hubertdeng123 in [#47](https://github.com/getsentry/sentry-options/pull/47)
+
 ## 0.0.6
 
 ### New Features ✨
