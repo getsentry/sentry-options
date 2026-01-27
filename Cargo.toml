@@ -32,3 +32,4 @@ tempfile = "3.23.0"
 jsonschema = "0.36.0"
 sentry = "0.46"
 chrono = "0.4"
+openssl = { version = "0.10.75", features = ["vendored"] }
