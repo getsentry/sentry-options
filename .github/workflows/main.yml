@@ -66,17 +66,17 @@ jobs:
 
   build-python:
     name: Build Python (${{ matrix.target }})
-    if: startsWith(github.ref, 'refs/heads/release/')
+    # if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-gnu
             manylinux: auto
           - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
+            target: aarch64-unknown-linux-gnu
             manylinux: auto
           - os: macos-14
             target: x86_64-apple-darwin
@@ -84,9 +84,6 @@ jobs:
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Install musl-tools
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.target }}
@@ -114,7 +111,7 @@ jobs:
 
   build-rust:
     name: Build Rust CLI
-    if: startsWith(github.ref, 'refs/heads/release/')
+    # if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -130,9 +127,9 @@ jobs:
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Install musl-tools
+      - name: Install build dependencies
         if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools libssl-dev pkg-config
       - name: Install Rust Toolchain
         run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }} --no-self-update
       - uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
