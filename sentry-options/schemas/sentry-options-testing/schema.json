@@ -17,6 +17,11 @@
       "default": 0,
       "description": "An example integer option"
     },
+    "bool-option": {
+      "type": "boolean",
+      "default": false,
+      "description": "An example boolean option"
+    },
     "string-option": {
       "type": "string",
       "default": "default",
