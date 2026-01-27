@@ -1,4 +1,15 @@
 # Changelog
+## 0.0.8
+
+### New Features ✨
+
+- (examples) Test adding option and migrate example schemas by @hubertdeng123 in [#55](https://github.com/getsentry/sentry-options/pull/55)
+- (sentry) Add sentry by @hubertdeng123 in [#48](https://github.com/getsentry/sentry-options/pull/48)
+
+### Bug Fixes 🐛
+
+- (compilation) Add openssl by @hubertdeng123 in [#56](https://github.com/getsentry/sentry-options/pull/56)
+
 ## 0.0.7
 
 ### New Features ✨
