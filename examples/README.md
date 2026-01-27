@@ -41,7 +41,7 @@ docker push us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-opt
 ```bash
 # Generate ConfigMap and apply directly to cluster
 ./target/release/sentry-options-cli write \
-  --schemas examples/schemas \
+  --schemas sentry-options/schemas \
   --root examples/configs \
   --output-format configmap \
   --namespace sentry-options-testing \
@@ -53,7 +53,7 @@ Or save to a file first:
 
 ```bash
 ./target/release/sentry-options-cli write \
-  --schemas examples/schemas \
+  --schemas sentry-options/schemas \
   --root examples/configs \
   --output-format configmap \
   --namespace sentry-options-testing \
@@ -130,7 +130,7 @@ Update a value and re-apply:
 
 # Re-generate and apply ConfigMap
 ./target/release/sentry-options-cli write \
-  --schemas examples/schemas \
+  --schemas sentry-options/schemas \
   --root examples/configs \
   --output-format configmap \
   --namespace sentry-options-testing \

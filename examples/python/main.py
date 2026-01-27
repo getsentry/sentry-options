@@ -18,7 +18,11 @@ testing = options('sentry-options-testing')
 
 while True:
     time.sleep(3)
-    string_value = testing.get('example-option')
-    float_value = testing.get('float-option')
-    bool_value = testing.get('bool-option')
-    print(f"values: {string_value} | {float_value} | {bool_value}", flush=True)
+    example_val = testing.get('example-option')
+    float_val = testing.get('float-option')
+    bool_val = testing.get('bool-option')
+    string_val = testing.get('string-option')
+    print(
+        f"values: {example_val} | {float_val} | {bool_val} | {string_val}",
+        flush=True,
+    )

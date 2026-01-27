@@ -31,7 +31,7 @@ RUN pip install /tmp/*.whl && rm /tmp/*.whl
 COPY examples/python/main.py /app/main.py
 
 # Copy schemas (baked into image)
-COPY examples/schemas/sentry-options-testing /etc/sentry-options/schemas/sentry-options-testing
+COPY sentry-options/schemas/sentry-options-testing /etc/sentry-options/schemas/sentry-options-testing
 
 # Values directory created by k8s when mounting ConfigMap
 
