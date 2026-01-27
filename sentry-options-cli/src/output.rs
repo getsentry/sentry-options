@@ -97,19 +97,29 @@ fn merge_all_options(maps: NamespaceMap) -> Result<Vec<MergedOptions>> {
     Ok(results)
 }
 
-pub fn generate_json(maps: NamespaceMap) -> Result<Vec<(String, String)>> {
+/// Generate JSON output files for all namespace/target combinations.
+///
+/// # Arguments
+/// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
+pub fn generate_json(maps: NamespaceMap, generated_at: &str) -> Result<Vec<(String, String)>> {
     merge_all_options(maps)?
         .into_iter()
         .map(|m| {
-            let wrapper = BTreeMap::from([("options", m.options)]);
             Ok((
                 format!("sentry-options-{}-{}.json", m.namespace, m.target),
-                serde_json::to_string(&wrapper)?,
+                serde_json::to_string(&serde_json::json!({
+                    "options": m.options,
+                    "generated_at": generated_at,
+                }))?,
             ))
         })
         .collect()
 }
 
+/// Generate a Kubernetes ConfigMap for a specific namespace/target.
+///
+/// # Arguments
+/// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
 pub fn generate_configmap(
     maps: &NamespaceMap,
     namespace: &str,
@@ -121,8 +131,10 @@ pub fn generate_configmap(
     let name = format!("sentry-options-{}-{}", namespace, target);
 
     let options = merge_options_for_target(maps, namespace, target)?;
-    let wrapper = BTreeMap::from([("options", &options)]);
-    let values_json = serde_json::to_string(&wrapper)?;
+    let values_json = serde_json::to_string(&serde_json::json!({
+        "options": options,
+        "generated_at": generated_at,
+    }))?;
 
     let mut annotations = BTreeMap::from([("generated_at".to_string(), generated_at.to_string())]);
     if let Some(sha) = commit_sha {
@@ -248,6 +260,7 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(values_json).unwrap();
         assert_eq!(parsed["options"]["string_val"], "hello");
         assert_eq!(parsed["options"]["int_val"], 42);
+        assert_eq!(parsed["generated_at"], "2026-01-14T00:00:00Z");
     }
 
     #[test]
