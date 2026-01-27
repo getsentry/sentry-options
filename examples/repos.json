@@ -3,7 +3,7 @@
       "sentry-options": {
         "url": "https://github.com/getsentry/sentry-options",
         "sha": "0ef7c7734712138bcdacba2d2ac5e67df50140e8",
-        "path": "examples/schemas"
+        "path": "sentry-options/schemas"
       }
     }
   }
