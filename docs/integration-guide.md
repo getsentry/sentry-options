@@ -74,7 +74,7 @@ All these changes can be deployed together - the library uses schema defaults wh
       "default": false,
       "description": "Enable the feature"
     },
-    "rate.limit": {
+    "feature.rate_limit": {
       "type": "integer",
       "default": 100,
       "description": "Rate limit per second"
@@ -102,8 +102,10 @@ Breaking changes require a migration strategy (contact DevInfra).
 
 #### 2. Update Dockerfile
 
+Schemas are baked into the Docker image so the client can validate values and provide defaults even before any ConfigMap is deployed.
+
 ```dockerfile
-# Copy schemas into image
+# Copy schemas into image (enables validation and defaults)
 COPY sentry-options/schemas/{namespace} /etc/sentry-options/schemas/{namespace}
 
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
@@ -131,7 +133,7 @@ opts = options('seer')
 
 # Read values (returns schema default if ConfigMap doesn't exist)
 if opts.get('feature.enabled'):
-    rate = opts.get('rate.limit')
+    rate = opts.get('feature.rate_limit')
 ```
 
 #### 5. Test Locally
@@ -147,7 +149,7 @@ cat > sentry-options/values/{namespace}/values.json << 'EOF'
 {
   "options": {
     "feature.enabled": true,
-    "rate.limit": 200
+    "feature.rate_limit": 200
   }
 }
 EOF
@@ -158,7 +160,7 @@ from sentry_options import init, options
 init()
 opts = options('{namespace}')
 print('feature.enabled:', opts.get('feature.enabled'))
-print('rate.limit:', opts.get('rate.limit'))
+print('feature.rate_limit:', opts.get('feature.rate_limit'))
 "
 ```
 
