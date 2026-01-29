@@ -332,7 +332,7 @@ mod tests {
         let result = write_configmap_yaml(&configmap, None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("exceeds Kubernetes 1MB limit"));
+        assert!(err.contains("exceeds Kubernetes 1MiB limit"));
         assert!(err.contains("test-large"));
     }
 }
