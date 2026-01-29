@@ -18,7 +18,7 @@ sentry-options replaces database-stored configuration with git-managed, schema-v
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Build Time                              │
 │  service repo (e.g., seer)                                      │
-│    └── schemas/seer/schema.json  ──→  Baked into Docker image   │
+│    └── sentry-options/schemas/seer/schema.json  ──→  Docker image│
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -48,7 +48,7 @@ sentry-options replaces database-stored configuration with git-managed, schema-v
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| **Schemas** | Service repo (e.g., `seer/schemas/`) | Define options with types and defaults |
+| **Schemas** | Service repo (e.g., `seer/sentry-options/schemas/`) | Define options with types and defaults |
 | **Values** | `sentry-options-automator/option_values/` | Runtime configuration values |
 | **CLI** | `sentry-options-cli` | Fetches schemas, validates YAML, generates ConfigMaps |
 | **Client** | `sentry_options` (Python) | Reads options at runtime with hot-reload |
@@ -63,7 +63,7 @@ All these changes can be deployed together - the library uses schema defaults wh
 
 #### 1. Create Schema
 
-`schemas/{service}/schema.json`:
+`sentry-options/schemas/{namespace}/schema.json`:
 ```json
 {
   "version": "1.0",
@@ -104,7 +104,7 @@ Breaking changes require a migration strategy (contact DevInfra).
 
 ```dockerfile
 # Copy schemas into image
-COPY schemas/{service} /etc/sentry-options/schemas/{service}
+COPY sentry-options/schemas/{namespace} /etc/sentry-options/schemas/{namespace}
 
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
@@ -134,7 +134,44 @@ if opts.get('feature.enabled'):
     rate = opts.get('rate.limit')
 ```
 
-#### 5. Add Schema Validation CI
+#### 5. Test Locally
+
+Before deploying, test your integration locally. The library automatically looks for a `sentry-options/` directory in your working directory.
+
+**Remember:** Namespace directories must be prefixed with your repo name (e.g., `seer`, `seer-autofix`).
+
+```bash
+# Create values file for your namespace
+mkdir -p sentry-options/values/{namespace}
+cat > sentry-options/values/{namespace}/values.json << 'EOF'
+{
+  "options": {
+    "feature.enabled": true,
+    "rate.limit": 200
+  }
+}
+EOF
+
+# Run your service or test script
+python -c "
+from sentry_options import init, options
+init()
+opts = options('{namespace}')
+print('feature.enabled:', opts.get('feature.enabled'))
+print('rate.limit:', opts.get('rate.limit'))
+"
+```
+
+The directory structure should be:
+```
+sentry-options/
+├── schemas/{namespace}/schema.json   # Your schema (already created in step 1)
+└── values/{namespace}/values.json    # Test values
+```
+
+To test hot-reload, modify `values.json` while your service is running - changes should be picked up within 5 seconds.
+
+#### 6. Add Schema Validation CI
 
 `.github/workflows/validate-sentry-options.yml`:
 ```yaml
@@ -143,18 +180,18 @@ name: Validate sentry-options schema
 on:
   pull_request:
     paths:
-      - 'schemas/**'
+      - 'sentry-options/schemas/**'
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0  # Required for comparing base and head commits
-      - uses: getsentry/sentry-options/.github/actions/validate-schema@main
+      - uses: getsentry/sentry-options/.github/actions/validate-schema@sha
         with:
-          schemas-path: schemas
+          schemas-path: sentry-options/schemas
 ```
 
 ### Phase 2: sentry-options-automator Changes
@@ -188,14 +225,14 @@ Add your service to `repos.json`:
 
 #### 2. Create Values File
 
-`option_values/{service}/default/options.yaml`:
+`option_values/{namespace}/default/options.yaml`:
 ```yaml
 options:
   feature.enabled: true
   rate.limit: 200
 ```
 
-Region-specific overrides in `option_values/{service}/{region}/options.yaml`.
+Region-specific overrides in `option_values/{namespace}/{region}/options.yaml`.
 
 **That's it!** The CI will automatically validate your values against your schema, and the CD pipeline will deploy ConfigMaps to all regions on merge.
 
@@ -226,23 +263,27 @@ PR: Update schema.json    →    PR: Update repos.json SHA
 
 Can happen anytime - use `optional: true` so pods start without ConfigMap.
 
-The ops repo uses Jinja2 templating with cluster-specific variables for the region/target:
+The ops repo uses Jinja2 templating. Add volume and volumeMount to your deployment.yaml:
 
 ```yaml
 # deployment.yaml
-volumeMounts:
-- name: sentry-options-values
-  mountPath: /etc/sentry-options/values/{service}
-  readOnly: true
-
-volumes:
-- name: sentry-options-values
-  configMap:
-    name: sentry-options-{service}-{{ region }}
-    optional: true  # Pod starts with defaults if ConfigMap missing
+      containers:
+        - name: {{ values.service }}
+          # ... existing config ...
+          volumeMounts:
+          # ... existing mounts ...
+          - name: sentry-options-values
+            mountPath: /etc/sentry-options/values/{namespace}
+            readOnly: true
+      volumes:
+      # ... existing volumes ...
+      - name: sentry-options-values
+        configMap:
+          name: sentry-options-{namespace}-{{ customer.sentry_region }}
+          optional: true  # Pod starts with defaults if ConfigMap missing
 ```
 
-This produces the correct ConfigMap name per cluster (e.g., `sentry-options-seer-us`, `sentry-options-seer-de`).
+Replace `{namespace}` with your actual namespace (e.g., `seer`). The `customer.sentry_region` variable provides the region (us, de, s4s, etc.), producing ConfigMap names like `sentry-options-seer-us`.
 
 ## ConfigMap Generation
 
