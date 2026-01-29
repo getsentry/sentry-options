@@ -22,6 +22,23 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
         if dir_entry.file_type().is_file() {
             let path = dir_entry.path();
             let path_string = path.display().to_string();
+
+            // Check file extension early, before structure validation
+            // This allows non-yaml files (like README.md) anywhere in the tree
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("yml") => {
+                    return Err(AppError::Validation(format!(
+                        "Invalid file {}: expected .yaml, found .yml",
+                        path_string
+                    )));
+                }
+                Some("yaml") => {}
+                _ => {
+                    // skip non-yaml files
+                    continue;
+                }
+            }
+
             // path relative to root
             let relative_path = path.strip_prefix(root_path).map_err(|e| {
                 AppError::Validation(format!(
@@ -40,7 +57,7 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
                 })
                 .collect();
 
-            let [namespace, target, fname]: [&str; 3] = parts.try_into().map_err(|_| {
+            let [namespace, target, _fname]: [&str; 3] = parts.try_into().map_err(|_| {
                 AppError::Validation(format!(
                     "Invalid directory structure in {}: expected namespace/target/file.yaml",
                     relative_path.display()
@@ -56,17 +73,6 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
                     "Unknown namespace '{}' in file {}. No schema found for this namespace.",
                     namespace, path_string
                 )));
-            }
-
-            if fname.ends_with(".yml") {
-                return Err(AppError::Validation(format!(
-                    "Invalid file {}: expected .yaml, found .yml",
-                    path_string
-                )));
-            }
-            // ignore non-yaml files
-            if !fname.ends_with(".yaml") {
-                continue;
             }
 
             let parsed_options = validate_and_parse(&path_string, namespace, schema_registry)?;
