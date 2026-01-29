@@ -21,6 +21,11 @@
       "type": "boolean",
       "default": false,
       "description": "An example boolean option"
+    },
+    "this-is-a-valid-change": {
+      "type": "boolean",
+      "default": false,
+      "description": "Wow option"
     }
   }
 }
