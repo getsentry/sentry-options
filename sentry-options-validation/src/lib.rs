@@ -4,6 +4,9 @@
 //! Schemas are loaded once and stored in Arc for efficient sharing.
 //! Values are validated against schemas as complete objects.
 
+use chrono::{DateTime, Utc};
+use sentry::ClientOptions;
+use sentry::transports::DefaultTransportFactory;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
@@ -12,11 +15,11 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::sync::{
-    Arc,
+    Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
@@ -25,6 +28,39 @@ const VALUES_FILE_NAME: &str = "values.json";
 
 /// Time between file polls in seconds
 const POLLING_DELAY: u64 = 5;
+
+/// Dedicated Sentry DSN for sentry-options observability.
+/// This is separate from the host application's Sentry setup.
+#[cfg(not(test))]
+const SENTRY_OPTIONS_DSN: &str =
+    "https://d3598a07e9f23a9acee9e2718cfd17bd@o1.ingest.us.sentry.io/4510750163927040";
+
+/// Disabled DSN for tests - empty string creates a disabled client
+#[cfg(test)]
+const SENTRY_OPTIONS_DSN: &str = "";
+
+/// Lazily-initialized dedicated Sentry Hub for sentry-options.
+/// Uses a custom Client that is completely isolated from the host application's Sentry setup.
+/// In test mode, creates a disabled client (empty DSN) so no spans are sent.
+static SENTRY_HUB: OnceLock<Arc<sentry::Hub>> = OnceLock::new();
+
+fn get_sentry_hub() -> &'static Arc<sentry::Hub> {
+    SENTRY_HUB.get_or_init(|| {
+        let client = Arc::new(sentry::Client::from((
+            SENTRY_OPTIONS_DSN,
+            ClientOptions {
+                traces_sample_rate: 1.0,
+                // Explicitly set transport factory - required when not using sentry::init()
+                transport: Some(Arc::new(DefaultTransportFactory)),
+                ..Default::default()
+            },
+        )));
+        Arc::new(sentry::Hub::new(
+            Some(client),
+            Arc::new(sentry::Scope::default()),
+        ))
+    })
+}
 
 /// Production path where options are deployed via config map
 pub const PRODUCTION_OPTIONS_DIR: &str = "/etc/sentry-options";
@@ -383,10 +419,15 @@ impl SchemaRegistry {
 
     /// Load and validate JSON values from a directory.
     /// Expects structure: `{values_dir}/{namespace}/values.json`
-    /// Values file must have format: `{"options": {"key": value, ...}}`
+    /// Values file must have format: `{"options": {"key": value, ...}, "generated_at": "..."}`
     /// Skips namespaces without a values.json file.
-    pub fn load_values_json(&self, values_dir: &Path) -> ValidationResult<ValuesByNamespace> {
+    /// Returns the values and a map of namespace -> `generated_at` timestamp.
+    pub fn load_values_json(
+        &self,
+        values_dir: &Path,
+    ) -> ValidationResult<(ValuesByNamespace, HashMap<String, String>)> {
         let mut all_values = HashMap::new();
+        let mut generated_at_by_namespace: HashMap<String, String> = HashMap::new();
 
         for namespace in self.schemas.keys() {
             let values_file = values_dir.join(namespace).join(VALUES_FILE_NAME);
@@ -396,6 +437,11 @@ impl SchemaRegistry {
             }
 
             let parsed: Value = serde_json::from_reader(fs::File::open(&values_file)?)?;
+
+            // Extract generated_at if present
+            if let Some(ts) = parsed.get("generated_at").and_then(|v| v.as_str()) {
+                generated_at_by_namespace.insert(namespace.clone(), ts.to_string());
+            }
 
             let values = parsed
                 .get("options")
@@ -412,7 +458,7 @@ impl SchemaRegistry {
             }
         }
 
-        Ok(all_values)
+        Ok((all_values, generated_at_by_namespace))
     }
 }
 
@@ -536,16 +582,22 @@ impl ValuesWatcher {
         latest_mtime
     }
 
-    /// Reload values from disk, validate them, and update the shared map
+    /// Reload values from disk, validate them, and update the shared map.
+    /// Emits a Sentry transaction per namespace with timing and propagation delay metrics.
     fn reload_values(
         values_path: &Path,
         registry: &SchemaRegistry,
         values: &Arc<RwLock<ValuesByNamespace>>,
     ) {
+        let reload_start = Instant::now();
+
         match registry.load_values_json(values_path) {
-            Ok(new_values) => {
+            Ok((new_values, generated_at_by_namespace)) => {
+                let namespaces: Vec<String> = new_values.keys().cloned().collect();
                 Self::update_values(values, new_values);
-                // TODO: add some logging here so we know when options refresh
+
+                let reload_duration = reload_start.elapsed();
+                Self::emit_reload_spans(&namespaces, reload_duration, &generated_at_by_namespace);
             }
             Err(e) => {
                 eprintln!(
@@ -554,6 +606,40 @@ impl ValuesWatcher {
                     e
                 );
             }
+        }
+    }
+
+    /// Emit a Sentry transaction per namespace with reload timing and propagation delay metrics.
+    /// Uses a dedicated Sentry Hub isolated from the host application's Sentry setup.
+    fn emit_reload_spans(
+        namespaces: &[String],
+        reload_duration: Duration,
+        generated_at_by_namespace: &HashMap<String, String>,
+    ) {
+        let hub = get_sentry_hub();
+        let applied_at = Utc::now();
+        let reload_duration_ms = reload_duration.as_secs_f64() * 1000.0;
+
+        for namespace in namespaces {
+            let mut tx_ctx = sentry::TransactionContext::new(namespace, "sentry_options.reload");
+            tx_ctx.set_sampled(true);
+
+            let transaction = hub.start_transaction(tx_ctx);
+            transaction.set_data("reload_duration_ms", reload_duration_ms.into());
+            transaction.set_data("applied_at", applied_at.to_rfc3339().into());
+
+            if let Some(ts) = generated_at_by_namespace.get(namespace) {
+                transaction.set_data("generated_at", ts.as_str().into());
+
+                if let Ok(generated_time) = DateTime::parse_from_rfc3339(ts) {
+                    let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
+                        .num_milliseconds() as f64
+                        / 1000.0;
+                    transaction.set_data("propagation_delay_secs", delay_secs.into());
+                }
+            }
+
+            transaction.finish();
         }
     }
 
@@ -1017,13 +1103,14 @@ Error: \"version\" is a required property"
         .unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
-        let values = registry.load_values_json(&values_dir).unwrap();
+        let (values, generated_at_by_namespace) = registry.load_values_json(&values_dir).unwrap();
 
         assert_eq!(values.len(), 1);
         assert_eq!(values["test"]["enabled"], json!(true));
         assert_eq!(values["test"]["name"], json!("test-name"));
         assert_eq!(values["test"]["count"], json!(42));
         assert_eq!(values["test"]["rate"], json!(0.75));
+        assert!(generated_at_by_namespace.is_empty());
     }
 
     #[test]
@@ -1036,12 +1123,13 @@ Error: \"version\" is a required property"
         );
 
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
-        let values = registry
+        let (values, generated_at_by_namespace) = registry
             .load_values_json(&temp_dir.path().join("nonexistent"))
             .unwrap();
 
         // No values.json files found, returns empty
         assert!(values.is_empty());
+        assert!(generated_at_by_namespace.is_empty());
     }
 
     #[test]
@@ -1089,11 +1177,49 @@ Error: \"version\" is a required property"
         .unwrap();
 
         let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
-        let values = registry.load_values_json(&values_dir).unwrap();
+        let (values, _) = registry.load_values_json(&values_dir).unwrap();
 
         assert_eq!(values.len(), 1);
         assert!(values.contains_key("with-values"));
         assert!(!values.contains_key("without-values"));
+    }
+
+    #[test]
+    fn test_load_values_json_extracts_generated_at() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T18:30:00.123456+00:00"}"#,
+        )
+        .unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let (values, generated_at_by_namespace) = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values["test"]["enabled"], json!(true));
+        assert_eq!(
+            generated_at_by_namespace.get("test"),
+            Some(&"2024-01-21T18:30:00.123456+00:00".to_string())
+        );
     }
 
     #[test]
@@ -1223,7 +1349,7 @@ Error: \"version\" is a required property"
             let (_temp, schemas_dir, values_dir) = setup_watcher_test();
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
             let values = Arc::new(RwLock::new(initial_values));
 
             // ensure initial values are correct
@@ -1261,7 +1387,7 @@ Error: \"version\" is a required property"
             let (_temp, schemas_dir, values_dir) = setup_watcher_test();
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
             let values = Arc::new(RwLock::new(initial_values));
 
             let initial_enabled = {
@@ -1290,7 +1416,7 @@ Error: \"version\" is a required property"
             let (_temp, schemas_dir, values_dir) = setup_watcher_test();
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let initial_values = registry.load_values_json(&values_dir).unwrap();
+            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
             let values = Arc::new(RwLock::new(initial_values));
 
             let mut watcher =

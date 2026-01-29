@@ -225,6 +225,10 @@ pub fn detect_changes(
     }
 
     if !errors.is_empty() {
+        println!("Errors:");
+        for error in &errors {
+            println!("\t{}", error);
+        }
         return Err(ValidationError::ValidationErrors(errors));
     }
 

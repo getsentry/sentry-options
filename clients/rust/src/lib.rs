@@ -54,7 +54,7 @@ impl Options {
         let values_dir = base_dir.join("values");
 
         let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir)?);
-        let loaded_values = registry.load_values_json(&values_dir)?;
+        let (loaded_values, _) = registry.load_values_json(&values_dir)?;
         let values = Arc::new(RwLock::new(loaded_values));
 
         let watcher_registry = Arc::clone(&registry);

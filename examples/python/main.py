@@ -1,7 +1,7 @@
 """An example usage of the Python options client library.
 
 Every 3 seconds, prints out the value of example-option, float-option,
-and bool-option.
+bool-option, and string-option.
 
 Updating values in `../values` will be reflected in stdout.
 Ctrl+C to exit.
@@ -25,11 +25,18 @@ def get_bool_value():
     return options('sentry-options-testing').get('bool-option')
 
 
+def get_string_option_value():
+    return options('sentry-options-testing').get('string-option')
+
+
 if __name__ == '__main__':
     from sentry_options import init
     init()
 
     while True:
         time.sleep(3)
-        s, f, b = get_string_value(), get_float_value(), get_bool_value()
-        print(f"values: {s} | {f} | {b}", flush=True)
+        s = get_string_value()
+        f = get_float_value()
+        b = get_bool_value()
+        so = get_string_option_value()
+        print(f"values: {s} | {f} | {b} | {so}", flush=True)

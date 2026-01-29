@@ -223,12 +223,14 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
     let grouped = load_and_validate(&args.root, &schema_registry)?;
     ensure_no_duplicate_keys(&grouped)?;
 
+    let generated_at = chrono::Utc::now().to_rfc3339();
+
     match args.output_format {
         OutputFormat::Json => {
             let out_path = args.out.ok_or_else(|| {
                 AppError::Validation("--out is required for json output format".to_string())
             })?;
-            let json_outputs = generate_json(grouped)?;
+            let json_outputs = generate_json(grouped, &generated_at)?;
             let num_files = json_outputs.len();
             write_json(PathBuf::from(&out_path), json_outputs)?;
 
@@ -243,8 +245,6 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
             let target = args.target.ok_or_else(|| {
                 AppError::Validation("--target is required for configmap output format".into())
             })?;
-
-            let generated_at = chrono::Utc::now().to_rfc3339();
             let configmap = generate_configmap(
                 &grouped,
                 &namespace,
@@ -690,7 +690,7 @@ mod tests {
         );
 
         let grouped = f.load().unwrap();
-        let json_outputs = generate_json(grouped).unwrap();
+        let json_outputs = generate_json(grouped, "2026-01-21T00:00:00Z").unwrap();
 
         // Find the s4s output
         let s4s_output = json_outputs
@@ -724,7 +724,7 @@ mod tests {
         );
 
         let grouped = f.load().unwrap();
-        let json_outputs = generate_json(grouped).unwrap();
+        let json_outputs = generate_json(grouped, "2026-01-21T00:00:00Z").unwrap();
         let json_str = &json_outputs[0].1;
 
         // Parse and check that keys are in alphabetical order
@@ -758,7 +758,7 @@ mod tests {
         assert!(result.is_ok());
 
         let grouped = result.unwrap();
-        let json_outputs = generate_json(grouped).unwrap();
+        let json_outputs = generate_json(grouped, "2026-01-21T00:00:00Z").unwrap();
         let json: serde_json::Value = serde_json::from_str(&json_outputs[0].1).unwrap();
 
         assert_eq!(json["options"]["string_val"], "hello");

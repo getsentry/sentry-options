@@ -1,7 +1,7 @@
 FROM python:3.13-slim AS builder
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y curl build-essential && \
+RUN apt-get update && apt-get install -y curl build-essential pkg-config libssl-dev && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
@@ -15,7 +15,7 @@ COPY clients ./clients
 COPY examples/rust ./examples/rust
 
 # Build Python wheel
-RUN pip install maturin && \
+RUN pip install maturin[patchelf] && \
     cd clients/python && \
     maturin build --release
 
@@ -31,7 +31,7 @@ RUN pip install /tmp/*.whl && rm /tmp/*.whl
 COPY examples/python/main.py /app/main.py
 
 # Copy schemas (baked into image)
-COPY examples/schemas/sentry-options-testing /etc/sentry-options/schemas/sentry-options-testing
+COPY sentry-options/schemas/sentry-options-testing /etc/sentry-options/schemas/sentry-options-testing
 
 # Values directory created by k8s when mounting ConfigMap
 
