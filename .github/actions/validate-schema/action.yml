@@ -4,29 +4,49 @@ inputs:
   schemas-path:
     description: "Path to the schemas directory"
     default: "sentry-options/schemas"
+  cli-version:
+    description: "Version of sentry-options-cli to install"
+    default: "0.0.8"
+  # this flag should only be `true` if we are in the sentry-options repo
+  build-from-source:
+    description: "Build CLI from source instead of downloading release binary"
+    default: "false"
 
 runs:
   using: "composite"
   steps:
     - name: Install Rust Toolchain
-      if: github.event_name == 'pull_request' # ensures this action is skipped when not on a PR
+      if: github.event_name == 'pull_request' && inputs.build-from-source == 'true'
       shell: bash
       run: rustup toolchain install stable --profile minimal --no-self-update
 
     - name: Cache Cargo
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' && inputs.build-from-source == 'true'
       uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
 
-    - name: Install sentry-options-cli
-      if: github.event_name == 'pull_request'
+    - name: Build sentry-options-cli from source
+      if: github.event_name == 'pull_request' && inputs.build-from-source == 'true'
       shell: bash
-      run: cargo install sentry-options-cli --version "0.0.5" --locked
+      run: |
+        cargo build --release -p sentry-options-cli
+        echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
+
+    - name: Download sentry-options-cli from releases
+      if: github.event_name == 'pull_request' && inputs.build-from-source != 'true'
+      shell: bash
+      env:
+        CLI_VERSION: ${{ inputs.cli-version }}
+        CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-musl
+      run: |
+        curl -sSL -o /usr/local/bin/sentry-options-cli \
+          https://github.com/getsentry/sentry-options/releases/download/"$CLI_VERSION"/"$CLI_BINARY"
+        chmod +x /usr/local/bin/sentry-options-cli
 
     - name: Validate schema changes
       if: github.event_name == 'pull_request'
       shell: bash
       env:
-        SENTRY_OPTIONS_DIR: "${{inputs.schemas-path}}"
+        SENTRY_OPTIONS_DIR: "${{ inputs.schemas-path }}"
       run: |
         set -euo pipefail
-        sentry-options-cli validate-schema-changes --base-sha "${{github.event.pull_request.base.sha}}" --head-sha "${{github.event.pull_request.head.sha}}" --repo "${{github.event.repository.name}}"
+        sentry-options-cli validate-schema-changes --base-sha "${{ github.event.pull_request.base.sha }}" --head-sha "${{ github.event.pull_request.head.sha }}" --repo "${{ github.event.repository.name }}"
