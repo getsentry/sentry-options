@@ -159,8 +159,8 @@ pub fn generate_configmap(
     })
 }
 
-/// Maximum size for a Kubernetes ConfigMap (1MiB)
-const MAX_CONFIGMAP_SIZE: usize = 1024 * 1024;
+/// Maximum size for a Kubernetes ConfigMap (1MiB minus 1000 bytes for etcd/protobuf overhead)
+const MAX_CONFIGMAP_SIZE: usize = 1024 * 1024 - 1000;
 
 pub fn write_configmap_yaml(configmap: &ConfigMap, out_path: Option<&Path>) -> Result<()> {
     let yaml = serde_yaml::to_string(configmap)
@@ -168,7 +168,7 @@ pub fn write_configmap_yaml(configmap: &ConfigMap, out_path: Option<&Path>) -> R
 
     if yaml.len() > MAX_CONFIGMAP_SIZE {
         return Err(AppError::Validation(format!(
-            "ConfigMap '{}' exceeds Kubernetes 1MiB limit ({} bytes)",
+            "ConfigMap '{}' exceeds Kubernetes (1MiB - 1000B margin) limit (currently {} bytes)",
             configmap.metadata.name,
             yaml.len()
         )));
@@ -332,7 +332,7 @@ mod tests {
         let result = write_configmap_yaml(&configmap, None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("exceeds Kubernetes 1MiB limit"));
+        assert!(err.contains("exceeds Kubernetes (1MiB - 1000B margin) limit"));
         assert!(err.contains("test-large"));
     }
 }
