@@ -224,7 +224,6 @@ pub fn detect_changes(
         }
     }
 
-    // this is a test
     if !errors.is_empty() {
         println!("Errors:");
         for error in &errors {
