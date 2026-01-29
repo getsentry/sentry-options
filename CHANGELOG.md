@@ -1,4 +1,20 @@
 # Changelog
+## 0.0.9
+
+### New Features ✨
+
+- (ci) Update composite action to selectively build from source by @kenzoengineer in [#60](https://github.com/getsentry/sentry-options/pull/60)
+- (k8) Fail if generated config map is larger than 1 MiB by @kenzoengineer in [#61](https://github.com/getsentry/sentry-options/pull/61)
+
+### Bug Fixes 🐛
+
+- (cli) Correctly ignore non-yaml files by @kenzoengineer in [#62](https://github.com/getsentry/sentry-options/pull/62)
+- (tests) Do not report spans for tests by @hubertdeng123 in [#57](https://github.com/getsentry/sentry-options/pull/57)
+
+### Internal Changes 🔧
+
+- (cli) Make schema evolution error more user friendly by @kenzoengineer in [#59](https://github.com/getsentry/sentry-options/pull/59)
+
 ## 0.0.8
 
 ### New Features ✨
