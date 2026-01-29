@@ -159,9 +159,20 @@ pub fn generate_configmap(
     })
 }
 
+/// Maximum size for a Kubernetes ConfigMap (1MiB)
+const MAX_CONFIGMAP_SIZE: usize = 1024 * 1024;
+
 pub fn write_configmap_yaml(configmap: &ConfigMap, out_path: Option<&Path>) -> Result<()> {
     let yaml = serde_yaml::to_string(configmap)
         .map_err(|e| AppError::Validation(format!("YAML serialization error: {}", e)))?;
+
+    if yaml.len() > MAX_CONFIGMAP_SIZE {
+        return Err(AppError::Validation(format!(
+            "ConfigMap '{}' exceeds Kubernetes 1MiB limit ({} bytes)",
+            configmap.metadata.name,
+            yaml.len()
+        )));
+    }
 
     match out_path {
         Some(path) => {
@@ -301,5 +312,27 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_configmap_exceeds_size_limit() {
+        // Create a ConfigMap with data exceeding 1MB
+        let large_value = "x".repeat(1024 * 1024 + 1);
+        let configmap = ConfigMap {
+            api_version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+            metadata: ConfigMapMetadata {
+                name: "test-large".to_string(),
+                labels: BTreeMap::new(),
+                annotations: BTreeMap::new(),
+            },
+            data: BTreeMap::from([("large_key".to_string(), large_value)]),
+        };
+
+        let result = write_configmap_yaml(&configmap, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("exceeds Kubernetes 1MB limit"));
+        assert!(err.contains("test-large"));
     }
 }
