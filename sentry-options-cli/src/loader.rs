@@ -57,7 +57,7 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
                 })
                 .collect();
 
-            let [namespace, target, fname]: [&str; 3] = parts.try_into().map_err(|_| {
+            let [namespace, target, _fname]: [&str; 3] = parts.try_into().map_err(|_| {
                 AppError::Validation(format!(
                     "Invalid directory structure in {}: expected namespace/target/file.yaml",
                     relative_path.display()
