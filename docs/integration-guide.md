@@ -231,7 +231,7 @@ Add your service to `repos.json`:
 ```yaml
 options:
   feature.enabled: true
-  rate.limit: 200
+  feature.rate_limit: 200
 ```
 
 Region-specific overrides in `option_values/{namespace}/{region}/options.yaml`.
