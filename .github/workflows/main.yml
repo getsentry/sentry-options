@@ -203,9 +203,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check for CLI source changes
+        id: cli-changes
+        uses: dorny/paths-filter@0bc4621a3135347011ad047f9ecf449bf72ce2bd # v3.0.0
+        with:
+          filters: |
+            cli:
+              - 'sentry-options-cli/**'
+              - 'sentry-options-validation/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+
       - uses: ./.github/actions/validate-schema
         with:
           schemas-path: sentry-options/schemas
+          build-from-source: ${{ steps.cli-changes.outputs.cli }}
 
   python-client-test:
     name: Python Client Tests
