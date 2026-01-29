@@ -11,6 +11,9 @@ use serde_json::Value;
 // Global options instance
 static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 
+// Hook for testing module to register override checker
+static OVERRIDE_HOOK: OnceLock<Py<PyAny>> = OnceLock::new();
+
 // Custom exception hierarchy
 pyo3::create_exception!(
     sentry_options,
@@ -134,6 +137,15 @@ struct NamespaceOptions {
 impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        // Fast path: check if hook registered (atomic load, ~1-2ns)
+        if let Some(hook) = OVERRIDE_HOOK.get() {
+            let result = hook.call1(py, (&self.namespace, key))?;
+            if !result.is_none(py) {
+                return Ok(result);
+            }
+        }
+
+        // Normal path - get from values/defaults
         let value = self
             .options
             .get(&self.namespace, key)
@@ -146,34 +158,19 @@ impl NamespaceOptions {
     }
 }
 
-// Testing utilities - override primitives
+// Testing utilities - hook registration and validation
 
-/// Set an override value for testing.
+/// Register an override hook function (called by testing.py on import).
 #[pyfunction]
-fn set_override(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
-    let json_value = py_to_json(value)?;
-    ::sentry_options::testing::set_override(&namespace, &key, json_value);
-    Ok(())
+fn _register_override_hook(hook: Py<PyAny>) -> PyResult<()> {
+    OVERRIDE_HOOK
+        .set(hook)
+        .map_err(|_| PyRuntimeError::new_err("Override hook already registered"))
 }
 
-/// Get an override value if one exists.
+/// Validate an option value against the schema (used by testing.py).
 #[pyfunction]
-fn get_override(py: Python<'_>, namespace: String, key: String) -> PyResult<Option<Py<PyAny>>> {
-    match ::sentry_options::testing::get_override(&namespace, &key) {
-        Some(v) => Ok(Some(json_to_py(py, &v)?)),
-        None => Ok(None),
-    }
-}
-
-/// Clear an override for a specific namespace and key.
-#[pyfunction]
-fn clear_override(namespace: String, key: String) {
-    ::sentry_options::testing::clear_override(&namespace, &key);
-}
-
-/// Validate an override value against the schema.
-#[pyfunction]
-fn validate_override(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
+fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
     let json_value = py_to_json(value)?;
     let opts = GLOBAL_OPTIONS
         .get()
@@ -206,10 +203,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InitializationError",
         m.py().get_type::<InitializationError>(),
     )?;
-    // Testing utilities
-    m.add_function(wrap_pyfunction!(set_override, m)?)?;
-    m.add_function(wrap_pyfunction!(get_override, m)?)?;
-    m.add_function(wrap_pyfunction!(clear_override, m)?)?;
-    m.add_function(wrap_pyfunction!(validate_override, m)?)?;
+    // Testing utilities (only called by testing.py)
+    m.add_function(wrap_pyfunction!(_register_override_hook, m)?)?;
+    m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
     Ok(())
 }

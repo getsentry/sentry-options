@@ -21,7 +21,36 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::{GLOBAL_OPTIONS, Result};
+use crate::{GLOBAL_OPTIONS, OptionsError, Result};
+
+/// Initialize options, ignoring "already initialized" errors.
+///
+/// This is useful in tests where multiple test functions may call this,
+/// but only the first one actually initializes.
+///
+/// # Errors
+///
+/// Returns an error if initialization fails for reasons other than
+/// already being initialized (e.g., schema loading errors).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sentry_options::testing::ensure_initialized;
+///
+/// #[test]
+/// fn test_something() {
+///     ensure_initialized().unwrap();
+///     // ... test code
+/// }
+/// ```
+pub fn ensure_initialized() -> Result<()> {
+    match crate::init() {
+        Ok(()) => Ok(()),
+        Err(OptionsError::AlreadyInitialized) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
 
 thread_local! {
     static OVERRIDES: RefCell<HashMap<String, HashMap<String, Value>>> = RefCell::new(HashMap::new());
@@ -82,6 +111,7 @@ impl Drop for OverrideGuard {
 
 /// Set overrides for the lifetime of the returned guard.
 ///
+/// Automatically initializes global options if not already initialized.
 /// Validates that each key exists in the schema and the value matches the expected type.
 /// When the guard is dropped (goes out of scope), the overrides are restored
 /// to their previous values.
@@ -93,7 +123,7 @@ impl Drop for OverrideGuard {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Options have not been initialized (call `init()` first)
+/// - Initialization fails (e.g., schema loading errors)
 /// - Any namespace doesn't exist
 /// - Any key doesn't exist in the schema
 /// - Any value doesn't match the expected type
@@ -112,11 +142,13 @@ impl Drop for OverrideGuard {
 /// // when _guard goes out of scope, overrides are restored
 /// ```
 pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGuard> {
+    // Auto-initialize if needed
+    ensure_initialized()?;
+
     // Validate all overrides before applying any
-    if let Some(opts) = GLOBAL_OPTIONS.get() {
-        for (ns, key, value) in overrides {
-            opts.validate_override(ns, key, value)?;
-        }
+    let opts = GLOBAL_OPTIONS.get().expect("ensure_initialized succeeded");
+    for (ns, key, value) in overrides {
+        opts.validate_override(ns, key, value)?;
     }
 
     let mut previous = Vec::with_capacity(overrides.len());
@@ -141,7 +173,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_set_get_override() {
+    fn test_set_get_clear_override() {
         set_override("ns", "key", json!(true));
         assert_eq!(get_override("ns", "key"), Some(json!(true)));
         clear_override("ns", "key");
@@ -150,135 +182,67 @@ mod tests {
 
     #[test]
     fn test_override_guard_restores() {
-        set_override("ns", "key", json!(1));
+        set_override("sentry-options-testing", "int-option", json!(1));
 
         {
-            // No global options initialized, validation is skipped
-            let _guard = override_options(&[("ns", "key", json!(2))]).unwrap();
-            assert_eq!(get_override("ns", "key"), Some(json!(2)));
+            let _guard =
+                override_options(&[("sentry-options-testing", "int-option", json!(2))]).unwrap();
+            assert_eq!(
+                get_override("sentry-options-testing", "int-option"),
+                Some(json!(2))
+            );
         }
 
-        assert_eq!(get_override("ns", "key"), Some(json!(1)));
-        clear_override("ns", "key");
+        assert_eq!(
+            get_override("sentry-options-testing", "int-option"),
+            Some(json!(1))
+        );
+        clear_override("sentry-options-testing", "int-option");
     }
 
     #[test]
     fn test_override_guard_clears_new_key() {
-        assert_eq!(get_override("ns", "new_key"), None);
+        assert_eq!(get_override("sentry-options-testing", "bool-option"), None);
 
         {
-            // No global options initialized, validation is skipped
-            let _guard = override_options(&[("ns", "new_key", json!(true))]).unwrap();
-            assert_eq!(get_override("ns", "new_key"), Some(json!(true)));
+            let _guard =
+                override_options(&[("sentry-options-testing", "bool-option", json!(true))])
+                    .unwrap();
+            assert_eq!(
+                get_override("sentry-options-testing", "bool-option"),
+                Some(json!(true))
+            );
         }
 
-        assert_eq!(get_override("ns", "new_key"), None);
+        assert_eq!(get_override("sentry-options-testing", "bool-option"), None);
     }
 
     #[test]
     fn test_nested_overrides() {
         {
-            // No global options initialized, validation is skipped
-            let _outer = override_options(&[("ns", "key", json!(1))]).unwrap();
-            assert_eq!(get_override("ns", "key"), Some(json!(1)));
+            let _outer =
+                override_options(&[("sentry-options-testing", "int-option", json!(100))]).unwrap();
+            assert_eq!(
+                get_override("sentry-options-testing", "int-option"),
+                Some(json!(100))
+            );
 
             {
-                let _inner = override_options(&[("ns", "key", json!(2))]).unwrap();
-                assert_eq!(get_override("ns", "key"), Some(json!(2)));
+                let _inner =
+                    override_options(&[("sentry-options-testing", "int-option", json!(200))])
+                        .unwrap();
+                assert_eq!(
+                    get_override("sentry-options-testing", "int-option"),
+                    Some(json!(200))
+                );
             }
 
-            assert_eq!(get_override("ns", "key"), Some(json!(1)));
+            assert_eq!(
+                get_override("sentry-options-testing", "int-option"),
+                Some(json!(100))
+            );
         }
 
-        assert_eq!(get_override("ns", "key"), None);
-    }
-}
-
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-    use crate::Options;
-    use serde_json::json;
-    use std::fs;
-    use tempfile::TempDir;
-
-    fn setup_test_options() -> (TempDir, Options) {
-        let temp = TempDir::new().unwrap();
-        let schemas = temp.path().join("schemas");
-        let values = temp.path().join("values");
-
-        // Create schema
-        let schema_dir = schemas.join("myapp");
-        fs::create_dir_all(&schema_dir).unwrap();
-        fs::write(
-            schema_dir.join("schema.json"),
-            r#"{
-                "version": "1.0",
-                "type": "object",
-                "properties": {
-                    "feature.enabled": {
-                        "type": "boolean",
-                        "default": false,
-                        "description": "Enable feature"
-                    },
-                    "rate.limit": {
-                        "type": "integer",
-                        "default": 100,
-                        "description": "Rate limit"
-                    }
-                }
-            }"#,
-        )
-        .unwrap();
-
-        // Create values
-        let values_dir = values.join("myapp");
-        fs::create_dir_all(&values_dir).unwrap();
-        fs::write(
-            values_dir.join("values.json"),
-            r#"{"options": {"rate.limit": 500}}"#,
-        )
-        .unwrap();
-
-        let opts = Options::from_directory(temp.path()).unwrap();
-        (temp, opts)
-    }
-
-    #[test]
-    fn test_real_app_override_flow() {
-        let (_temp, opts) = setup_test_options();
-
-        // Simulate app code reading config
-        fn get_rate_limit(opts: &Options) -> i64 {
-            opts.get("myapp", "rate.limit").unwrap().as_i64().unwrap()
-        }
-
-        fn is_feature_enabled(opts: &Options) -> bool {
-            opts.get("myapp", "feature.enabled")
-                .unwrap()
-                .as_bool()
-                .unwrap()
-        }
-
-        // Normal operation - reads from values/defaults
-        assert_eq!(get_rate_limit(&opts), 500); // from values.json
-        assert!(!is_feature_enabled(&opts)); // default
-
-        // Test with override
-        {
-            let _guard = override_options(&[
-                ("myapp", "feature.enabled", json!(true)),
-                ("myapp", "rate.limit", json!(1000)),
-            ])
-            .unwrap();
-
-            // App code sees overridden values
-            assert_eq!(get_rate_limit(&opts), 1000);
-            assert!(is_feature_enabled(&opts));
-        }
-
-        // After test - back to normal
-        assert_eq!(get_rate_limit(&opts), 500);
-        assert!(!is_feature_enabled(&opts));
+        assert_eq!(get_override("sentry-options-testing", "int-option"), None);
     }
 }

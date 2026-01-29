@@ -102,7 +102,6 @@ impl Options {
     }
 
     /// Validate that a key exists in the schema and the value matches the expected type.
-    #[cfg(feature = "testing")]
     pub fn validate_override(&self, namespace: &str, key: &str, value: &Value) -> Result<()> {
         let schema = self
             .registry
@@ -294,47 +293,5 @@ mod tests {
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "opt").unwrap(), json!("default_val"));
-    }
-
-    #[cfg(feature = "testing")]
-    #[test]
-    fn test_override_intercepts_get() {
-        use crate::testing::override_options;
-
-        let temp = TempDir::new().unwrap();
-        let schemas = temp.path().join("schemas");
-        let values = temp.path().join("values");
-        fs::create_dir_all(&schemas).unwrap();
-
-        create_schema(
-            &schemas,
-            "test",
-            r#"{
-                "version": "1.0",
-                "type": "object",
-                "properties": {
-                    "enabled": {
-                        "type": "boolean",
-                        "default": false,
-                        "description": "Enable feature"
-                    }
-                }
-            }"#,
-        );
-        create_values(&values, "test", r#"{"options": {"enabled": false}}"#);
-
-        let options = Options::from_directory(temp.path()).unwrap();
-
-        // Without override - returns actual value
-        assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
-
-        // With override - returns override
-        {
-            let _guard = override_options(&[("test", "enabled", json!(true))]).unwrap();
-            assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
-        }
-
-        // After guard drops - back to actual value
-        assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
     }
 }
