@@ -31,11 +31,17 @@ const POLLING_DELAY: u64 = 5;
 
 /// Dedicated Sentry DSN for sentry-options observability.
 /// This is separate from the host application's Sentry setup.
+#[cfg(not(test))]
 const SENTRY_OPTIONS_DSN: &str =
     "https://d3598a07e9f23a9acee9e2718cfd17bd@o1.ingest.us.sentry.io/4510750163927040";
 
+/// Disabled DSN for tests - empty string creates a disabled client
+#[cfg(test)]
+const SENTRY_OPTIONS_DSN: &str = "";
+
 /// Lazily-initialized dedicated Sentry Hub for sentry-options.
 /// Uses a custom Client that is completely isolated from the host application's Sentry setup.
+/// In test mode, creates a disabled client (empty DSN) so no spans are sent.
 static SENTRY_HUB: OnceLock<Arc<sentry::Hub>> = OnceLock::new();
 
 fn get_sentry_hub() -> &'static Arc<sentry::Hub> {
