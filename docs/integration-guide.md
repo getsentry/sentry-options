@@ -394,7 +394,7 @@ sentry-options is for **feature flags and tunable parameters**, not secrets.
 
 | Aspect | Legacy (getsentry) | New (sentry-options) |
 |--------|-------------------|----------------------|
-| Values location | `options/` in automator | `option_values/` in automator |
+| Values location | `options/` in automator | `option-values/` in automator |
 | Generation | `generate.py` | `sentry-options-cli` |
 | Storage | ConfigMap → DB sync | ConfigMap → file mount |
 | How consumed | Django reads from DB | Client reads from file |
