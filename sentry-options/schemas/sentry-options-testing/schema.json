@@ -22,10 +22,10 @@
       "default": false,
       "description": "An example boolean option"
     },
-    "this-is-a-valid-change": {
-      "type": "boolean",
-      "default": false,
-      "description": "Wow option"
+    "string-option": {
+      "type": "string",
+      "default": "default",
+      "description": "An example string option with a default value"
     }
   }
 }
