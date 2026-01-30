@@ -28,7 +28,7 @@
       "description": "An example string option with a default value"
     },
     "demo-option": {
-      "type": "integer",
+      "type": "string",
       "default": "hello everyone",
       "description": "A string option to demo to dev-infra"
     }
