@@ -182,13 +182,7 @@ impl NamespaceSchema {
         } else {
             let errors: Vec<String> = output
                 .iter_errors()
-                .map(|e| {
-                    format!(
-                        "\n\t{} {}",
-                        e.instance_location.as_str(),
-                        e.error.to_string()
-                    )
-                })
+                .map(|e| format!("\n\t{} {}", e.instance_location.as_str(), e.error))
                 .collect();
             Err(ValidationError::ValueError {
                 namespace: self.namespace.clone(),
