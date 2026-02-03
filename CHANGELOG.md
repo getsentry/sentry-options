@@ -1,4 +1,10 @@
 # Changelog
+## 0.0.11
+
+### New Features ✨
+
+- (release) Use manylinux by @hubertdeng123 in [#67](https://github.com/getsentry/sentry-options/pull/67)
+
 ## 0.0.10
 
 ### New Features ✨
