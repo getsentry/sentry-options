@@ -89,6 +89,7 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release --out dist -m clients/python/Cargo.toml
+          before-script-linux: yum install -y perl-IPC-Cmd
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: wheel-${{ matrix.target }}
