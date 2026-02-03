@@ -180,10 +180,19 @@ impl NamespaceSchema {
         if output.flag().valid {
             Ok(())
         } else {
-            let errors: Vec<String> = output.iter_errors().map(|e| e.error.to_string()).collect();
+            let errors: Vec<String> = output
+                .iter_errors()
+                .map(|e| {
+                    format!(
+                        "\n\t{} {}",
+                        e.instance_location.as_str().trim_start_matches("/"),
+                        e.error
+                    )
+                })
+                .collect();
             Err(ValidationError::ValueError {
                 namespace: self.namespace.clone(),
-                errors: errors.join(", "),
+                errors: errors.join(""),
             })
         }
     }
