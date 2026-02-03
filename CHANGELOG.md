@@ -1,4 +1,19 @@
 # Changelog
+## 0.0.10
+
+### New Features ✨
+
+- (validation) Improve value validation error message by @kenzoengineer in [#66](https://github.com/getsentry/sentry-options/pull/66)
+
+### Internal Changes 🔧
+
+- (ci) Bump validate-schema version to 0.0.9 and add auto bumping by @kenzoengineer in [#63](https://github.com/getsentry/sentry-options/pull/63)
+- Update integration guide by @hubertdeng123 in [#58](https://github.com/getsentry/sentry-options/pull/58)
+
+### Other
+
+- demo: New string option by @kenzoengineer in [#65](https://github.com/getsentry/sentry-options/pull/65)
+
 ## 0.0.9
 
 ### New Features ✨
