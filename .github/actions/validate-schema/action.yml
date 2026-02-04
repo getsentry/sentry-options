@@ -36,7 +36,7 @@ runs:
       shell: bash
       env:
         CLI_VERSION: ${{ inputs.cli-version }}
-        CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-musl
+        CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-gnu
       run: |
         curl -sSL -o /usr/local/bin/sentry-options-cli \
           https://github.com/getsentry/sentry-options/releases/download/"$CLI_VERSION"/"$CLI_BINARY"
