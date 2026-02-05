@@ -2,7 +2,7 @@
 
 The amazing `sentry-options` is Sentry's internal option/feature flag management platform. It offers a reusable way to easily get configuration at run-time into your Kubernetes service.
 
-Backed by memory mounted ConfigMaps, `sentry-options` provides hot-reloadable options with no database overhead.
+Backed by volume mounted ConfigMaps, `sentry-options` provides hot-reloadable options with no database overhead.
 
 ## Overview
 
