@@ -330,22 +330,17 @@ impl SchemaRegistry {
     /// Validate that a default value matches its declared type using jsonschema
     fn validate_default_type(
         property_name: &str,
-        property_type: &str,
+        property_schema: &Value,
         default_value: &Value,
         path: &Path,
     ) -> ValidationResult<()> {
-        // Build a mini JSON Schema for just this type
-        let type_schema = serde_json::json!({
-            "type": property_type
-        });
-
-        // Validate the default value against the type
-        jsonschema::validate(&type_schema, default_value).map_err(|e| {
+        // Validate the default value against the property schema
+        jsonschema::validate(property_schema, default_value).map_err(|e| {
             ValidationError::SchemaError {
                 file: path.to_path_buf(),
                 message: format!(
-                    "Property '{}': default value does not match type '{}': {}",
-                    property_name, property_type, e
+                    "Property '{}': default value does not match schema: {}",
+                    property_name, e
                 ),
             }
         })?;
@@ -379,7 +374,7 @@ impl SchemaRegistry {
                     prop_value.get("type").and_then(|t| t.as_str()),
                     prop_value.get("default"),
                 ) {
-                    Self::validate_default_type(prop_name, prop_type, default_value, path)?;
+                    Self::validate_default_type(prop_name, prop_value, default_value, path)?;
                     options.insert(
                         prop_name.clone(),
                         OptionMetadata {
@@ -839,7 +834,10 @@ Error: \"version\" is a required property"
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Property 'bad-default': default value does not match type 'integer': \"not-a-number\" is not of type \"integer\""));
+                assert!(
+                    message.contains("Property 'bad-default': default value does not match schema")
+                );
+                assert!(message.contains("\"not-a-number\" is not of type \"integer\""));
             }
             _ => panic!("Expected SchemaError for invalid default type"),
         }
