@@ -134,7 +134,7 @@ options:
   {new_option_name}: {new_option_value}
 ```
 
-**Note:** The `default/` values are inherited by all regions. For region-specific values, add to `option_values/{namespace}/{region}/options.yaml`.
+**Note:** The `default/` values are inherited by all targets. For target-specific values, add to `option_values/{namespace}/{target}/options.yaml`.
 
 ---
 

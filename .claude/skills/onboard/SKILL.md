@@ -102,12 +102,12 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0  # Required for comparing base and head commits
-      - uses: getsentry/sentry-options/.github/actions/validate-schema@0.0.9
+      - uses: getsentry/sentry-options/.github/actions/validate-schema@0.0.11
         with:
           schemas-path: sentry-options/schemas
 ```
 
-**Note:** The action version `0.0.9` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
+**Note:** The action version `0.0.11` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
 
 ### 1.3 Show Dockerfile Changes
 
@@ -115,7 +115,7 @@ Tell the user to add these lines to their Dockerfile:
 
 ```dockerfile
 # Copy schemas into image (enables validation and defaults)
-COPY sentry-options/schemas/{namespace} /etc/sentry-options/schemas/{namespace}
+COPY sentry-options/schemas /etc/sentry-options/schemas
 
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
@@ -126,7 +126,7 @@ Tell the user to add to `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "sentry_options>=0.0.6",
+    "sentry_options>=0.0.11",
 ]
 ```
 
