@@ -87,7 +87,9 @@ All these changes can be deployed together - the library uses schema defaults wh
 
 **Namespace naming:** The namespace directory must be either `{repo}` (exact match) or `{repo}-*` (prefixed). For example, in the `seer` repo: `seer`, `seer-autofix`, `seer-grouping` are valid; `autofix` alone is not.
 
-**Schema evolution rules:** The CI enforces these rules when you modify schemas:
+##### Schema Evolution Rules
+
+The CI enforces these rules when you modify schemas:
 
 | Change | Allowed |
 |--------|---------|
@@ -106,7 +108,7 @@ Schemas are baked into the Docker image so the client can validate values and pr
 
 ```dockerfile
 # Copy schemas into image (enables validation and defaults)
-COPY sentry-options/schemas/{namespace} /etc/sentry-options/schemas/{namespace}
+COPY sentry-options/schemas /etc/sentry-options/schemas
 
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
@@ -116,7 +118,7 @@ ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```toml
 # pyproject.toml
 dependencies = [
-    "sentry_options>=0.0.6",
+    "sentry_options>=0.0.11",
 ]
 ```
 
