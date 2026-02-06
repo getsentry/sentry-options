@@ -11,6 +11,9 @@ use serde_json::Value;
 // Global options instance
 static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 
+// Hook for testing module to register override checker
+static OVERRIDE_HOOK: OnceLock<Py<PyAny>> = OnceLock::new();
+
 // Custom exception hierarchy
 pyo3::create_exception!(
     sentry_options,
@@ -60,6 +63,25 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
         Value::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
         Value::Array(_) => Err(PyValueError::new_err("Arrays not yet supported")),
         Value::Object(_) => Err(PyValueError::new_err("Objects not yet supported")),
+    }
+}
+
+/// Convert Python object to serde_json::Value.
+fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
+    if obj.is_none() {
+        Ok(Value::Null)
+    } else if let Ok(b) = obj.extract::<bool>() {
+        Ok(Value::Bool(b))
+    } else if let Ok(i) = obj.extract::<i64>() {
+        Ok(Value::Number(i.into()))
+    } else if let Ok(f) = obj.extract::<f64>() {
+        Ok(Value::Number(serde_json::Number::from_f64(f).ok_or_else(
+            || PyValueError::new_err("Cannot convert NaN or Infinity to JSON"),
+        )?))
+    } else if let Ok(s) = obj.extract::<String>() {
+        Ok(Value::String(s))
+    } else {
+        Err(PyValueError::new_err("Unsupported type for override"))
     }
 }
 
@@ -115,6 +137,15 @@ struct NamespaceOptions {
 impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        // Fast path: check if hook registered (atomic load, ~1-2ns)
+        if let Some(hook) = OVERRIDE_HOOK.get() {
+            let result = hook.call1(py, (&self.namespace, key))?;
+            if !result.is_none(py) {
+                return Ok(result);
+            }
+        }
+
+        // Normal path - get from values/defaults
         let value = self
             .options
             .get(&self.namespace, key)
@@ -127,9 +158,31 @@ impl NamespaceOptions {
     }
 }
 
+// Testing utilities - hook registration and validation
+
+/// Register an override hook function (called by testing.py on import).
+#[pyfunction]
+fn _register_override_hook(hook: Py<PyAny>) -> PyResult<()> {
+    OVERRIDE_HOOK
+        .set(hook)
+        .map_err(|_| PyRuntimeError::new_err("Override hook already registered"))
+}
+
+/// Validate an option value against the schema (used by testing.py).
+#[pyfunction]
+fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    let json_value = py_to_json(value)?;
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    opts.validate_override(&namespace, &key, &json_value)
+        .map_err(options_err)?;
+    Ok(())
+}
+
 /// Python module definition.
 #[pymodule]
-fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
@@ -150,5 +203,8 @@ fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InitializationError",
         m.py().get_type::<InitializationError>(),
     )?;
+    // Testing utilities (only called by testing.py)
+    m.add_function(wrap_pyfunction!(_register_override_hook, m)?)?;
+    m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
     Ok(())
 }

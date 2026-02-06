@@ -1,7 +1,5 @@
+"""Tests for sentry-options Python client."""
 from __future__ import annotations
-
-import json
-import os
 
 import pytest
 from sentry_options import init
@@ -13,87 +11,27 @@ from sentry_options import UnknownNamespaceError
 from sentry_options import UnknownOptionError
 
 
-@pytest.fixture(scope='module', autouse=True)
-def init_options(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Set up test data and initialize options."""
-    tmpdir = tmp_path_factory.mktemp('sentry_options')
-
-    # Create schema
-    schema_dir = tmpdir / 'schemas' / 'sentry-options-testing'
-    schema_dir.mkdir(parents=True)
-    (schema_dir / 'schema.json').write_text(
-        json.dumps(
-            {
-                'version': '1.0',
-                'type': 'object',
-                'properties': {
-                    'str-opt': {
-                        'type': 'string',
-                        'default': 'default-value',
-                        'description': 'A string option',
-                    },
-                    'int-opt': {
-                        'type': 'integer',
-                        'default': 42,
-                        'description': 'An integer option',
-                    },
-                    'float-opt': {
-                        'type': 'number',
-                        'default': 3.14,
-                        'description': 'A float option',
-                    },
-                    'bool-opt': {
-                        'type': 'boolean',
-                        'default': True,
-                        'description': 'A boolean option',
-                    },
-                },
-            },
-        ),
-    )
-
-    # Create values (override str-opt)
-    values_dir = tmpdir / 'values' / 'sentry-options-testing'
-    values_dir.mkdir(parents=True)
-    values = {'options': {'str-opt': 'custom-value'}}
-    (values_dir / 'values.json').write_text(json.dumps(values))
-
-    # Set env var and initialize
-    orig_env = os.environ.get('SENTRY_OPTIONS_DIR')
-    os.environ['SENTRY_OPTIONS_DIR'] = str(tmpdir)
-
-    init()
-
-    yield
-
-    # Restore env var
-    if orig_env is None:
-        os.environ.pop('SENTRY_OPTIONS_DIR', None)
-    else:
-        os.environ['SENTRY_OPTIONS_DIR'] = orig_env
-
-
 def test_get_string_from_values() -> None:
-    value = options('sentry-options-testing').get('str-opt')
-    assert value == 'custom-value'
+    value = options('sentry-options-testing').get('example-option')
+    assert value == 'wow'
     assert isinstance(value, str)
 
 
-def test_get_int_default() -> None:
-    value = options('sentry-options-testing').get('int-opt')
-    assert value == 42
+def test_get_int_from_values() -> None:
+    value = options('sentry-options-testing').get('int-option')
+    assert value == 123
     assert isinstance(value, int)
 
 
-def test_get_float_default() -> None:
-    value = options('sentry-options-testing').get('float-opt')
-    assert value == 3.14
+def test_get_float_from_values() -> None:
+    value = options('sentry-options-testing').get('float-option')
+    assert value == 1.2
     assert isinstance(value, float)
 
 
-def test_get_bool_default() -> None:
-    value = options('sentry-options-testing').get('bool-opt')
-    assert value is True
+def test_get_bool_from_values() -> None:
+    value = options('sentry-options-testing').get('bool-option')
+    assert value is False
     assert isinstance(value, bool)
 
 
