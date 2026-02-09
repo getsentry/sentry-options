@@ -546,7 +546,11 @@ impl ValuesWatcher {
         let entries = match fs::read_dir(values_dir) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                // Only log non-NotFound errors since directory absence is already
+                // reported at initialization and is expected during startup
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                }
                 return None;
             }
         };
