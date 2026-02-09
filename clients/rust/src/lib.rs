@@ -41,12 +41,16 @@ impl Options {
     /// if it exists, otherwise `sentry-options/`.
     /// Expects `{dir}/schemas/` and `{dir}/values/` subdirectories.
     pub fn new() -> Result<Self> {
-        Self::from_directory(&resolve_options_dir())
+        Self::from_directory(&resolve_options_dir(), false)
     }
 
     /// Load options from a specific directory (useful for testing).
     /// Expects `{base_dir}/schemas/` and `{base_dir}/values/` subdirectories.
-    pub fn from_directory(base_dir: &Path) -> Result<Self> {
+    ///
+    /// # Arguments
+    /// * `base_dir` - Base directory containing schemas/ and values/ subdirectories
+    /// * `quiet` - If true, suppresses error messages about missing values directory
+    pub fn from_directory(base_dir: &Path, quiet: bool) -> Result<Self> {
         let schemas_dir = base_dir.join("schemas");
         let values_dir = base_dir.join("values");
 
@@ -57,7 +61,12 @@ impl Options {
         let watcher_registry = Arc::clone(&registry);
         let watcher_values = Arc::clone(&values);
         // will automatically stop thread when dropped out of scope
-        let watcher = ValuesWatcher::new(values_dir.as_path(), watcher_registry, watcher_values)?;
+        let watcher = ValuesWatcher::new(
+            values_dir.as_path(),
+            watcher_registry,
+            watcher_values,
+            quiet,
+        )?;
 
         Ok(Self {
             registry,
@@ -98,6 +107,16 @@ impl Options {
 /// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 pub fn init() -> Result<()> {
     let opts = Options::new()?;
+    GLOBAL_OPTIONS
+        .set(opts)
+        .map_err(|_| OptionsError::AlreadyInitialized)?;
+    Ok(())
+}
+
+/// Initialize global options with quiet mode enabled (suppresses error messages about missing values directory).
+/// This is a separate function to simplify the common path (and because rust doesn't support optional parameters)
+pub fn init_quiet() -> Result<()> {
+    let opts = Options::from_directory(&resolve_options_dir(), true)?;
     GLOBAL_OPTIONS
         .set(opts)
         .map_err(|_| OptionsError::AlreadyInitialized)?;
@@ -173,7 +192,7 @@ mod tests {
         );
         create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
 
-        let options = Options::from_directory(temp.path()).unwrap();
+        let options = Options::from_directory(temp.path(), true).unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
     }
 
@@ -201,7 +220,7 @@ mod tests {
             }"#,
         );
 
-        let options = Options::from_directory(temp.path()).unwrap();
+        let options = Options::from_directory(temp.path(), true).unwrap();
         assert_eq!(options.get("test", "timeout").unwrap(), json!(30));
     }
 
@@ -219,7 +238,7 @@ mod tests {
             r#"{"version": "1.0", "type": "object", "properties": {}}"#,
         );
 
-        let options = Options::from_directory(temp.path()).unwrap();
+        let options = Options::from_directory(temp.path(), true).unwrap();
         assert!(matches!(
             options.get("unknown", "key"),
             Err(OptionsError::UnknownNamespace(_))
@@ -246,7 +265,7 @@ mod tests {
             }"#,
         );
 
-        let options = Options::from_directory(temp.path()).unwrap();
+        let options = Options::from_directory(temp.path(), true).unwrap();
         assert!(matches!(
             options.get("test", "unknown"),
             Err(OptionsError::UnknownOption { .. })
@@ -271,7 +290,7 @@ mod tests {
             }"#,
         );
 
-        let options = Options::from_directory(temp.path()).unwrap();
+        let options = Options::from_directory(temp.path(), true).unwrap();
         assert_eq!(options.get("test", "opt").unwrap(), json!("default_val"));
     }
 }

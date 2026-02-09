@@ -484,9 +484,10 @@ impl ValuesWatcher {
         values_path: &Path,
         registry: Arc<SchemaRegistry>,
         values: Arc<RwLock<ValuesByNamespace>>,
+        quiet: bool,
     ) -> ValidationResult<Self> {
         // output an error but keep passing
-        if fs::metadata(values_path).is_err() {
+        if !quiet && fs::metadata(values_path).is_err() {
             eprintln!("Values directory does not exist: {}", values_path.display());
         }
 
@@ -500,7 +501,13 @@ impl ValuesWatcher {
             .name("sentry-options-watcher".into())
             .spawn(move || {
                 let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    Self::run(thread_signal, thread_path, thread_registry, thread_values);
+                    Self::run(
+                        thread_signal,
+                        thread_path,
+                        thread_registry,
+                        thread_values,
+                        quiet,
+                    );
                 }));
                 if let Err(e) = result {
                     eprintln!("Watcher thread panicked with: {:?}", e);
@@ -522,12 +529,13 @@ impl ValuesWatcher {
         values_path: PathBuf,
         registry: Arc<SchemaRegistry>,
         values: Arc<RwLock<ValuesByNamespace>>,
+        quiet: bool,
     ) {
-        let mut last_mtime = Self::get_mtime(&values_path);
+        let mut last_mtime = Self::get_mtime(&values_path, quiet);
 
         while !stop_signal.load(Ordering::Relaxed) {
             // does not reload values if get_mtime fails
-            if let Some(current_mtime) = Self::get_mtime(&values_path)
+            if let Some(current_mtime) = Self::get_mtime(&values_path, quiet)
                 && Some(current_mtime) != last_mtime
             {
                 Self::reload_values(&values_path, &registry, &values);
@@ -540,13 +548,15 @@ impl ValuesWatcher {
 
     /// Get the most recent modification time across all namespace values.json files
     /// Returns None if no valid values files are found
-    fn get_mtime(values_dir: &Path) -> Option<std::time::SystemTime> {
+    fn get_mtime(values_dir: &Path, quiet: bool) -> Option<std::time::SystemTime> {
         let mut latest_mtime = None;
 
         let entries = match fs::read_dir(values_dir) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                if !quiet {
+                    eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                }
                 return None;
             }
         };
@@ -1309,7 +1319,7 @@ Error: \"version\" is a required property"
             let (_temp, _schemas, values_dir) = setup_watcher_test();
 
             // Get initial mtime
-            let mtime1 = ValuesWatcher::get_mtime(&values_dir);
+            let mtime1 = ValuesWatcher::get_mtime(&values_dir, true);
             assert!(mtime1.is_some());
 
             // Modify one namespace
@@ -1321,7 +1331,7 @@ Error: \"version\" is a required property"
             .unwrap();
 
             // Should detect the change
-            let mtime2 = ValuesWatcher::get_mtime(&values_dir);
+            let mtime2 = ValuesWatcher::get_mtime(&values_dir, true);
             assert!(mtime2.is_some());
             assert!(mtime2 > mtime1);
         }
@@ -1331,7 +1341,7 @@ Error: \"version\" is a required property"
             let temp = TempDir::new().unwrap();
             let nonexistent = temp.path().join("nonexistent");
 
-            let mtime = ValuesWatcher::get_mtime(&nonexistent);
+            let mtime = ValuesWatcher::get_mtime(&nonexistent, true);
             assert!(mtime.is_none());
         }
 
@@ -1410,9 +1420,13 @@ Error: \"version\" is a required property"
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
             let values = Arc::new(RwLock::new(initial_values));
 
-            let mut watcher =
-                ValuesWatcher::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
-                    .expect("Failed to create watcher");
+            let mut watcher = ValuesWatcher::new(
+                &values_dir,
+                Arc::clone(&registry),
+                Arc::clone(&values),
+                true,
+            )
+            .expect("Failed to create watcher");
 
             assert!(watcher.is_alive());
             watcher.stop();
