@@ -48,6 +48,7 @@ Read the existing `sentry-options/schemas/{namespace}/schema.json` and add the n
 - `integer` - Default must be a whole number (e.g., `100`)
 - `number` - Default can be integer or float (e.g., `3.14`)
 - `boolean` - Default must be `true` or `false`
+- `array` - Must include `items` property with element type (e.g., `{"type": "integer"}`). Default must be an array (e.g., `[1, 2, 3]`)
 
 **Example - adding to existing schema:**
 
@@ -83,6 +84,16 @@ After:
       "description": "New option description"
     }
   }
+}
+```
+
+**Example - adding an array option:**
+```json
+"feature.allowed_ids": {
+  "type": "array",
+  "items": {"type": "integer"},
+  "default": [1, 2, 3],
+  "description": "List of allowed IDs"
 }
 ```
 
@@ -144,6 +155,6 @@ options:
 
 **Values location:** `option_values/{namespace}/default/options.yaml` (in sentry-options-automator)
 
-**Supported types:** `string`, `integer`, `number`, `boolean`
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
 
 **Hot-reload:** Changes propagate in ~1-2 minutes without pod restart

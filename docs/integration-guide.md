@@ -78,12 +78,20 @@ All these changes can be deployed together - the library uses schema defaults wh
       "type": "integer",
       "default": 100,
       "description": "Rate limit per second"
+    },
+    "feature.enabled_slugs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": ["getsentry"],
+      "description": "Which orgs to enable the feature for"
     }
   }
 }
 ```
 
-**Supported types:** `string`, `integer`, `number`, `boolean` (arrays and objects coming soon)
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array` (nested arrays and objects coming soon)
+
+> An option of type `array` requires the `"items"` object as seen in the example schema. All types are supported except `array` (for now).
 
 **Namespace naming:** The namespace directory must be either `{repo}` (exact match) or `{repo}-*` (prefixed). For example, in the `seer` repo: `seer`, `seer-autofix`, `seer-grouping` are valid; `autofix` alone is not.
 
