@@ -157,6 +157,7 @@ pub fn validate_k8s_name_component(name: &str, label: &str) -> ValidationResult<
 #[derive(Debug, Clone)]
 pub struct OptionMetadata {
     pub option_type: String,
+    pub property_schema: Value,
     pub default: Value,
 }
 
@@ -379,6 +380,7 @@ impl SchemaRegistry {
                         prop_name.clone(),
                         OptionMetadata {
                             option_type: prop_type.to_string(),
+                            property_schema: prop_value.clone(),
                             default: default_value.clone(),
                         },
                     );
