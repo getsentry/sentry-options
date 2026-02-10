@@ -11,3 +11,4 @@ perl -i -pe "s/(sentry-options-validation = \{ path = \"[^\"]*\", version = \")[
 perl -i -pe "if (/cli-version:/ .. /default:/) { s/(default: \")[0-9.]+\"/\${1}${NEW_VERSION}\"/ }" .github/actions/validate-schema/action.yml
 
 cargo metadata --format-version 1 > /dev/null
+cd clients/python && uv lock && cd ../..
