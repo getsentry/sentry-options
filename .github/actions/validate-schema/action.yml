@@ -6,7 +6,7 @@ inputs:
     default: "sentry-options/schemas"
   cli-version:
     description: "Version of sentry-options-cli to install"
-    default: "0.0.11"
+    default: "0.0.12"
   # this flag should only be `true` if we are in the sentry-options repo
   build-from-source:
     description: "Build CLI from source instead of downloading release binary"
