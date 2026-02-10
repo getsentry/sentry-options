@@ -1,4 +1,13 @@
 # Changelog
+## 0.0.12
+
+### New Features ✨
+
+- (deployment) Remove target from configmap filename by @kenzoengineer in [#74](https://github.com/getsentry/sentry-options/pull/74)
+- (docs) Populate README.md by @kenzoengineer in [#64](https://github.com/getsentry/sentry-options/pull/64)
+- (skills) Add onboard/add-option skills by @hubertdeng123 in [#68](https://github.com/getsentry/sentry-options/pull/68)
+- (watcher) Allow suppression of missing dir errors with env var by @kenzoengineer in [#73](https://github.com/getsentry/sentry-options/pull/73)
+
 ## 0.0.11
 
 ### New Features ✨
