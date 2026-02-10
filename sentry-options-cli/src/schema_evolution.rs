@@ -457,7 +457,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
-                assert!(errors.len() >= 1);
+                assert!(!errors.is_empty());
                 assert_error_contains(
                     &errors,
                     "array items type changed from 'integer' to 'string'",
