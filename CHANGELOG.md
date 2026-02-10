@@ -1,4 +1,10 @@
 # Changelog
+## 0.0.13
+
+### Bug Fixes 🐛
+
+- (ci) Musl binary but manylinux python by @kenzoengineer in [#75](https://github.com/getsentry/sentry-options/pull/75)
+
 ## 0.0.12
 
 ### New Features ✨
