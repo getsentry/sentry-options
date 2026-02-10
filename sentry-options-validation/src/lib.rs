@@ -71,6 +71,16 @@ pub const LOCAL_OPTIONS_DIR: &str = "sentry-options";
 /// Environment variable to override options directory
 pub const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
 
+/// Environment variable to suppress missing directory errors
+pub const OPTIONS_SUPPRESS_MISSING_DIR_ENV: &str = "SENTRY_OPTIONS_SUPPRESS_MISSING_DIR";
+
+/// Check if missing directory errors should be suppressed
+fn should_suppress_missing_dir_errors() -> bool {
+    std::env::var(OPTIONS_SUPPRESS_MISSING_DIR_ENV)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 /// Resolve options directory using fallback chain:
 /// 1. `SENTRY_OPTIONS_DIR` env var (if set)
 /// 2. `/etc/sentry-options` (if exists)
@@ -483,7 +493,7 @@ impl ValuesWatcher {
         values: Arc<RwLock<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
         // output an error but keep passing
-        if fs::metadata(values_path).is_err() {
+        if !should_suppress_missing_dir_errors() && fs::metadata(values_path).is_err() {
             eprintln!("Values directory does not exist: {}", values_path.display());
         }
 
@@ -543,7 +553,9 @@ impl ValuesWatcher {
         let entries = match fs::read_dir(values_dir) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                if !should_suppress_missing_dir_errors() {
+                    eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                }
                 return None;
             }
         };

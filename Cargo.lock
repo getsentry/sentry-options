@@ -576,7 +576,7 @@ dependencies = [
 
 [[package]]
 name = "example"
-version = "0.0.11"
+version = "0.0.13"
 dependencies = [
  "anyhow",
  "sentry-options",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options"
-version = "0.0.11"
+version = "0.0.13"
 dependencies = [
  "sentry-options-validation",
  "serde_json",
@@ -2095,7 +2095,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options-cli"
-version = "0.0.11"
+version = "0.0.13"
 dependencies = [
  "chrono",
  "clap",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options-python"
-version = "0.0.11"
+version = "0.0.13"
 dependencies = [
  "pyo3",
  "sentry-options",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options-validation"
-version = "0.0.11"
+version = "0.0.13"
 dependencies = [
  "anyhow",
  "chrono",

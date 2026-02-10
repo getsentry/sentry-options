@@ -286,15 +286,14 @@ Tell the user to add these volume mounts to their `deployment.yaml` in the ops r
       # ... existing volumes ...
       - name: sentry-options-values
         configMap:
-          name: sentry-options-{namespace}-{{ customer.sentry_region }}
+          name: sentry-options-{namespace}
           optional: true  # Pod starts with defaults if ConfigMap missing
 ```
 
 **Template variables:**
 - `{namespace}` - The actual namespace (e.g., `seer`)
-- `{{ customer.sentry_region }}` - Jinja2 variable for region (us, de, s4s, etc.)
 
-This produces ConfigMap names like `sentry-options-seer-us`.
+This produces ConfigMap names like `sentry-options-seer`. Each region's cluster receives the ConfigMap with values specific to that target.
 
 ---
 
