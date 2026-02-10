@@ -31,7 +31,8 @@
                   "enum": ["string", "integer", "number", "boolean"]
                 }
               },
-              "required": ["type"]
+              "required": ["type"],
+              "additionalProperties": false
             }
           },
           "required": ["type", "default", "description"],
