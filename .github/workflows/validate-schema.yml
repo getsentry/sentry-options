@@ -31,21 +31,21 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust Toolchain
-        if: inputs.build-from-source
+        if: github.event_name == 'pull_request' && inputs.build-from-source
         run: rustup toolchain install stable --profile minimal --no-self-update
 
       - name: Cache Cargo
-        if: inputs.build-from-source
+        if: github.event_name == 'pull_request' && inputs.build-from-source
         uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
 
       - name: Build sentry-options-cli from source
-        if: inputs.build-from-source
+        if: github.event_name == 'pull_request' && inputs.build-from-source
         run: |
           cargo build --release -p sentry-options-cli
           echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
 
       - name: Download sentry-options-cli from releases
-        if: ${{ !inputs.build-from-source }}
+        if: github.event_name == 'pull_request' && !inputs.build-from-source
         env:
           CLI_VERSION: ${{ inputs.cli-version }}
           CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-musl
@@ -56,6 +56,7 @@ jobs:
 
       - name: Validate schema changes and detect deletions
         id: validate
+        if: github.event_name == 'pull_request'
         env:
           SENTRY_OPTIONS_DIR: "${{ inputs.schemas-path }}"
         run: |
