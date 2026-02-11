@@ -44,7 +44,7 @@ Before generating files, ask the user for:
 2. **Namespace** - Usually same as repo, or `{repo}-{subproject}` (e.g., `seer-autofix`)
 3. **Options to configure** - For each option:
    - Name (e.g., `feature.enabled`)
-   - Type: `string`, `integer`, `number`, or `boolean`
+   - Type: `string`, `integer`, `number`, `boolean`, `array`, or `object`
    - Default value
    - Description
 
@@ -77,14 +77,14 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
 **Template variables:**
 - `{namespace}` - The namespace provided by user
 - `{option_name}` - Option key (e.g., `feature.enabled`)
-- `{option_type}` - One of: `string`, `integer`, `number`, `boolean`
+- `{option_type}` - One of: `string`, `integer`, `number`, `boolean`, `array`, `object`
 - `{option_default}` - Default value (must match type, strings need quotes)
 - `{option_description}` - Human-readable description
 
-**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`, `object`
 
 **For array types:**
-- Include an `items` property specifying the element type: `{"type": "string"}`, `{"type": "integer"}`, `{"type": "number"}`, or `{"type": "boolean"}`
+- Include an `items` property specifying the element type: `{"type": "string"}`, `{"type": "integer"}`, `{"type": "number"}`, `{"type": "boolean"}`, or `{"type": "object", "properties": {...}}`
 - Default must be an array of the specified type (e.g., `[1, 2, 3]` for integer arrays)
 
 **Example array option:**
@@ -94,6 +94,41 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
   "items": {"type": "integer"},
   "default": [1, 2, 3],
   "description": "List of allowed IDs"
+}
+```
+
+**For object types:**
+- Include a `properties` field defining the shape. Each field has a `type` (primitives only: `string`, `integer`, `number`, `boolean`)
+- Fields are required by default. Add `"optional": true` to allow omission
+- Nested objects are not supported — field values must be primitives
+
+**Example object option:**
+```json
+"database.config": {
+  "type": "object",
+  "properties": {
+    "host": {"type": "string"},
+    "port": {"type": "integer"},
+    "label": {"type": "string", "optional": true}
+  },
+  "default": {"host": "localhost", "port": 8080},
+  "description": "Database configuration"
+}
+```
+
+**Example array of objects:**
+```json
+"service.endpoints": {
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "url": {"type": "string"},
+      "weight": {"type": "integer"}
+    }
+  },
+  "default": [],
+  "description": "Weighted service endpoints"
 }
 ```
 
@@ -111,13 +146,13 @@ on:
 
 jobs:
   validate:
-    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0.0.15
+    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@1.0.2
     secrets: inherit
     with:
       schemas-path: sentry-options/schemas
 ```
 
-**Note:** The workflow version `0.0.15` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
+**Note:** The workflow version `1.0.2` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
 
 ### 1.3 Show Dockerfile Changes
 
@@ -130,19 +165,28 @@ COPY sentry-options/schemas /etc/sentry-options/schemas
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
 
-### 1.4 Show Dependency Addition
+### 1.4 Add Dependency
 
+#### Python
 Tell the user to add to `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "sentry_options>=0.0.11",
+    "sentry_options>=1.0.2",
 ]
+```
+
+#### Rust
+Tell the user to add to `Cargo.toml`:
+
+```toml
+[dependencies]
+sentry-options = "1.0.2"
 ```
 
 ### 1.5 Show Usage Example
 
-Provide this Python usage example:
+#### Python
 
 ```python
 from sentry_options import init, options
@@ -153,9 +197,16 @@ init()
 # Get options namespace
 opts = options('{namespace}')
 
-# Read values (returns schema default if ConfigMap doesn't exist)
+# Primitives (returns str | int | float | bool)
 if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
+
+# Arrays (returns list)
+ids = opts.get('feature.allowed_ids')  # e.g., [1, 2, 3]
+
+# Objects (returns dict[str, str | int | float | bool])
+config = opts.get('database.config')
+host = config['host']
 ```
 
 **Typing:** The package ships with `py.typed` and type stubs — mypy/pyright/ruff work out of the box. `OptionValue` is exported for type annotations:
@@ -166,7 +217,98 @@ from sentry_options import OptionValue
 def process(value: OptionValue) -> None: ...
 ```
 
-### 1.6 Local Testing
+#### Rust
+
+```rust
+use sentry_options::{init, options};
+
+fn main() -> anyhow::Result<()> {
+    // Initialize once at startup
+    init()?;
+
+    // Get namespace handle
+    let opts = options("{namespace}");
+
+    // Primitives (returns serde_json::Value)
+    let enabled = opts.get("feature.enabled")?.as_bool().unwrap();
+    let rate = opts.get("feature.rate_limit")?.as_i64().unwrap();
+
+    // Arrays
+    let ids = opts.get("feature.allowed_ids")?;  // Value::Array(...)
+
+    // Objects
+    let config = opts.get("database.config")?;  // Value::Object(...)
+    let host = config["host"].as_str().unwrap();
+
+    Ok(())
+}
+```
+
+**Rust error types:**
+- `OptionsError::UnknownNamespace` - Namespace not found in schemas
+- `OptionsError::UnknownOption` - Option key not in schema
+- `OptionsError::Schema` - Schema parsing/validation error
+- `OptionsError::AlreadyInitialized` - `init()` called more than once
+
+### 1.6 Testing with Overrides
+
+Both clients provide an override mechanism for tests. Overrides are validated against the schema — unknown keys and type mismatches raise errors.
+
+#### Python Testing
+
+Use the `override_options` context manager. Requires `init()` to have been called first — use a `conftest.py` fixture:
+
+```python
+# conftest.py
+import pytest
+from sentry_options import init
+
+@pytest.fixture(scope='session', autouse=True)
+def _init_options() -> None:
+    init()
+```
+
+```python
+from sentry_options import options
+from sentry_options.testing import override_options
+
+def test_feature():
+    with override_options('{namespace}', {'feature.enabled': True}):
+        assert options('{namespace}').get('feature.enabled') is True
+
+# Nesting is supported — inner overrides restore to outer values
+def test_nested():
+    with override_options('{namespace}', {'rate': 0.5}):
+        with override_options('{namespace}', {'rate': 1.0}):
+            assert options('{namespace}').get('rate') == 1.0
+        assert options('{namespace}').get('rate') == 0.5
+```
+
+#### Rust Testing
+
+Use `ensure_initialized()` for idempotent init in tests (safe to call from parallel threads). `override_options()` returns a guard that restores values when dropped.
+
+```rust
+use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::options;
+use serde_json::json;
+
+#[test]
+fn test_feature() {
+    ensure_initialized().unwrap();
+    let _guard = override_options(&[
+        ("{namespace}", "feature.enabled", json!(true)),
+    ]).unwrap();
+
+    let opts = options("{namespace}");
+    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
+    // guard dropped here — value restored
+}
+```
+
+Overrides are thread-local and won't affect other threads.
+
+### 1.7 Local Testing
 
 Before deploying, test the integration locally. The library automatically looks for a `sentry-options/` directory in the working directory.
 
@@ -191,7 +333,8 @@ sentry-options/
 └── values/{namespace}/values.json    # Test values (JSON format)
 ```
 
-Test with:
+#### Python Testing
+
 ```python
 python -c "
 from sentry_options import init, options
@@ -201,9 +344,22 @@ print('feature.enabled:', opts.get('feature.enabled'))
 "
 ```
 
+#### Rust Testing
+
+For Rust, use `Options::from_directory()` for local testing:
+
+```rust
+use sentry_options::Options;
+use std::path::Path;
+
+let opts = Options::from_directory(Path::new("./sentry-options"))?;
+let enabled = opts.get("{namespace}", "feature.enabled")?.as_bool().unwrap();
+println!("feature.enabled: {}", enabled);
+```
+
 To test hot-reload, modify `values.json` while the service is running - changes are picked up within 5 seconds.
 
-### 1.7 Phase 1 Checkpoint
+### 1.8 Phase 1 Checkpoint
 
 After generating the files, tell the user:
 

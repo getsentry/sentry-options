@@ -22,7 +22,7 @@ Ask the user for:
 1. **Repository/namespace** - Which schema to update (e.g., `seer`, `seer-autofix`)
 2. **New option details:**
    - Name (e.g., `feature.new_thing.enabled`)
-   - Type: `string`, `integer`, `number`, or `boolean`
+   - Type: `string`, `integer`, `number`, `boolean`, `array`, or `object`
    - Default value
    - Description
 
@@ -49,6 +49,7 @@ Read the existing `sentry-options/schemas/{namespace}/schema.json` and add the n
 - `number` - Default can be integer or float (e.g., `3.14`)
 - `boolean` - Default must be `true` or `false`
 - `array` - Must include `items` property with element type (e.g., `{"type": "integer"}`). Default must be an array (e.g., `[1, 2, 3]`)
+- `object` - Must include `properties` field defining the shape. Default must be an object with all required fields
 
 **Example - adding to existing schema:**
 
@@ -97,6 +98,38 @@ After:
 }
 ```
 
+**Example - adding an object option:**
+```json
+"database.config": {
+  "type": "object",
+  "properties": {
+    "host": {"type": "string"},
+    "port": {"type": "integer"},
+    "label": {"type": "string", "optional": true}
+  },
+  "default": {"host": "localhost", "port": 8080},
+  "description": "Database configuration"
+}
+```
+
+Object fields are required by default. Add `"optional": true` to allow omission. Fields must be primitives (no nested objects).
+
+**Example - adding an array of objects:**
+```json
+"service.endpoints": {
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "url": {"type": "string"},
+      "weight": {"type": "integer"}
+    }
+  },
+  "default": [],
+  "description": "Weighted service endpoints"
+}
+```
+
 ---
 
 ## Step 3: Schema Evolution Rules
@@ -131,6 +164,61 @@ After updating the schema, tell the user:
 >
 > The new option will use its schema default until you add explicit values in the automator.
 
+**Usage example for the new option:**
+
+#### Python
+```python
+opts = options('{namespace}')
+
+# Primitives: returns str | int | float | bool
+new_value = opts.get('{new_option_name}')
+
+# Arrays: returns list
+ids = opts.get('feature.allowed_ids')  # e.g., [1, 2, 3]
+
+# Objects: returns dict[str, str | int | float | bool]
+config = opts.get('database.config')  # e.g., {"host": "localhost", "port": 8080}
+```
+
+#### Rust
+```rust
+let opts = options("{namespace}");
+
+// Primitives: use .as_bool(), .as_i64(), .as_f64(), .as_str()
+let new_value = opts.get("{new_option_name}")?.as_bool().unwrap();
+
+// Arrays: Value::Array(...)
+let ids = opts.get("feature.allowed_ids")?;
+
+// Objects: Value::Object(...)
+let config = opts.get("database.config")?;
+let host = config["host"].as_str().unwrap();
+```
+
+#### Testing with Overrides
+
+```python
+from sentry_options.testing import override_options
+
+def test_new_option():
+    with override_options('{namespace}', {'{new_option_name}': new_value}):
+        assert options('{namespace}').get('{new_option_name}') == new_value
+```
+
+```rust
+use sentry_options::testing::{ensure_initialized, override_options};
+use serde_json::json;
+
+#[test]
+fn test_new_option() {
+    ensure_initialized().unwrap();
+    let _guard = override_options(&[
+        ("{namespace}", "{new_option_name}", json!(new_value)),
+    ]).unwrap();
+    assert_eq!(options("{namespace}").get("{new_option_name}").unwrap(), json!(new_value));
+}
+```
+
 ---
 
 ## Optional: Add Values
@@ -155,6 +243,6 @@ options:
 
 **Values location:** `option-values/{namespace}/default/values.yaml` (in sentry-options-automator)
 
-**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`, `object`
 
 **Hot-reload:** Changes propagate in ~1-2 minutes without pod restart
