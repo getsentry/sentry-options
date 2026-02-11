@@ -81,7 +81,21 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
 - `{option_default}` - Default value (must match type, strings need quotes)
 - `{option_description}` - Human-readable description
 
-**Supported types:** `string`, `integer`, `number`, `boolean` (arrays and objects coming soon)
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+
+**For array types:**
+- Include an `items` property specifying the element type: `{"type": "string"}`, `{"type": "integer"}`, `{"type": "number"}`, or `{"type": "boolean"}`
+- Default must be an array of the specified type (e.g., `[1, 2, 3]` for integer arrays)
+
+**Example array option:**
+```json
+"feature.allowed_ids": {
+  "type": "array",
+  "items": {"type": "integer"},
+  "default": [1, 2, 3],
+  "description": "List of allowed IDs"
+}
+```
 
 ### 1.2 Add CI Workflow
 
