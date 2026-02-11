@@ -167,6 +167,9 @@ enum Commands {
             help = "repository name for namespace prefix validation"
         )]
         repo: String,
+
+        #[arg(long, help = "output the deleted options as a space-separated string")]
+        report_deletions: bool,
     },
 }
 
@@ -284,6 +287,7 @@ fn cli_validate_schema_changes(
     base_sha: String,
     head_sha: String,
     repo: String,
+    report_deletions: bool,
     quiet: bool,
 ) -> Result<()> {
     let base_temp = tempfile::tempdir()?;
@@ -302,7 +306,13 @@ fn cli_validate_schema_changes(
     let base_extracted = base_temp.path().join(&schemas_path);
     let head_extracted = head_temp.path().join(&schemas_path);
 
-    schema_evolution::detect_changes(&base_extracted, &head_extracted, &repo, quiet)?;
+    schema_evolution::detect_changes(
+        &base_extracted,
+        &head_extracted,
+        &repo,
+        report_deletions,
+        quiet,
+    )?;
 
     if !quiet {
         println!("Schema validation passed");
@@ -323,7 +333,8 @@ fn main() {
             base_sha,
             head_sha,
             repo,
-        } => cli_validate_schema_changes(base_sha, head_sha, repo, cli.quiet),
+            report_deletions,
+        } => cli_validate_schema_changes(base_sha, head_sha, repo, report_deletions, cli.quiet),
     };
 
     if let Err(e) = result {
