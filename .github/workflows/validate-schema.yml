@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 jobs:
-  detect-deletions:
+  validate-and-detect-deletions:
     runs-on: ubuntu-latest
     outputs:
       deletions: ${{ steps.validate.outputs.deletions }}
@@ -70,16 +70,16 @@ jobs:
           echo "deletions=$DELETIONS" >> $GITHUB_OUTPUT
 
   check-usage:
-    needs: detect-deletions
-    if: needs.detect-deletions.outputs.deletions != ''
+    needs: validate-and-detect-deletions
+    if: needs.validate-and-detect-deletions.outputs.deletions != ''
     uses: getsentry/sentry-options-automator/.github/workflows/check-option-usage.yml@main
     with:
-      deletions: ${{ needs.detect-deletions.outputs.deletions }}
+      deletions: ${{ needs.validate-and-detect-deletions.outputs.deletions }}
     secrets: inherit
 
   verify-safe-deletion:
-    needs: [detect-deletions, check-usage]
-    if: always() && needs.detect-deletions.outputs.deletions != ''
+    needs: [validate-and-detect-deletions, check-usage]
+    if: always() && needs.validate-and-detect-deletions.outputs.deletions != ''
     runs-on: ubuntu-latest
     steps:
       - name: Check if deleted options are still in use
