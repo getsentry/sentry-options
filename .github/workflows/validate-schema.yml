@@ -10,7 +10,7 @@ on:
       cli-version:
         description: "Version of sentry-options-cli to install"
         type: string
-        default: "0.0.13"
+        default: "0.0.14"
       build-from-source:
         description: "Build CLI from source instead of downloading release binary"
         type: boolean
