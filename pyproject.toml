@@ -1,65 +1,10 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "sentry_options_old"
+name = "sentry-options"
 version = "0.0.0"
-description = "schemas and client libraries for `sentry-options`"
-readme = "README.md"
-license = "Apache-2.0"
 requires-python = ">=3.11"
-authors = [
-    { name = "Sentry", email = "oss@sentry.io" }
-]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
-
-[project.urls]
-Homepage = "https://github.com/getsentry/sentry-options"
-
-[project.scripts]
-sentry-options-write = "sentry_options_old.write:main"
-
-[project.optional-dependencies]
-typing = [
-    "mypy>=1.17",
-]
-write = [
-    "pyyaml>=6.0.1",
-]
-dev = [
-    "covdefaults>=2.1.0",
-    "coverage",
-    "pytest",
-    "pre-commit>=4.5.0",
-    "mypy>=1.18.2",
-    "types-pyyaml>=6.0.12.20250915",
-    "sentry-devenv>=1.25.0",
-]
 
 [dependency-groups]
 dev = [
-    "covdefaults>=2.1.0",
-    "coverage",
-    "pytest",
     "pre-commit>=4.5.0",
-    "mypy>=1.18.2",
-    "types-pyyaml>=6.0.12.20250915",
     "sentry-devenv>=1.25.0",
 ]
-
-[tool.setuptools.packages.find]
-exclude = ["tests*", "testing*"]
-
-[tool.coverage.run]
-plugins = ["covdefaults"]
-parallel = true
-
-[tool.mypy]
-plugins = ["sentry_options_old.mypy_plugin"]
-strict = true
