@@ -1,19 +1,7 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "sentry-options-dev"
+name = "sentry-options"
 version = "0.0.0"
-description = "Development tooling for sentry-options"
-license = "Apache-2.0"
 requires-python = ">=3.11"
-authors = [
-    { name = "Sentry", email = "oss@sentry.io" }
-]
-
-[project.urls]
-Homepage = "https://github.com/getsentry/sentry-options"
 
 [dependency-groups]
 dev = [
