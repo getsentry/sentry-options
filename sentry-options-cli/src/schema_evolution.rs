@@ -212,12 +212,12 @@ pub fn detect_changes(
     }
 
     if !quiet {
-        println!("Schema Changes:");
+        eprintln!("Schema Changes:");
         if changelog.is_empty() {
-            println!("\tNo changes");
+            eprintln!("\tNo changes");
         }
         for change in &changelog {
-            println!("\t{}", change);
+            eprintln!("\t{}", change);
         }
     }
 
