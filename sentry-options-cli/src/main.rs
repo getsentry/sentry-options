@@ -172,7 +172,11 @@ enum Commands {
     },
     #[command(name = "check-option-usage")]
     CheckOptionUsage {
-        #[arg(long, required = true, help = "base commit SHA to compare from")]
+        #[arg(
+            long,
+            required = true,
+            help = "space-separated colon delimited list of namespace:option pairs"
+        )]
         deletions: String,
 
         #[arg(long, required = true, help = "root directory of the sentry options")]
