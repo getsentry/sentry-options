@@ -9,21 +9,6 @@ on:
   pull_request:
 
 jobs:
-  tox:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-        - {env: py312, python: '3.12'}
-        - {env: py313, python: '3.13'}
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python }}
-    - run: python -mpip install --upgrade setuptools tox virtualenv
-    - run: tox -e ${{ matrix.env }}
-
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-24.04
@@ -119,15 +104,20 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
           - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-musl
           - os: macos-14
             target: x86_64-apple-darwin
           - os: macos-15
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Install musl tools (Linux only)
+        if: contains(matrix.target, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
       - name: Install Rust Toolchain
         run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }} --no-self-update
       - uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
@@ -252,7 +242,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build-python, build-python-sdist, build-rust, pre-commit, tox, rust-lint, rust-test, validate-schema-changes, python-client-test]
+    needs: [build-python, build-python-sdist, build-rust, pre-commit, rust-lint, rust-test, validate-schema-changes, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:

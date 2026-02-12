@@ -78,12 +78,20 @@ All these changes can be deployed together - the library uses schema defaults wh
       "type": "integer",
       "default": 100,
       "description": "Rate limit per second"
+    },
+    "feature.enabled_slugs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": ["getsentry"],
+      "description": "Which orgs to enable the feature for"
     }
   }
 }
 ```
 
-**Supported types:** `string`, `integer`, `number`, `boolean` (arrays and objects coming soon)
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array` (nested arrays and objects coming soon)
+
+> An option of type `array` requires the `"items"` object as seen in the example schema. All types are supported except `array` (for now).
 
 **Namespace naming:** The namespace directory must be either `{repo}` (exact match) or `{repo}-*` (prefixed). For example, in the `seer` repo: `seer`, `seer-autofix`, `seer-grouping` are valid; `autofix` alone is not.
 
@@ -283,15 +291,15 @@ The ops repo uses Jinja2 templating. Add volume and volumeMount to your deployme
       # ... existing volumes ...
       - name: sentry-options-values
         configMap:
-          name: sentry-options-{namespace}-{{ customer.sentry_region }}
+          name: sentry-options-{namespace}
           optional: true  # Pod starts with defaults if ConfigMap missing
 ```
 
-Replace `{namespace}` with your actual namespace (e.g., `seer`). The `customer.sentry_region` variable provides the region (us, de, s4s, etc.), producing ConfigMap names like `sentry-options-seer-us`.
+Replace `{namespace}` with your actual namespace (e.g., `seer`). The ConfigMap name is simply `sentry-options-{namespace}` (e.g., `sentry-options-seer`), with the appropriate target's values deployed to each region's cluster.
 
 ## ConfigMap Generation
 
-The `default/` directory contains base values inherited by all targets. Region directories contain overrides merged with defaults. Each namespace/target produces a ConfigMap named `sentry-options-{namespace}-{target}`:
+The `default/` directory contains base values inherited by all targets. Region directories contain overrides merged with defaults. Each namespace/target produces a ConfigMap named `sentry-options-{namespace}` with target-specific values:
 
 ```
 option-values/
@@ -327,7 +335,7 @@ sentry-options-cli write \
   --commit-sha "$COMMIT_SHA" \
   --commit-timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Output: ConfigMap named "sentry-options-seer-us"
+# Output: ConfigMap named "sentry-options-seer" (with us target values merged)
 ```
 
 The CLI generates one ConfigMap per invocation by merging `default/` values with the specified target's overrides. The CD pipeline calls it once per namespace/target combination (excluding default).

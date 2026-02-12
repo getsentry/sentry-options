@@ -71,6 +71,16 @@ pub const LOCAL_OPTIONS_DIR: &str = "sentry-options";
 /// Environment variable to override options directory
 pub const OPTIONS_DIR_ENV: &str = "SENTRY_OPTIONS_DIR";
 
+/// Environment variable to suppress missing directory errors
+pub const OPTIONS_SUPPRESS_MISSING_DIR_ENV: &str = "SENTRY_OPTIONS_SUPPRESS_MISSING_DIR";
+
+/// Check if missing directory errors should be suppressed
+fn should_suppress_missing_dir_errors() -> bool {
+    std::env::var(OPTIONS_SUPPRESS_MISSING_DIR_ENV)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 /// Resolve options directory using fallback chain:
 /// 1. `SENTRY_OPTIONS_DIR` env var (if set)
 /// 2. `/etc/sentry-options` (if exists)
@@ -157,6 +167,7 @@ pub fn validate_k8s_name_component(name: &str, label: &str) -> ValidationResult<
 #[derive(Debug, Clone)]
 pub struct OptionMetadata {
     pub option_type: String,
+    pub property_schema: Value,
     pub default: Value,
 }
 
@@ -330,22 +341,17 @@ impl SchemaRegistry {
     /// Validate that a default value matches its declared type using jsonschema
     fn validate_default_type(
         property_name: &str,
-        property_type: &str,
+        property_schema: &Value,
         default_value: &Value,
         path: &Path,
     ) -> ValidationResult<()> {
-        // Build a mini JSON Schema for just this type
-        let type_schema = serde_json::json!({
-            "type": property_type
-        });
-
-        // Validate the default value against the type
-        jsonschema::validate(&type_schema, default_value).map_err(|e| {
+        // Validate the default value against the property schema
+        jsonschema::validate(property_schema, default_value).map_err(|e| {
             ValidationError::SchemaError {
                 file: path.to_path_buf(),
                 message: format!(
-                    "Property '{}': default value does not match type '{}': {}",
-                    property_name, property_type, e
+                    "Property '{}': default value does not match schema: {}",
+                    property_name, e
                 ),
             }
         })?;
@@ -379,11 +385,12 @@ impl SchemaRegistry {
                     prop_value.get("type").and_then(|t| t.as_str()),
                     prop_value.get("default"),
                 ) {
-                    Self::validate_default_type(prop_name, prop_type, default_value, path)?;
+                    Self::validate_default_type(prop_name, prop_value, default_value, path)?;
                     options.insert(
                         prop_name.clone(),
                         OptionMetadata {
                             option_type: prop_type.to_string(),
+                            property_schema: prop_value.clone(),
                             default: default_value.clone(),
                         },
                     );
@@ -486,7 +493,7 @@ impl ValuesWatcher {
         values: Arc<RwLock<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
         // output an error but keep passing
-        if fs::metadata(values_path).is_err() {
+        if !should_suppress_missing_dir_errors() && fs::metadata(values_path).is_err() {
             eprintln!("Values directory does not exist: {}", values_path.display());
         }
 
@@ -546,7 +553,9 @@ impl ValuesWatcher {
         let entries = match fs::read_dir(values_dir) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                if !should_suppress_missing_dir_errors() {
+                    eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                }
                 return None;
             }
         };
@@ -839,7 +848,10 @@ Error: \"version\" is a required property"
         assert!(result.is_err());
         match result {
             Err(ValidationError::SchemaError { message, .. }) => {
-                assert!(message.contains("Property 'bad-default': default value does not match type 'integer': \"not-a-number\" is not of type \"integer\""));
+                assert!(
+                    message.contains("Property 'bad-default': default value does not match schema")
+                );
+                assert!(message.contains("\"not-a-number\" is not of type \"integer\""));
             }
             _ => panic!("Expected SchemaError for invalid default type"),
         }
@@ -1417,6 +1429,259 @@ Error: \"version\" is a required property"
             assert!(watcher.is_alive());
             watcher.stop();
             assert!(!watcher.is_alive());
+        }
+    }
+    mod array_tests {
+        use super::*;
+
+        /// Helper to create a test schema and values file for testing
+        fn create_test_schema_with_values(
+            temp_dir: &TempDir,
+            namespace: &str,
+            schema_json: &str,
+            values_json: &str,
+        ) -> (PathBuf, PathBuf) {
+            let schemas_dir = temp_dir.path().join("schemas");
+            let values_dir = temp_dir.path().join("values");
+
+            let schema_dir = schemas_dir.join(namespace);
+            fs::create_dir_all(&schema_dir).unwrap();
+            let schema_file = schema_dir.join("schema.json");
+            fs::write(&schema_file, schema_json).unwrap();
+
+            let ns_values_dir = values_dir.join(namespace);
+            fs::create_dir_all(&ns_values_dir).unwrap();
+            let values_file = ns_values_dir.join("values.json");
+            fs::write(&values_file, values_json).unwrap();
+
+            (schemas_dir, values_dir)
+        }
+
+        #[test]
+        fn test_basic_schema_validation() {
+            let temp_dir = TempDir::new().unwrap();
+            for (a_type, default) in [
+                ("boolean", ""), // empty array test
+                ("boolean", "true"),
+                ("integer", "1"),
+                ("number", "1.2"),
+                ("string", "\"wow\""),
+            ] {
+                create_test_schema(
+                    &temp_dir,
+                    "test",
+                    &format!(
+                        r#"{{
+                        "version": "1.0",
+                        "type": "object",
+                        "properties": {{
+                            "array-key": {{
+                                "type": "array",
+                                "items": {{"type": "{}"}},
+                                "default": [{}],
+                                "description": "Array option"
+                                }}
+                            }}
+                        }}"#,
+                        a_type, default
+                    ),
+                );
+
+                SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            }
+        }
+
+        #[test]
+        fn test_missing_items_object_rejection() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "default": [1,2,3],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+            );
+
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(matches!(result, Err(ValidationError::SchemaError { .. })));
+        }
+
+        #[test]
+        fn test_malformed_items_rejection() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "items": {"type": ""},
+                            "default": [1,2,3],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+            );
+
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(matches!(result, Err(ValidationError::SchemaError { .. })));
+        }
+
+        #[test]
+        fn test_schema_default_type_mismatch_rejection() {
+            let temp_dir = TempDir::new().unwrap();
+            // also tests real number rejection when type is integer
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "default": [1,2,3.3],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+            );
+
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(matches!(result, Err(ValidationError::SchemaError { .. })));
+        }
+
+        #[test]
+        fn test_schema_default_heterogeneous_rejection() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "default": [1,2,"uh oh!"],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+            );
+
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(matches!(result, Err(ValidationError::SchemaError { .. })));
+        }
+
+        #[test]
+        fn test_load_values_valid() {
+            let temp_dir = TempDir::new().unwrap();
+            let (schemas_dir, values_dir) = create_test_schema_with_values(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "default": [1,2,3],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+                r#"{
+                    "options": {
+                        "array-key": [4,5,6]
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+            let (values, generated_at_by_namespace) =
+                registry.load_values_json(&values_dir).unwrap();
+
+            assert_eq!(values.len(), 1);
+            assert_eq!(values["test"]["array-key"], json!([4, 5, 6]));
+            assert!(generated_at_by_namespace.is_empty());
+        }
+
+        #[test]
+        fn test_reject_values_not_an_array() {
+            let temp_dir = TempDir::new().unwrap();
+            let (schemas_dir, values_dir) = create_test_schema_with_values(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "default": [1,2,3],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+                // sneaky! not an array
+                r#"{
+                    "options": {
+                        "array-key": "[]"
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+            let result = registry.load_values_json(&values_dir);
+
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn test_reject_values_mismatch() {
+            let temp_dir = TempDir::new().unwrap();
+            let (schemas_dir, values_dir) = create_test_schema_with_values(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "array-key": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "default": [1,2,3],
+                            "description": "Array option"
+                        }
+                    }
+                }"#,
+                r#"{
+                    "options": {
+                        "array-key": ["a","b","c"]
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+            let result = registry.load_values_json(&values_dir);
+
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
         }
     }
 }

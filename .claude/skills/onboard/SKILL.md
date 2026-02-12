@@ -81,7 +81,21 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
 - `{option_default}` - Default value (must match type, strings need quotes)
 - `{option_description}` - Human-readable description
 
-**Supported types:** `string`, `integer`, `number`, `boolean` (arrays and objects coming soon)
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+
+**For array types:**
+- Include an `items` property specifying the element type: `{"type": "string"}`, `{"type": "integer"}`, `{"type": "number"}`, or `{"type": "boolean"}`
+- Default must be an array of the specified type (e.g., `[1, 2, 3]` for integer arrays)
+
+**Example array option:**
+```json
+"feature.allowed_ids": {
+  "type": "array",
+  "items": {"type": "integer"},
+  "default": [1, 2, 3],
+  "description": "List of allowed IDs"
+}
+```
 
 ### 1.2 Add CI Workflow
 
@@ -294,15 +308,14 @@ Tell the user to add these volume mounts to their `deployment.yaml` in the ops r
       # ... existing volumes ...
       - name: sentry-options-values
         configMap:
-          name: sentry-options-{namespace}-{{ customer.sentry_region }}
+          name: sentry-options-{namespace}
           optional: true  # Pod starts with defaults if ConfigMap missing
 ```
 
 **Template variables:**
 - `{namespace}` - The actual namespace (e.g., `seer`)
-- `{{ customer.sentry_region }}` - Jinja2 variable for region (us, de, s4s, etc.)
 
-This produces ConfigMap names like `sentry-options-seer-us`.
+This produces ConfigMap names like `sentry-options-seer`. Each region's cluster receives the ConfigMap with values specific to that target.
 
 ---
 

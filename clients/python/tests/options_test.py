@@ -47,6 +47,12 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> None:
                         'default': True,
                         'description': 'A boolean option',
                     },
+                    'array-opt': {
+                        'type': 'array',
+                        'default': [1, 2, 3],
+                        'items': {'type': 'integer'},
+                        'description': 'A list of integers',
+                    },
                 },
             },
         ),
@@ -95,6 +101,12 @@ def test_get_bool_default() -> None:
     value = options('sentry-options-testing').get('bool-opt')
     assert value is True
     assert isinstance(value, bool)
+
+
+def test_get_array_default() -> None:
+    value = options('sentry-options-testing').get('array-opt')
+    assert value == [1, 2, 3]
+    assert isinstance(value, list)
 
 
 def test_unknown_namespace() -> None:

@@ -50,9 +50,3 @@ repos:
       # rustfmt can do it but doesn't read Cargo.toml.
       # https://github.com/rust-lang/rustfmt/issues/4485
       entry: rustfmt --edition=2024
-    - id: mypy
-      name: mypy
-      entry: .venv/bin/mypy
-      language: system
-      types: [python]
-      exclude: ^examples/|^clients/python/

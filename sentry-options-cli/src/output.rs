@@ -117,6 +117,9 @@ pub fn generate_json(maps: NamespaceMap, generated_at: &str) -> Result<Vec<(Stri
 }
 
 /// Generate a Kubernetes ConfigMap for a specific namespace/target.
+/// Config map is of the form `sentry-options-{namespace}`.
+/// Target information is redundant to the cluster and is *not* included in the file name.
+/// Therefore, configmaps for the **same namespace** and **different targets** will have the **same** file name.
 ///
 /// # Arguments
 /// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
@@ -128,7 +131,7 @@ pub fn generate_configmap(
     commit_timestamp: Option<&str>,
     generated_at: &str,
 ) -> Result<ConfigMap> {
-    let name = format!("sentry-options-{}-{}", namespace, target);
+    let name = format!("sentry-options-{}", namespace);
 
     let options = merge_options_for_target(maps, namespace, target)?;
     let values_json = serde_json::to_string(&serde_json::json!({
@@ -246,7 +249,7 @@ mod tests {
 
         assert_eq!(cm.api_version, "v1");
         assert_eq!(cm.kind, "ConfigMap");
-        assert_eq!(cm.metadata.name, "sentry-options-myns-default");
+        assert_eq!(cm.metadata.name, "sentry-options-myns");
 
         assert_eq!(cm.metadata.labels.len(), 1);
         assert_eq!(

@@ -6,7 +6,7 @@ inputs:
     default: "sentry-options/schemas"
   cli-version:
     description: "Version of sentry-options-cli to install"
-    default: "0.0.11"
+    default: "0.0.13"
   # this flag should only be `true` if we are in the sentry-options repo
   build-from-source:
     description: "Build CLI from source instead of downloading release binary"
@@ -36,7 +36,7 @@ runs:
       shell: bash
       env:
         CLI_VERSION: ${{ inputs.cli-version }}
-        CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-gnu
+        CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-musl
       run: |
         curl -sSL -o /usr/local/bin/sentry-options-cli \
           https://github.com/getsentry/sentry-options/releases/download/"$CLI_VERSION"/"$CLI_BINARY"

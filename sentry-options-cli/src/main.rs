@@ -261,8 +261,8 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
                 match out_path {
                     Some(path) => eprintln!("Successfully wrote ConfigMap to {}", path.display()),
                     None => eprintln!(
-                        "Successfully generated ConfigMap: sentry-options-{}-{}",
-                        namespace, target
+                        "Successfully generated ConfigMap: sentry-options-{}",
+                        namespace
                     ),
                 }
             }
