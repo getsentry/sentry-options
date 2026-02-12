@@ -48,6 +48,7 @@ Read the existing `sentry-options/schemas/{namespace}/schema.json` and add the n
 - `integer` - Default must be a whole number (e.g., `100`)
 - `number` - Default can be integer or float (e.g., `3.14`)
 - `boolean` - Default must be `true` or `false`
+- `array` - Must include `items` property with element type (e.g., `{"type": "integer"}`). Default must be an array (e.g., `[1, 2, 3]`)
 
 **Example - adding to existing schema:**
 
@@ -86,6 +87,16 @@ After:
 }
 ```
 
+**Example - adding an array option:**
+```json
+"feature.allowed_ids": {
+  "type": "array",
+  "items": {"type": "integer"},
+  "default": [1, 2, 3],
+  "description": "List of allowed IDs"
+}
+```
+
 ---
 
 ## Step 3: Schema Evolution Rules
@@ -115,7 +126,7 @@ After updating the schema, tell the user:
 > 2. **Merge PR** - CI will validate the schema change is additive-only
 > 3. **Update sentry-options-automator:**
 >    - Update `repos.json` with the new merge commit SHA
->    - Optionally add values for the new option in `option_values/{namespace}/default/options.yaml`
+>    - Optionally add values for the new option in `option-values/{namespace}/default/values.yaml`
 > 4. **Merge automator PR** - CD will deploy updated ConfigMaps
 >
 > The new option will use its schema default until you add explicit values in the automator.
@@ -126,7 +137,7 @@ After updating the schema, tell the user:
 
 If the user wants to set a non-default value for the new option:
 
-Generate addition to `option_values/{namespace}/default/options.yaml`:
+Generate addition to `option-values/{namespace}/default/values.yaml`:
 
 ```yaml
 options:
@@ -134,7 +145,7 @@ options:
   {new_option_name}: {new_option_value}
 ```
 
-**Note:** The `default/` values are inherited by all targets. For target-specific values, add to `option_values/{namespace}/{target}/options.yaml`.
+**Note:** The `default/` values are inherited by all targets. For target-specific values, add to `option-values/{namespace}/{target}/values.yaml`.
 
 ---
 
@@ -142,8 +153,8 @@ options:
 
 **Schema location:** `sentry-options/schemas/{namespace}/schema.json`
 
-**Values location:** `option_values/{namespace}/default/options.yaml` (in sentry-options-automator)
+**Values location:** `option-values/{namespace}/default/values.yaml` (in sentry-options-automator)
 
-**Supported types:** `string`, `integer`, `number`, `boolean`
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
 
 **Hot-reload:** Changes propagate in ~1-2 minutes without pod restart

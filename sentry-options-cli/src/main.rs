@@ -1,4 +1,5 @@
 mod loader;
+mod option_usage;
 mod output;
 mod repo_schema_config;
 mod schema_evolution;
@@ -13,6 +14,7 @@ use clap::{Args, Parser, Subcommand};
 use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegistry};
 
 use loader::{ensure_no_duplicate_keys, load_and_validate};
+use option_usage::check_option_usage;
 use output::{OutputFormat, generate_configmap, generate_json, write_configmap_yaml, write_json};
 
 /// Result type for operations
@@ -171,6 +173,18 @@ enum Commands {
         #[arg(long, help = "output the deleted options as a space-separated string")]
         report_deletions: bool,
     },
+    #[command(name = "check-option-usage")]
+    CheckOptionUsage {
+        #[arg(
+            long,
+            required = true,
+            help = "space-separated colon delimited list of namespace:option pairs"
+        )]
+        deletions: String,
+
+        #[arg(long, required = true, help = "root directory of the sentry options")]
+        root: String,
+    },
 }
 
 /// A key value pair of options and their parsed value
@@ -318,6 +332,12 @@ fn cli_validate_schema_changes(
         eprintln!("Schema validation passed");
     }
 
+    Ok(())
+}
+
+fn cli_check_option_usage(deletions: String, root: String) -> Result<()> {
+    let res = check_option_usage(deletions, Path::new(&root))?;
+    println!("{}", res);
     Ok(())
 }
 

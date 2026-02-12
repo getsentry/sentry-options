@@ -96,6 +96,37 @@ fn compare_schemas(
             });
         }
 
+        // 5b. changing array items type
+        if old_meta.option_type == "array" && new_meta.option_type == "array" {
+            let old_items_type = old_meta
+                .property_schema
+                .get("items")
+                .and_then(|i| i.get("type"))
+                .and_then(|t| t.as_str());
+            let new_items_type = new_meta
+                .property_schema
+                .get("items")
+                .and_then(|i| i.get("type"))
+                .and_then(|t| t.as_str());
+
+            if old_items_type != new_items_type {
+                let old_type_str = old_items_type.unwrap_or("unknown");
+                let new_type_str = new_items_type.unwrap_or("unknown");
+                modified_options.push(SchemaChangeAction::TypeChanged {
+                    context: format!("{}.{}", namespace, key),
+                    old: format!("array<{}>", old_type_str),
+                    new: format!("array<{}>", new_type_str),
+                });
+                errors.push(ValidationError::SchemaError {
+                    file: format!("schemas/{}/schema.json", namespace).into(),
+                    message: format!(
+                        "Option '{}.{}' array items type changed from '{}' to '{}'",
+                        namespace, key, old_type_str, new_type_str
+                    ),
+                });
+            }
+        }
+
         // 6. changing option default
         if old_meta.default != new_meta.default {
             modified_options.push(SchemaChangeAction::DefaultChanged {
@@ -387,6 +418,53 @@ mod tests {
                 assert_error_contains(&errors, "type changed from 'string' to 'integer'");
             }
             _ => panic!("Expected ValidationErrors for type change"),
+        }
+    }
+
+    #[test]
+    fn test_array_items_type_change_fails() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        // Build old schema with array of integers
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "array-key".to_string(),
+            json!({
+                "type": "array",
+                "items": {"type": "integer"},
+                "default": [1, 2, 3],
+                "description": "Test array option"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        // Modify schema - change array items type to string
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "array-key".to_string(),
+                json!({
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": ["a", "b", "c"],
+                    "description": "Test array option"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert!(!errors.is_empty());
+                assert_error_contains(
+                    &errors,
+                    "array items type changed from 'integer' to 'string'",
+                );
+            }
+            _ => panic!("Expected ValidationErrors for array items type change"),
         }
     }
 
