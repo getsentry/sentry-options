@@ -116,12 +116,12 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0  # Required for comparing base and head commits
-      - uses: getsentry/sentry-options/.github/actions/validate-schema@0.0.11
+      - uses: getsentry/sentry-options/.github/actions/validate-schema@0.0.13
         with:
           schemas-path: sentry-options/schemas
 ```
 
-**Note:** The action version `0.0.11` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
+**Note:** The action version `0.0.13` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
 
 ### 1.3 Show Dockerfile Changes
 
@@ -134,19 +134,28 @@ COPY sentry-options/schemas /etc/sentry-options/schemas
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
 
-### 1.4 Show Dependency Addition
+### 1.4 Add Dependency
 
+#### Python
 Tell the user to add to `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "sentry_options>=0.0.11",
+    "sentry_options>=0.0.13",
 ]
+```
+
+#### Rust
+Tell the user to add to `Cargo.toml`:
+
+```toml
+[dependencies]
+sentry-options = "0.0.13"
 ```
 
 ### 1.5 Show Usage Example
 
-Provide this Python usage example:
+#### Python
 
 ```python
 from sentry_options import init, options
@@ -158,9 +167,37 @@ init()
 opts = options('{namespace}')
 
 # Read values (returns schema default if ConfigMap doesn't exist)
+# Return types: str | int | float | bool
 if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
 ```
+
+#### Rust
+
+```rust
+use sentry_options::{init, options};
+
+fn main() -> anyhow::Result<()> {
+    // Initialize once at startup
+    init()?;
+
+    // Get namespace handle
+    let opts = options("{namespace}");
+
+    // Read values (returns serde_json::Value)
+    // Use .as_bool(), .as_i64(), .as_f64(), .as_str() to extract
+    let enabled = opts.get("feature.enabled")?.as_bool().unwrap();
+    let rate = opts.get("feature.rate_limit")?.as_i64().unwrap();
+
+    Ok(())
+}
+```
+
+**Rust error types:**
+- `OptionsError::UnknownNamespace` - Namespace not found in schemas
+- `OptionsError::UnknownOption` - Option key not in schema
+- `OptionsError::Schema` - Schema parsing/validation error
+- `OptionsError::AlreadyInitialized` - `init()` called more than once
 
 ### 1.6 Local Testing
 
@@ -187,7 +224,8 @@ sentry-options/
 └── values/{namespace}/values.json    # Test values (JSON format)
 ```
 
-Test with:
+#### Python Testing
+
 ```python
 python -c "
 from sentry_options import init, options
@@ -195,6 +233,19 @@ init()
 opts = options('{namespace}')
 print('feature.enabled:', opts.get('feature.enabled'))
 "
+```
+
+#### Rust Testing
+
+For Rust, use `Options::from_directory()` for local testing:
+
+```rust
+use sentry_options::Options;
+use std::path::Path;
+
+let opts = Options::from_directory(Path::new("./sentry-options"))?;
+let enabled = opts.get("{namespace}", "feature.enabled")?.as_bool().unwrap();
+println!("feature.enabled: {}", enabled);
 ```
 
 To test hot-reload, modify `values.json` while the service is running - changes are picked up within 5 seconds.
@@ -365,3 +416,12 @@ sentry-options is for **feature flags and tunable parameters**, not secrets.
 - **Total latency:** ConfigMap update → ~1-2 min → file update → ~5 sec → reload
 
 No pod restart required when values change.
+
+---
+
+## Observability
+
+The library emits Sentry transactions on reload with:
+- `reload_duration_ms` - Time to reload and validate options
+- `generated_at` / `applied_at` - Timestamps for tracking propagation
+- `propagation_delay_secs` - Time from generation to application
