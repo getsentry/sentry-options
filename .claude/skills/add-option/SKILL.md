@@ -126,7 +126,7 @@ After updating the schema, tell the user:
 > 2. **Merge PR** - CI will validate the schema change is additive-only
 > 3. **Update sentry-options-automator:**
 >    - Update `repos.json` with the new merge commit SHA
->    - Optionally add values for the new option in `option_values/{namespace}/default/options.yaml`
+>    - Optionally add values for the new option in `option-values/{namespace}/default/values.yaml`
 > 4. **Merge automator PR** - CD will deploy updated ConfigMaps
 >
 > The new option will use its schema default until you add explicit values in the automator.
@@ -137,7 +137,7 @@ After updating the schema, tell the user:
 
 If the user wants to set a non-default value for the new option:
 
-Generate addition to `option_values/{namespace}/default/options.yaml`:
+Generate addition to `option-values/{namespace}/default/values.yaml`:
 
 ```yaml
 options:
@@ -145,7 +145,7 @@ options:
   {new_option_name}: {new_option_value}
 ```
 
-**Note:** The `default/` values are inherited by all targets. For target-specific values, add to `option_values/{namespace}/{target}/options.yaml`.
+**Note:** The `default/` values are inherited by all targets. For target-specific values, add to `option-values/{namespace}/{target}/values.yaml`.
 
 ---
 
@@ -153,7 +153,7 @@ options:
 
 **Schema location:** `sentry-options/schemas/{namespace}/schema.json`
 
-**Values location:** `option_values/{namespace}/default/options.yaml` (in sentry-options-automator)
+**Values location:** `option-values/{namespace}/default/values.yaml` (in sentry-options-automator)
 
 **Supported types:** `string`, `integer`, `number`, `boolean`, `array`
 

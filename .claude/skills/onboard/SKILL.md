@@ -28,7 +28,7 @@ Phase 1: Service Repo (e.g., seer)
     └── Create schema, CI workflow, Dockerfile changes, add dependency
               ↓ (merge and get commit SHA)
 Phase 2: sentry-options-automator
-    └── Register service in repos.json, create values file
+    └── Register service in repos.json, create values files
               ↓ (merge)
 Phase 3: ops Repo
     └── Add ConfigMap volume mount to deployment.yaml
@@ -238,16 +238,37 @@ Tell the user to add this entry to `repos.json` in sentry-options-automator:
 
 **Note:** If the repo already exists in repos.json, just update the SHA.
 
-### 2.2 Generate Values File
+### 2.2 Generate Values Files
 
-Generate `option_values/{namespace}/default/options.yaml`:
+Generate `option-values/{namespace}/default/values.yaml` with the base values:
 
 ```yaml
 options:
   {option_name}: {option_value}
 ```
 
-**Important:** The `default/` directory contains base values that are inherited by all regions but NOT deployed directly. Region-specific overrides go in `option_values/{namespace}/{region}/options.yaml`.
+**Important:** The `default/` directory contains base values that are inherited by all targets/regions. Each target that should receive a ConfigMap also needs its own directory with a `values.yaml` file. Targets with no overrides should use an empty options map:
+
+```yaml
+options: {}
+```
+
+Create a target directory for each deployment region. The current regions are: `control-silo`, `de`, `disney`, `geico`, `goldmansachs`, `ly`, `s4s`, `s4s2`, `us`. Region-specific overrides go in `option-values/{namespace}/{region}/values.yaml`.
+
+Example structure:
+```
+option-values/{namespace}/
+├── default/values.yaml         # Base values (inherited by all targets)
+├── control-silo/values.yaml    # Empty or with overrides
+├── de/values.yaml
+├── disney/values.yaml
+├── geico/values.yaml
+├── goldmansachs/values.yaml
+├── ly/values.yaml
+├── s4s/values.yaml
+├── s4s2/values.yaml
+└── us/values.yaml
+```
 
 ### 2.3 Phase 2 Checkpoint
 
@@ -256,7 +277,8 @@ After generating the files, tell the user:
 > **Next steps:**
 > 1. Create a PR in sentry-options-automator with:
 >    - The repos.json entry (or SHA update)
->    - The option_values/{namespace}/default/options.yaml file
+>    - The `option-values/{namespace}/default/values.yaml` file
+>    - A `values.yaml` for each target region
 > 2. CI will validate your values against the schema
 > 3. Merge the PR - CD will deploy ConfigMaps to all regions
 >
