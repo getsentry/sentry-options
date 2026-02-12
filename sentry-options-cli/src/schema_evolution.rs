@@ -454,7 +454,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {

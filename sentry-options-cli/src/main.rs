@@ -355,6 +355,7 @@ fn main() {
             repo,
             report_deletions,
         } => cli_validate_schema_changes(base_sha, head_sha, repo, report_deletions, cli.quiet),
+        Commands::CheckOptionUsage { deletions, root } => cli_check_option_usage(deletions, root),
     };
 
     if let Err(e) = result {
