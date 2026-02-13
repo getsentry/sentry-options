@@ -1,4 +1,28 @@
 # Changelog
+## 0.0.14
+
+### New Features ✨
+
+#### Cli
+
+- Output deletions with flag by @kenzoengineer in [#79](https://github.com/getsentry/sentry-options/pull/79)
+- Add option usage check by @kenzoengineer in [#77](https://github.com/getsentry/sentry-options/pull/77)
+
+#### Other
+
+- (docs) Update claude skills and docs by @hubertdeng123 in [#70](https://github.com/getsentry/sentry-options/pull/70)
+- (release) Add uv setup step in release by @kenzoengineer in [#83](https://github.com/getsentry/sentry-options/pull/83)
+- (validation) Adds supports for lists of primitives by @kenzoengineer in [#69](https://github.com/getsentry/sentry-options/pull/69)
+
+### Bug Fixes 🐛
+
+- (cli) Fix merge conflict issue by @kenzoengineer in [#82](https://github.com/getsentry/sentry-options/pull/82)
+
+### Internal Changes 🔧
+
+- (release) Regenerate the uv lock on release + update composite action to use musl by @kenzoengineer in [#76](https://github.com/getsentry/sentry-options/pull/76)
+- Remove old python code by @hubertdeng123 in [#81](https://github.com/getsentry/sentry-options/pull/81)
+
 ## 0.0.13
 
 ### Bug Fixes 🐛
