@@ -26,7 +26,7 @@ jobs:
       deletions: ${{ steps.validate.outputs.deletions }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
 
@@ -73,7 +73,7 @@ jobs:
   check-usage:
     needs: validate-and-detect-deletions
     if: needs.validate-and-detect-deletions.outputs.deletions != ''
-    uses: getsentry/sentry-options-automator/.github/workflows/check-option-usage.yml@main
+    uses: getsentry/sentry-options-automator/.github/workflows/check-option-usage.yml@be3ff84cb2c01107484d86f1915be261161ae4bb
     with:
       deletions: ${{ needs.validate-and-detect-deletions.outputs.deletions }}
     secrets: inherit
