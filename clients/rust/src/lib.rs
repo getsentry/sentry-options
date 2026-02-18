@@ -140,6 +140,14 @@ pub struct FeatureChecker {
 }
 
 impl FeatureChecker {
+    /// Create a `FeatureChecker` bound to the given namespace and options instance.
+    pub fn new(namespace: impl Into<String>, options: &'static Options) -> Self {
+        Self {
+            namespace: namespace.into(),
+            options,
+        }
+    }
+
     /// Check whether `feature_name` is enabled for the given context.
     ///
     /// Loads the feature config from `features.{feature_name}` in the namespace,
@@ -194,18 +202,6 @@ mod tests {
 
     // ---- FeatureChecker helpers ----
 
-    const FEATURE_SCHEMA: &str = r#"{
-        "version": "1.0",
-        "type": "object",
-        "properties": {
-            "features.organizations:fury-mode": {
-                "type": "string",
-                "default": "",
-                "description": "Feature flag config"
-            }
-        }
-    }"#;
-
     /// Leak an Options instance to satisfy the `&'static Options` requirement.
     ///
     /// This is acceptable in tests since the leaked memory is reclaimed when the
@@ -219,6 +215,29 @@ mod tests {
             namespace: "test".to_string(),
             options: opts,
         }
+    }
+
+    /// Build a FeatureChecker with `feature_name` registered in the schema and
+    /// `feature_json` stored as its value. Returns the TempDir to keep it alive.
+    fn checker_with_feature(feature_name: &str, feature_json: &str) -> (TempDir, FeatureChecker) {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        let schema = format!(
+            r#"{{"version":"1.0","type":"object","properties":{{"features.{feature_name}":{{"type":"string","default":"","description":"Feature flag config"}}}}}}"#
+        );
+        create_schema(&schemas, "test", &schema);
+        create_values(
+            &values,
+            "test",
+            &format!(
+                r#"{{"options":{{"features.{feature_name}":{}}}}}"#,
+                serde_json::to_string(feature_json).unwrap()
+            ),
+        );
+        let checker = make_checker(leak_options(Options::from_directory(temp.path()).unwrap()));
+        (temp, checker)
     }
 
     // ---- FeatureChecker tests ----
@@ -241,42 +260,16 @@ mod tests {
 
     #[test]
     fn test_has_disabled_feature_returns_false() {
-        let temp = TempDir::new().unwrap();
-        let schemas = temp.path().join("schemas");
-        let values = temp.path().join("values");
-        fs::create_dir_all(&schemas).unwrap();
-        create_schema(&schemas, "test", FEATURE_SCHEMA);
         let feature_json = r#"{"enabled": false, "segments": [{"name": "all", "rollout": 100, "conditions": []}]}"#;
-        create_values(
-            &values,
-            "test",
-            &format!(
-                r#"{{"options": {{"features.organizations:fury-mode": {}}}}}"#,
-                serde_json::to_string(feature_json).unwrap()
-            ),
-        );
-        let checker = make_checker(leak_options(Options::from_directory(temp.path()).unwrap()));
+        let (_temp, checker) = checker_with_feature("organizations:fury-mode", feature_json);
         let ctx = FeatureContext::new();
         assert!(!checker.has("organizations:fury-mode", &ctx));
     }
 
     #[test]
     fn test_has_matching_context_returns_true() {
-        let temp = TempDir::new().unwrap();
-        let schemas = temp.path().join("schemas");
-        let values = temp.path().join("values");
-        fs::create_dir_all(&schemas).unwrap();
-        create_schema(&schemas, "test", FEATURE_SCHEMA);
         let feature_json = r#"{"enabled": true, "segments": [{"name": "sentry orgs", "rollout": 100, "conditions": [{"property": "organization_slug", "operator": {"kind": "in", "value": ["sentry", "sentry-test"]}}]}]}"#;
-        create_values(
-            &values,
-            "test",
-            &format!(
-                r#"{{"options": {{"features.organizations:fury-mode": {}}}}}"#,
-                serde_json::to_string(feature_json).unwrap()
-            ),
-        );
-        let checker = make_checker(leak_options(Options::from_directory(temp.path()).unwrap()));
+        let (_temp, checker) = checker_with_feature("organizations:fury-mode", feature_json);
         let mut ctx = FeatureContext::new();
         ctx.insert("organization_slug", "sentry".into());
         assert!(checker.has("organizations:fury-mode", &ctx));
@@ -284,22 +277,37 @@ mod tests {
 
     #[test]
     fn test_has_missing_context_field_returns_false() {
-        let temp = TempDir::new().unwrap();
-        let schemas = temp.path().join("schemas");
-        let values = temp.path().join("values");
-        fs::create_dir_all(&schemas).unwrap();
-        create_schema(&schemas, "test", FEATURE_SCHEMA);
         let feature_json = r#"{"enabled": true, "segments": [{"name": "sentry orgs", "rollout": 100, "conditions": [{"property": "organization_slug", "operator": {"kind": "in", "value": ["sentry"]}}]}]}"#;
-        create_values(
-            &values,
-            "test",
-            &format!(
-                r#"{{"options": {{"features.organizations:fury-mode": {}}}}}"#,
-                serde_json::to_string(feature_json).unwrap()
-            ),
-        );
-        let checker = make_checker(leak_options(Options::from_directory(temp.path()).unwrap()));
+        let (_temp, checker) = checker_with_feature("organizations:fury-mode", feature_json);
         let ctx = FeatureContext::new(); // no organization_slug
+        assert!(!checker.has("organizations:fury-mode", &ctx));
+    }
+
+    #[test]
+    fn test_has_invalid_operator_kind_returns_false() {
+        // "bananas" is not a valid OperatorKind — serde_json will fail to parse
+        let feature_json = r#"{"enabled": true, "segments": [{"name": "all", "rollout": 100, "conditions": [{"property": "organization_slug", "operator": {"kind": "bananas", "value": ["sentry"]}}]}]}"#;
+        let (_temp, checker) = checker_with_feature("organizations:fury-mode", feature_json);
+        let ctx = FeatureContext::new();
+        assert!(!checker.has("organizations:fury-mode", &ctx));
+    }
+
+    #[test]
+    fn test_has_invalid_segment_rollout_returns_false() {
+        // rollout: 500 exceeds u8 max (255) — serde_json will fail to parse
+        let feature_json =
+            r#"{"enabled": true, "segments": [{"name": "all", "rollout": 500, "conditions": []}]}"#;
+        let (_temp, checker) = checker_with_feature("organizations:fury-mode", feature_json);
+        let ctx = FeatureContext::new();
+        assert!(!checker.has("organizations:fury-mode", &ctx));
+    }
+
+    #[test]
+    fn test_has_invalid_condition_missing_property_returns_false() {
+        // condition is missing required "property" field — serde_json will fail to parse
+        let feature_json = r#"{"enabled": true, "segments": [{"name": "all", "rollout": 100, "conditions": [{"operator": {"kind": "in", "value": ["sentry"]}}]}]}"#;
+        let (_temp, checker) = checker_with_feature("organizations:fury-mode", feature_json);
+        let ctx = FeatureContext::new();
         assert!(!checker.has("organizations:fury-mode", &ctx));
     }
 

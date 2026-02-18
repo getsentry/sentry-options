@@ -7,6 +7,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -91,10 +92,13 @@ impl From<Vec<i64>> for ContextValue {
 ///
 /// Identity fields determine which context properties are used when computing the
 /// stable numeric ID used for rollout decisions.
+// Sentinel meaning "not yet computed". Valid values are 0–99.
+const ID_NOT_COMPUTED: u8 = 255;
+
 pub struct FeatureContext {
     data: HashMap<String, ContextValue>,
     identity_fields: Vec<String>, // stored sorted lexicographically
-    cached_id: Cell<Option<u8>>,  // SHA1 mod 100, computed lazily
+    cached_id: AtomicU8,          // SHA1 mod 100, computed lazily; 255 = not computed
 }
 
 impl FeatureContext {
@@ -102,14 +106,14 @@ impl FeatureContext {
         Self {
             data: HashMap::new(),
             identity_fields: Vec::new(),
-            cached_id: Cell::new(None),
+            cached_id: AtomicU8::new(ID_NOT_COMPUTED),
         }
     }
 
     /// Insert a value into the context. Resets the cached id.
     pub fn insert(&mut self, key: impl Into<String>, value: ContextValue) {
         self.data.insert(key.into(), value);
-        self.cached_id.set(None);
+        self.cached_id.store(ID_NOT_COMPUTED, Ordering::Relaxed);
     }
 
     /// Set the identity fields used for rollout id computation.
@@ -119,7 +123,7 @@ impl FeatureContext {
         let mut sorted: Vec<String> = fields.into_iter().map(|s| s.to_string()).collect();
         sorted.sort();
         self.identity_fields = sorted;
-        self.cached_id.set(None);
+        self.cached_id.store(ID_NOT_COMPUTED, Ordering::Relaxed);
     }
 
     /// Get a value from the context.
@@ -138,11 +142,12 @@ impl FeatureContext {
     /// then reducing the 20-byte digest to a value in `[0, 100)` via iterative
     /// modular reduction.
     pub fn id(&self) -> u64 {
-        if let Some(cached) = self.cached_id.get() {
+        let cached = self.cached_id.load(Ordering::Relaxed);
+        if cached != ID_NOT_COMPUTED {
             return cached as u64;
         }
         let computed = self.compute_id();
-        self.cached_id.set(Some(computed));
+        self.cached_id.store(computed, Ordering::Relaxed);
         computed as u64
     }
 
