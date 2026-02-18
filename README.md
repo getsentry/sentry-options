@@ -171,3 +171,12 @@ In a new file in the same directory as your schemas, e.g. `sentry-options/values
 ```
 
 Your client libraries will automatically pick up the new values.
+
+## Python client setup
+
+```bash
+uv sync --frozen --extra dev --project clients/python
+cd clients/python
+uv run maturin develop
+uv run pytest
+```
