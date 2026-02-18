@@ -56,7 +56,7 @@ If you already have `sentry-options` set up in your repo, you only need to impor
 
 ```py
 # index.py
-from sentry_options import init, options
+from sentry_options import init, options, features
 
 # Initialize the library
 # Do this *once* early on
@@ -70,7 +70,36 @@ opts = options('seer')
 if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
     print(f"The global rate limit is {rate}")
+
+
 ```
+
+You can use `sentry_options.features` to check a context structure agains more complex
+feature flag logic implemented via flagpole logic:
+
+```py
+from sentry_options import init, features, FeatureContext
+
+# Initialize the options data early
+init()
+
+# Get a feature checker for a specified namespace
+feature_checker = features("sentry")
+
+# Create a feature flag context of dict[str, Any]
+context = FeatureContext(
+    {
+        "user_id": 456,
+        "some_key": "value",
+        "organization_id": 123
+    },
+    identity_fields=['user_id', 'organization_id']
+)
+
+if feature_checker.has("organizations:purple-site", context):
+    print("PURPLE MODE")
+```
+
 
 ### Rust
 
@@ -91,6 +120,35 @@ fn main() -> anyhow::Result<()> {
     if opts.get("feature.enabled")?.as_bool().unwrap() {
         let rate = opts.get("feature.rate_limit")?;
         println!("The global rate limit is {}", rate);
+    }
+}
+
+```
+
+Checking features in rust can be done using `features` and `FeatureContext`:
+
+```rust
+// main.rs
+use sentry_options::{init, features, FeatureContext};
+
+fn main() -> anyhow::Result<()> {
+    // Initialize the library
+    // Do this *once* early on
+    init()?;
+
+    // Get a feature checker for a namespace
+    let feature_checker = features("sentry");
+
+    // Create a context map
+    let mut context = FeatureContext::new();
+    context.identity_fields(vec!["org_id"]);
+    context.insert("some_key", "value".into());
+    context.insert("org_id", 123.into());
+
+    // Read the values
+    // If the option value is not set in the automator repo, it will just use the default
+    if feature_checker.has("organization:purple-site", &context) {
+        println!("PURPLE MODE");
     }
 }
 ```
