@@ -33,3 +33,4 @@ jsonschema = "0.36.0"
 sentry = "0.46"
 chrono = "0.4"
 openssl = { version = "0.10", features = ["vendored"] }
+sha1 = "0.10"
