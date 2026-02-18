@@ -74,6 +74,32 @@ if opts.get('feature.enabled'):
 
 ```
 
+### Rust
+
+```rust
+// main.rs
+use sentry_options::{init, options};
+
+fn main() -> anyhow::Result<()> {
+    // Initialize the library
+    // Do this *once* early on
+    init()?;
+
+    // Get options for a specified namespace
+    let opts = options("seer");
+
+    // Read the values
+    // If the option value is not set in the automator repo, it will just use the default
+    if opts.get("feature.enabled")?.as_bool().unwrap() {
+        let rate = opts.get("feature.rate_limit")?;
+        println!("The global rate limit is {}", rate);
+    }
+}
+
+```
+
+## Feature Flags
+
 You can use `sentry_options.features` to check a context structure agains more complex
 feature flag logic implemented via flagpole logic:
 
@@ -98,31 +124,6 @@ context = FeatureContext(
 
 if feature_checker.has("organizations:purple-site", context):
     print("PURPLE MODE")
-```
-
-
-### Rust
-
-```rust
-// main.rs
-use sentry_options::{init, options};
-
-fn main() -> anyhow::Result<()> {
-    // Initialize the library
-    // Do this *once* early on
-    init()?;
-
-    // Get options for a specified namespace
-    let opts = options("seer");
-
-    // Read the values
-    // If the option value is not set in the automator repo, it will just use the default
-    if opts.get("feature.enabled")?.as_bool().unwrap() {
-        let rate = opts.get("feature.rate_limit")?;
-        println!("The global rate limit is {}", rate);
-    }
-}
-
 ```
 
 Checking features in rust can be done using `features` and `FeatureContext`:
