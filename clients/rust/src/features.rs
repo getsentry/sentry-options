@@ -513,14 +513,14 @@ mod tests {
     fn test_disabled_feature_returns_false() {
         let feature = make_feature(false, vec![make_segment(100, vec![])]);
         let ctx = FeatureContext::new();
-        assert!(!evaluate_feature(&feature, &ctx));
+        assert!(!evaluate_feature("test", &feature, &ctx));
     }
 
     #[test]
     fn test_no_segments_returns_false() {
         let feature = make_feature(true, vec![]);
         let ctx = FeatureContext::new();
-        assert!(!evaluate_feature(&feature, &ctx));
+        assert!(!evaluate_feature("test", &feature, &ctx));
     }
 
     #[test]
@@ -538,7 +538,7 @@ mod tests {
         );
         let mut ctx = FeatureContext::new();
         ctx.insert("org", "sentry".into());
-        assert!(evaluate_feature(&feature, &ctx));
+        assert!(evaluate_feature("test", &feature, &ctx));
     }
 
     #[test]
@@ -551,7 +551,21 @@ mod tests {
             )],
         );
         let ctx = FeatureContext::new(); // no "org" key
-        assert!(!evaluate_feature(&feature, &ctx));
+        assert!(!evaluate_feature("test", &feature, &ctx));
+    }
+
+    #[test]
+    fn test_context_key_present_but_value_does_not_match() {
+        let feature = make_feature(
+            true,
+            vec![make_segment(
+                100,
+                vec![make_condition("org", OperatorKind::In, json!(["sentry"]))],
+            )],
+        );
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org", "other".into()); // key present, value not in list
+        assert!(!evaluate_feature("test", &feature, &ctx));
     }
 
     #[test]
@@ -559,7 +573,7 @@ mod tests {
         // rollout=0 with no conditions → segment matches but rollout blocks it
         let feature = make_feature(true, vec![make_segment(0, vec![])]);
         let ctx = FeatureContext::new();
-        assert!(!evaluate_feature(&feature, &ctx));
+        assert!(!evaluate_feature("test", &feature, &ctx));
     }
 
     #[test]
@@ -567,7 +581,7 @@ mod tests {
         // rollout=100 with no conditions → always passes
         let feature = make_feature(true, vec![make_segment(100, vec![])]);
         let ctx = FeatureContext::new();
-        assert!(evaluate_feature(&feature, &ctx));
+        assert!(evaluate_feature("test", &feature, &ctx));
     }
 
     #[test]
@@ -583,9 +597,9 @@ mod tests {
         ctx.identity_fields(vec!["org"]);
         ctx.insert("org", "sentry".into());
         // Same context → same result every time
-        let result = evaluate_feature(&feature, &ctx);
+        let result = evaluate_feature("test", &feature, &ctx);
         for _ in 0..10 {
-            assert_eq!(evaluate_feature(&feature, &ctx), result);
+            assert_eq!(evaluate_feature("test", &feature, &ctx), result);
         }
     }
 
@@ -682,6 +696,27 @@ mod tests {
     }
 
     #[test]
+    fn test_equals_type_mismatch_returns_false() {
+        // int context vs string condition
+        let mut ctx = FeatureContext::new();
+        ctx.insert("count", 42i64.into());
+        let cond = make_condition("count", OperatorKind::Equals, json!("42"));
+        assert!(!evaluate_condition(&cond, &ctx));
+
+        // string context vs int condition
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("name", "42".into());
+        let cond2 = make_condition("name", OperatorKind::Equals, json!(42));
+        assert!(!evaluate_condition(&cond2, &ctx2));
+
+        // bool context vs int condition
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("active", true.into());
+        let cond3 = make_condition("active", OperatorKind::Equals, json!(1));
+        assert!(!evaluate_condition(&cond3, &ctx3));
+    }
+
+    #[test]
     fn test_not_equals_operator() {
         let mut ctx = FeatureContext::new();
         ctx.insert("status", "active".into());
@@ -710,12 +745,12 @@ mod tests {
         let mut ctx_both = FeatureContext::new();
         ctx_both.insert("org", "sentry".into());
         ctx_both.insert("user", "mark@sentry.io".into());
-        assert!(evaluate_feature(&feature, &ctx_both));
+        assert!(evaluate_feature("test", &feature, &ctx_both));
 
         let mut ctx_one = FeatureContext::new();
         ctx_one.insert("org", "sentry".into());
         ctx_one.insert("user", "other@test.com".into());
-        assert!(!evaluate_feature(&feature, &ctx_one));
+        assert!(!evaluate_feature("test", &feature, &ctx_one));
     }
 
     #[test]
@@ -737,15 +772,15 @@ mod tests {
 
         let mut ctx1 = FeatureContext::new();
         ctx1.insert("org", "sentry".into());
-        assert!(evaluate_feature(&feature, &ctx1));
+        assert!(evaluate_feature("test", &feature, &ctx1));
 
         let mut ctx2 = FeatureContext::new();
         ctx2.insert("is_free", true.into());
-        assert!(evaluate_feature(&feature, &ctx2));
+        assert!(evaluate_feature("test", &feature, &ctx2));
 
         let mut ctx3 = FeatureContext::new();
         ctx3.insert("org", "other".into());
         ctx3.insert("is_free", false.into());
-        assert!(!evaluate_feature(&feature, &ctx3));
+        assert!(!evaluate_feature("test", &feature, &ctx3));
     }
 }
