@@ -92,6 +92,24 @@ impl Options {
 
         Ok(default.clone())
     }
+
+    // Check if an option has a value. If there key is unknown, has no value, or the default
+    // would be used, this method returns false.
+    pub fn isset(&self, namespace: &str, key: &str) -> bool {
+        let Some(_) = self.registry.get(namespace) else {
+            return false;
+        };
+        let values_guard = self
+            .values
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if let Some(ns_values) = values_guard.get(namespace) {
+            return ns_values.contains_key(key);
+        } else {
+            false
+        }
+    }
 }
 
 /// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
@@ -127,6 +145,11 @@ impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
         self.options.get(&self.namespace, key)
+    }
+
+    /// Check if an option has a key defined, or if the default is being used.
+    pub fn isset(&self, key: &str) -> bool {
+        self.options.isset(&self.namespace, key)
     }
 }
 
@@ -273,5 +296,33 @@ mod tests {
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "opt").unwrap(), json!("default_val"));
+    }
+
+    #[test]
+    fn isset_with_defined_and_undefined_keys() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        fs::create_dir_all(&schemas).unwrap();
+
+        let values = temp.path().join("values");
+        create_values(&values, "test", r#"{"options": {"has-value": "yes"}}"#);
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "has-value": {"type": "string", "default": "", "description": ""},
+                    "defined": {"type": "string", "default": "default_val", "description": "Opt"}
+                }
+            }"#,
+        );
+
+        let options = Options::from_directory(temp.path()).unwrap();
+        assert!(!options.isset("test", "not-defined"));
+        assert!(!options.isset("test", "defined-with-default"));
+        assert!(options.isset("test", "has-value"));
     }
 }

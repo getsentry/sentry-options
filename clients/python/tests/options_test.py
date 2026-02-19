@@ -129,3 +129,9 @@ def test_exceptions_inherit_from_options_error() -> None:
     assert issubclass(UnknownNamespaceError, OptionsError)
     assert issubclass(UnknownOptionError, OptionsError)
     assert issubclass(InitializationError, OptionsError)
+
+
+def test_isset() -> None:
+    assert not options('sentry-options-testing').isset('unknown')
+    assert not options('sentry-options-testing').isset('bool-opt')
+    assert options('sentry-options-testing').isset('str-opt')

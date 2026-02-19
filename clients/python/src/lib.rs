@@ -129,6 +129,10 @@ impl NamespaceOptions {
         json_to_py(py, &value)
     }
 
+    fn isset(&self, key: &str) -> bool {
+        self.options.isset(&self.namespace, key)
+    }
+
     fn __repr__(&self) -> String {
         format!("NamespaceOptions({:?})", self.namespace)
     }
