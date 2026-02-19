@@ -129,8 +129,11 @@ impl NamespaceOptions {
         json_to_py(py, &value)
     }
 
-    fn isset(&self, key: &str) -> bool {
-        self.options.isset(&self.namespace, key)
+    /// Check if an option has a defined value.
+    fn isset(&self, key: &str) -> PyResult<bool> {
+        self.options
+            .isset(&self.namespace, key)
+            .map_err(options_err)
     }
 
     fn __repr__(&self) -> String {

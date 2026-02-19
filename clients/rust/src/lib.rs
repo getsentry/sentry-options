@@ -93,21 +93,34 @@ impl Options {
         Ok(default.clone())
     }
 
-    // Check if an option has a value. If there key is unknown, has no value, or the default
-    // would be used, this method returns false.
-    pub fn isset(&self, namespace: &str, key: &str) -> bool {
-        let Some(_) = self.registry.get(namespace) else {
-            return false;
-        };
+    // Check if an option has a value.
+    //
+    // Returns true if the option is defined and has a value, will return
+    // false if the option is defined and does not have a value.
+    //
+    // If the namespace or option are not defined, an Err will be returned.
+    pub fn isset(&self, namespace: &str, key: &str) -> Result<bool> {
+        let schema = self
+            .registry
+            .get(namespace)
+            .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
+
+        if let None = schema.options.get(key) {
+            return Err(OptionsError::UnknownOption {
+                namespace: namespace.into(),
+                key: key.into(),
+            });
+        }
+
         let values_guard = self
             .values
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Some(ns_values) = values_guard.get(namespace) {
-            ns_values.contains_key(key)
+            Ok(ns_values.contains_key(key))
         } else {
-            false
+            Ok(false)
         }
     }
 }
@@ -148,7 +161,7 @@ impl NamespaceOptions {
     }
 
     /// Check if an option has a key defined, or if the default is being used.
-    pub fn isset(&self, key: &str) -> bool {
+    pub fn isset(&self, key: &str) -> Result<bool> {
         self.options.isset(&self.namespace, key)
     }
 }
@@ -315,14 +328,17 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "has-value": {"type": "string", "default": "", "description": ""},
-                    "defined": {"type": "string", "default": "default_val", "description": "Opt"}
+                    "defined-with-default": {"type": "string", "default": "default_val", "description": "Opt"}
                 }
             }"#,
         );
 
         let options = Options::from_directory(temp.path()).unwrap();
-        assert!(!options.isset("test", "not-defined"));
-        assert!(!options.isset("test", "defined-with-default"));
-        assert!(options.isset("test", "has-value"));
+        assert!(options.isset("test", "not-defined").is_err());
+        assert_eq!(
+            false,
+            options.isset("test", "defined-with-default").unwrap()
+        );
+        assert_eq!(true, options.isset("test", "has-value").unwrap());
     }
 }
