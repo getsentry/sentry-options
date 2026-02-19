@@ -200,7 +200,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    // ---- FeatureChecker helpers ----
+    // FeatureChecker helpers
 
     /// Leak an Options instance to satisfy the `&'static Options` requirement.
     ///
@@ -240,7 +240,7 @@ mod tests {
         (temp, checker)
     }
 
-    // ---- FeatureChecker tests ----
+    // FeatureChecker tests
 
     #[test]
     fn test_has_unknown_feature_returns_false() {

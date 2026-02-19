@@ -458,7 +458,7 @@ mod tests {
         FeatureData { enabled, segments }
     }
 
-    // ---- FeatureContext id tests ----
+    // FeatureContext id tests
 
     #[test]
     fn test_empty_context_id_matches_python() {
@@ -591,7 +591,7 @@ mod tests {
         }
     }
 
-    // ---- Operator tests ----
+    // Operator tests
 
     #[test]
     fn test_in_operator_matching() {
@@ -714,6 +714,225 @@ mod tests {
 
         let cond2 = make_condition("status", OperatorKind::NotEquals, json!("active"));
         assert!(!cond2.evaluate(&ctx));
+    }
+
+    // ContextValue Display
+
+    #[test]
+    fn test_context_value_display_scalar_types() {
+        assert_eq!(
+            format!("{}", ContextValue::String("hello".to_string())),
+            "hello"
+        );
+        assert_eq!(format!("{}", ContextValue::Int(42)), "42");
+        assert_eq!(format!("{}", ContextValue::Float(3.14)), "3.14");
+        assert_eq!(format!("{}", ContextValue::Bool(true)), "True");
+        assert_eq!(format!("{}", ContextValue::Bool(false)), "False");
+    }
+
+    #[test]
+    fn test_context_value_display_list_types() {
+        let sl = ContextValue::StringList(vec!["a".to_string(), "b".to_string()]);
+        assert!(format!("{sl}").contains("a"));
+
+        let il = ContextValue::IntList(vec![1, 2, 3]);
+        assert!(format!("{il}").contains("1"));
+
+        let fl = ContextValue::FloatList(vec![1.5]);
+        assert!(format!("{fl}").contains("1.5"));
+
+        let bl = ContextValue::BoolList(vec![true, false]);
+        assert!(format!("{bl}").contains("true"));
+    }
+
+    // ContextValue From impls
+
+    #[test]
+    fn test_context_value_from_string_owned() {
+        let cv: ContextValue = String::from("hello").into();
+        assert!(matches!(cv, ContextValue::String(s) if s == "hello"));
+    }
+
+    #[test]
+    fn test_context_value_from_f64() {
+        let cv: ContextValue = 3.14f64.into();
+        assert!(matches!(cv, ContextValue::Float(f) if (f - 3.14).abs() < 0.001));
+    }
+
+    #[test]
+    fn test_context_value_from_vec_string() {
+        let cv: ContextValue = vec!["a".to_string(), "b".to_string()].into();
+        assert!(matches!(cv, ContextValue::StringList(v) if v.len() == 2));
+    }
+
+    #[test]
+    fn test_context_value_from_vec_i64() {
+        let cv: ContextValue = vec![1i64, 2i64, 3i64].into();
+        assert!(matches!(cv, ContextValue::IntList(v) if v.len() == 3));
+    }
+
+    // FeatureContext::has and Default
+
+    #[test]
+    fn test_feature_context_has() {
+        let mut ctx = FeatureContext::new();
+        assert!(!ctx.has("org"));
+        ctx.insert("org", "sentry".into());
+        assert!(ctx.has("org"));
+        assert!(!ctx.has("user"));
+    }
+
+    #[test]
+    fn test_feature_context_default_is_empty() {
+        let ctx = FeatureContext::default();
+        assert!(!ctx.has("anything"));
+    }
+
+    // evaluate_in edge cases
+
+    #[test]
+    fn test_in_operator_with_list_prop_returns_false() {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("orgs", ContextValue::StringList(vec!["sentry".to_string()]));
+        let cond = make_condition("orgs", OperatorKind::In, json!(["sentry"]));
+        assert!(!cond.evaluate(&ctx));
+    }
+
+    #[test]
+    fn test_in_operator_non_array_value_returns_false() {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org", "sentry".into());
+        // operator value is a scalar, not an array
+        let cond = make_condition("org", OperatorKind::In, json!("sentry"));
+        assert!(!cond.evaluate(&ctx));
+    }
+
+    // evaluate_contains edge cases
+
+    #[test]
+    fn test_contains_missing_prop_returns_false() {
+        let ctx = FeatureContext::new(); // no "orgs" key
+        let cond = make_condition("orgs", OperatorKind::Contains, json!("sentry"));
+        assert!(!cond.evaluate(&ctx));
+    }
+
+    #[test]
+    fn test_contains_int_list() {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("ids", ContextValue::IntList(vec![1, 2, 3]));
+
+        let cond = make_condition("ids", OperatorKind::Contains, json!(2));
+        assert!(cond.evaluate(&ctx));
+
+        let cond2 = make_condition("ids", OperatorKind::Contains, json!(4));
+        assert!(!cond2.evaluate(&ctx));
+    }
+
+    #[test]
+    fn test_contains_float_list() {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("rates", ContextValue::FloatList(vec![0.5, 1.0]));
+
+        let cond = make_condition("rates", OperatorKind::Contains, json!(0.5));
+        assert!(cond.evaluate(&ctx));
+
+        let cond2 = make_condition("rates", OperatorKind::Contains, json!(0.1));
+        assert!(!cond2.evaluate(&ctx));
+    }
+
+    #[test]
+    fn test_contains_bool_list() {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("flags", ContextValue::BoolList(vec![true, false]));
+
+        let cond = make_condition("flags", OperatorKind::Contains, json!(true));
+        assert!(cond.evaluate(&ctx));
+
+        let cond2 = make_condition("flags", OperatorKind::Contains, json!(false));
+        assert!(cond2.evaluate(&ctx));
+    }
+
+    #[test]
+    fn test_contains_scalar_prop_returns_false() {
+        // CONTAINS only works on list types; a scalar context value returns false
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org", "sentry".into());
+        let cond = make_condition("org", OperatorKind::Contains, json!("sentry"));
+        assert!(!cond.evaluate(&ctx));
+    }
+
+    // scalar_eq edge cases
+
+    #[test]
+    fn test_equals_float() {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("rate", 0.5f64.into());
+
+        let cond = make_condition("rate", OperatorKind::Equals, json!(0.5));
+        assert!(cond.evaluate(&ctx));
+
+        let cond2 = make_condition("rate", OperatorKind::Equals, json!(0.1));
+        assert!(!cond2.evaluate(&ctx));
+    }
+
+    #[test]
+    fn test_equals_list_type_returns_false() {
+        // Equals on a list context value should return false (no list == scalar)
+        let mut ctx = FeatureContext::new();
+        ctx.insert("orgs", ContextValue::StringList(vec!["sentry".to_string()]));
+        let cond = make_condition("orgs", OperatorKind::Equals, json!("sentry"));
+        assert!(!cond.evaluate(&ctx));
+    }
+
+    // default_rollout serde default
+
+    #[test]
+    fn test_default_rollout_via_deserialization() {
+        // When "rollout" is absent, serde should use the default_rollout() fn → 100
+        let segment: SegmentData =
+            serde_json::from_str(r#"{"name":"test","conditions":[]}"#).unwrap();
+        assert_eq!(segment.rollout, 100);
+    }
+
+    // DebugConfig::should_sample
+
+    #[test]
+    fn test_should_sample_at_rate_one() {
+        let cfg = DebugConfig {
+            log_parse: false,
+            log_match: false,
+            sample_rate: 1.0,
+        };
+        assert!(cfg.should_sample());
+    }
+
+    #[test]
+    fn test_should_sample_at_rate_zero() {
+        let cfg = DebugConfig {
+            log_parse: false,
+            log_match: false,
+            sample_rate: 0.0,
+        };
+        assert!(!cfg.should_sample());
+    }
+
+    #[test]
+    fn test_should_sample_at_intermediate_rate() {
+        let cfg = DebugConfig {
+            log_parse: false,
+            log_match: false,
+            sample_rate: 0.5,
+        };
+        // interval = round(1/0.5) = 2: alternates true/false
+        let results: Vec<bool> = (0..10).map(|_| cfg.should_sample()).collect();
+        assert!(
+            results.iter().any(|&r| r),
+            "expected at least one sampled call"
+        );
+        assert!(
+            results.iter().any(|&r| !r),
+            "expected at least one skipped call"
+        );
     }
 
     #[test]
