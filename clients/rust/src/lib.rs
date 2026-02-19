@@ -105,7 +105,7 @@ impl Options {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Some(ns_values) = values_guard.get(namespace) {
-            return ns_values.contains_key(key);
+            ns_values.contains_key(key)
         } else {
             false
         }
