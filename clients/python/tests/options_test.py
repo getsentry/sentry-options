@@ -132,7 +132,10 @@ def test_exceptions_inherit_from_options_error() -> None:
 
 
 def test_isset() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(UnknownNamespaceError):
+        options('unknown').isset('unknown')
+
+    with pytest.raises(UnknownOptionError):
         options('sentry-options-testing').isset('unknown')
 
     assert not options('sentry-options-testing').isset('bool-opt')

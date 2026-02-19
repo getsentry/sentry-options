@@ -105,7 +105,7 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        if let None = schema.options.get(key) {
+        if !schema.options.contains_key(key) {
             return Err(OptionsError::UnknownOption {
                 namespace: namespace.into(),
                 key: key.into(),
@@ -335,10 +335,7 @@ mod tests {
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert!(options.isset("test", "not-defined").is_err());
-        assert_eq!(
-            false,
-            options.isset("test", "defined-with-default").unwrap()
-        );
-        assert_eq!(true, options.isset("test", "has-value").unwrap());
+        assert!(!options.isset("test", "defined-with-default").unwrap());
+        assert!(options.isset("test", "has-value").unwrap());
     }
 }
