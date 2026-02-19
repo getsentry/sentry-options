@@ -274,7 +274,7 @@ pub(crate) fn debug_config() -> &'static DebugConfig {
 }
 
 thread_local! {
-    static SAMPLE_COUNTER: Cell<u64> = Cell::new(0);
+    static SAMPLE_COUNTER: Cell<u64> = const { Cell::new(0) };
 }
 
 fn should_sample(sample_rate: f64) -> bool {
@@ -411,7 +411,7 @@ fn evaluate_contains(prop: Option<&ContextValue>, operator_value: &JsonValue) ->
             .unwrap_or(false),
         ContextValue::FloatList(list) => operator_value
             .as_f64()
-            .map(|n| list.iter().any(|&item| item == n))
+            .map(|n| list.contains(&n))
             .unwrap_or(false),
         ContextValue::BoolList(list) => operator_value
             .as_bool()
