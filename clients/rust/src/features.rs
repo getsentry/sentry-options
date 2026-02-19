@@ -725,7 +725,7 @@ mod tests {
             "hello"
         );
         assert_eq!(format!("{}", ContextValue::Int(42)), "42");
-        assert_eq!(format!("{}", ContextValue::Float(3.14)), "3.14");
+        assert_eq!(format!("{}", ContextValue::Float(3.12)), "3.12");
         assert_eq!(format!("{}", ContextValue::Bool(true)), "True");
         assert_eq!(format!("{}", ContextValue::Bool(false)), "False");
     }
@@ -755,8 +755,8 @@ mod tests {
 
     #[test]
     fn test_context_value_from_f64() {
-        let cv: ContextValue = 3.14f64.into();
-        assert!(matches!(cv, ContextValue::Float(f) if (f - 3.14).abs() < 0.001));
+        let cv: ContextValue = 3.11f64.into();
+        assert!(matches!(cv, ContextValue::Float(f) if (f - 3.11).abs() < 0.001));
     }
 
     #[test]
