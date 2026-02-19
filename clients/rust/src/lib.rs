@@ -176,7 +176,7 @@ impl FeatureChecker {
                 return false;
             }
         };
-        features::evaluate_feature(feature_name, &feature_data, context)
+        feature_data.evaluate(feature_name, context)
     }
 }
 

@@ -136,6 +136,12 @@ impl FeatureContext {
         self.data.contains_key(key)
     }
 
+    fn format_context(&self) -> String {
+        let mut pairs: Vec<String> = self.data.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        pairs.sort();
+        pairs.join(", ")
+    }
+
     /// Return the stable numeric identity for this context (0–99).
     ///
     /// Computed by SHA1-hashing the values of the identity fields (joined with `:`),
@@ -294,77 +300,73 @@ fn should_sample(sample_rate: f64) -> bool {
 
 // Evaluation
 
-/// Evaluate a parsed feature config against a context. All errors return `false`.
-pub(crate) fn evaluate_feature(
-    feature_name: &str,
-    data: &FeatureData,
-    ctx: &FeatureContext,
-) -> bool {
-    let cfg = debug_config();
+impl FeatureData {
+    /// Evaluate this feature config against a context. All errors return `false`.
+    pub(crate) fn evaluate(&self, feature_name: &str, ctx: &FeatureContext) -> bool {
+        let cfg = debug_config();
 
-    if !data.enabled {
-        return false;
-    }
-
-    for segment in &data.segments {
-        if all_conditions_match(segment, ctx) {
-            let result = in_rollout(segment, ctx);
-            if cfg.log_match && should_sample(cfg.sample_rate) {
-                eprintln!(
-                    "[sentry-options] feature '{}' segment '{}' matched, in_rollout={}",
-                    feature_name, segment.name, result
-                );
-            }
-            if result {
-                return true;
-            }
-        }
-    }
-
-    if cfg.log_match && should_sample(cfg.sample_rate) {
-        eprintln!(
-            "[sentry-options] feature '{}' did not match: context={{{}}}",
-            feature_name,
-            format_context(ctx),
-        );
-    }
-    false
-}
-
-fn format_context(ctx: &FeatureContext) -> String {
-    let mut pairs: Vec<String> = ctx.data.iter().map(|(k, v)| format!("{k}={v}")).collect();
-    pairs.sort();
-    pairs.join(", ")
-}
-
-fn all_conditions_match(segment: &SegmentData, ctx: &FeatureContext) -> bool {
-    for condition in &segment.conditions {
-        if !evaluate_condition(condition, ctx) {
+        if !self.enabled {
             return false;
         }
+
+        for segment in &self.segments {
+            if segment.all_conditions_match(ctx) {
+                let result = segment.in_rollout(ctx);
+                if cfg.log_match && should_sample(cfg.sample_rate) {
+                    eprintln!(
+                        "[sentry-options] feature '{}' segment '{}' matched, in_rollout={}",
+                        feature_name, segment.name, result
+                    );
+                }
+                if result {
+                    return true;
+                }
+            }
+        }
+
+        if cfg.log_match && should_sample(cfg.sample_rate) {
+            eprintln!(
+                "[sentry-options] feature '{}' did not match: context={{{}}}",
+                feature_name,
+                ctx.format_context(),
+            );
+        }
+        false
     }
-    true
 }
 
-fn in_rollout(segment: &SegmentData, ctx: &FeatureContext) -> bool {
-    if segment.rollout == 0 {
-        return false;
+impl SegmentData {
+    fn all_conditions_match(&self, ctx: &FeatureContext) -> bool {
+        for condition in &self.conditions {
+            if !condition.evaluate(ctx) {
+                return false;
+            }
+        }
+        true
     }
-    if segment.rollout == 100 {
-        return true;
+
+    fn in_rollout(&self, ctx: &FeatureContext) -> bool {
+        if self.rollout == 0 {
+            return false;
+        }
+        if self.rollout == 100 {
+            return true;
+        }
+        ctx.id() <= self.rollout as u64
     }
-    ctx.id() <= segment.rollout as u64
 }
 
-fn evaluate_condition(condition: &ConditionData, ctx: &FeatureContext) -> bool {
-    let prop = ctx.get(&condition.property);
-    match &condition.operator.kind {
-        OperatorKind::In => evaluate_in(prop, &condition.operator.value),
-        OperatorKind::NotIn => !evaluate_in(prop, &condition.operator.value),
-        OperatorKind::Contains => evaluate_contains(prop, &condition.operator.value),
-        OperatorKind::NotContains => !evaluate_contains(prop, &condition.operator.value),
-        OperatorKind::Equals => evaluate_equals(prop, &condition.operator.value),
-        OperatorKind::NotEquals => !evaluate_equals(prop, &condition.operator.value),
+impl ConditionData {
+    fn evaluate(&self, ctx: &FeatureContext) -> bool {
+        let prop = ctx.get(&self.property);
+        match &self.operator.kind {
+            OperatorKind::In => evaluate_in(prop, &self.operator.value),
+            OperatorKind::NotIn => !evaluate_in(prop, &self.operator.value),
+            OperatorKind::Contains => evaluate_contains(prop, &self.operator.value),
+            OperatorKind::NotContains => !evaluate_contains(prop, &self.operator.value),
+            OperatorKind::Equals => evaluate_equals(prop, &self.operator.value),
+            OperatorKind::NotEquals => !evaluate_equals(prop, &self.operator.value),
+        }
     }
 }
 
@@ -518,14 +520,14 @@ mod tests {
     fn test_disabled_feature_returns_false() {
         let feature = make_feature(false, vec![make_segment(100, vec![])]);
         let ctx = FeatureContext::new();
-        assert!(!evaluate_feature("test", &feature, &ctx));
+        assert!(!feature.evaluate("test", &ctx));
     }
 
     #[test]
     fn test_no_segments_returns_false() {
         let feature = make_feature(true, vec![]);
         let ctx = FeatureContext::new();
-        assert!(!evaluate_feature("test", &feature, &ctx));
+        assert!(!feature.evaluate("test", &ctx));
     }
 
     #[test]
@@ -543,7 +545,7 @@ mod tests {
         );
         let mut ctx = FeatureContext::new();
         ctx.insert("org", "sentry".into());
-        assert!(evaluate_feature("test", &feature, &ctx));
+        assert!(feature.evaluate("test", &ctx));
     }
 
     #[test]
@@ -556,7 +558,7 @@ mod tests {
             )],
         );
         let ctx = FeatureContext::new(); // no "org" key
-        assert!(!evaluate_feature("test", &feature, &ctx));
+        assert!(!feature.evaluate("test", &ctx));
     }
 
     #[test]
@@ -570,7 +572,7 @@ mod tests {
         );
         let mut ctx = FeatureContext::new();
         ctx.insert("org", "other".into()); // key present, value not in list
-        assert!(!evaluate_feature("test", &feature, &ctx));
+        assert!(!feature.evaluate("test", &ctx));
     }
 
     #[test]
@@ -578,7 +580,7 @@ mod tests {
         // rollout=0 with no conditions → segment matches but rollout blocks it
         let feature = make_feature(true, vec![make_segment(0, vec![])]);
         let ctx = FeatureContext::new();
-        assert!(!evaluate_feature("test", &feature, &ctx));
+        assert!(!feature.evaluate("test", &ctx));
     }
 
     #[test]
@@ -586,7 +588,7 @@ mod tests {
         // rollout=100 with no conditions → always passes
         let feature = make_feature(true, vec![make_segment(100, vec![])]);
         let ctx = FeatureContext::new();
-        assert!(evaluate_feature("test", &feature, &ctx));
+        assert!(feature.evaluate("test", &ctx));
     }
 
     #[test]
@@ -602,9 +604,9 @@ mod tests {
         ctx.identity_fields(vec!["org"]);
         ctx.insert("org", "sentry".into());
         // Same context → same result every time
-        let result = evaluate_feature("test", &feature, &ctx);
+        let result = feature.evaluate("test", &ctx);
         for _ in 0..10 {
-            assert_eq!(evaluate_feature("test", &feature, &ctx), result);
+            assert_eq!(feature.evaluate("test", &ctx), result);
         }
     }
 
@@ -616,7 +618,7 @@ mod tests {
         ctx.insert("org", "Sentry".into()); // uppercase — should match case-insensitively
 
         let cond = make_condition("org", OperatorKind::In, json!(["sentry", "test"]));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
     }
 
     #[test]
@@ -625,7 +627,7 @@ mod tests {
         ctx.insert("org", "other".into());
 
         let cond = make_condition("org", OperatorKind::In, json!(["sentry", "test"]));
-        assert!(!evaluate_condition(&cond, &ctx));
+        assert!(!cond.evaluate(&ctx));
     }
 
     #[test]
@@ -634,10 +636,10 @@ mod tests {
         ctx.insert("org", "other".into());
 
         let cond = make_condition("org", OperatorKind::NotIn, json!(["sentry", "test"]));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
 
         let cond2 = make_condition("org", OperatorKind::NotIn, json!(["other"]));
-        assert!(!evaluate_condition(&cond2, &ctx));
+        assert!(!cond2.evaluate(&ctx));
     }
 
     #[test]
@@ -649,10 +651,10 @@ mod tests {
         );
 
         let cond = make_condition("orgs", OperatorKind::Contains, json!("Sentry")); // case-insensitive
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
 
         let cond2 = make_condition("orgs", OperatorKind::Contains, json!("other"));
-        assert!(!evaluate_condition(&cond2, &ctx));
+        assert!(!cond2.evaluate(&ctx));
     }
 
     #[test]
@@ -661,10 +663,10 @@ mod tests {
         ctx.insert("orgs", ContextValue::StringList(vec!["sentry".to_string()]));
 
         let cond = make_condition("orgs", OperatorKind::NotContains, json!("other"));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
 
         let cond2 = make_condition("orgs", OperatorKind::NotContains, json!("sentry"));
-        assert!(!evaluate_condition(&cond2, &ctx));
+        assert!(!cond2.evaluate(&ctx));
     }
 
     #[test]
@@ -673,7 +675,7 @@ mod tests {
         ctx.insert("name", "Sentry".into());
 
         let cond = make_condition("name", OperatorKind::Equals, json!("sentry"));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
     }
 
     #[test]
@@ -682,10 +684,10 @@ mod tests {
         ctx.insert("count", 42i64.into());
 
         let cond = make_condition("count", OperatorKind::Equals, json!(42));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
 
         let cond2 = make_condition("count", OperatorKind::Equals, json!(43));
-        assert!(!evaluate_condition(&cond2, &ctx));
+        assert!(!cond2.evaluate(&ctx));
     }
 
     #[test]
@@ -694,10 +696,10 @@ mod tests {
         ctx.insert("active", true.into());
 
         let cond = make_condition("active", OperatorKind::Equals, json!(true));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
 
         let cond2 = make_condition("active", OperatorKind::Equals, json!(false));
-        assert!(!evaluate_condition(&cond2, &ctx));
+        assert!(!cond2.evaluate(&ctx));
     }
 
     #[test]
@@ -706,19 +708,19 @@ mod tests {
         let mut ctx = FeatureContext::new();
         ctx.insert("count", 42i64.into());
         let cond = make_condition("count", OperatorKind::Equals, json!("42"));
-        assert!(!evaluate_condition(&cond, &ctx));
+        assert!(!cond.evaluate(&ctx));
 
         // string context vs int condition
         let mut ctx2 = FeatureContext::new();
         ctx2.insert("name", "42".into());
         let cond2 = make_condition("name", OperatorKind::Equals, json!(42));
-        assert!(!evaluate_condition(&cond2, &ctx2));
+        assert!(!cond2.evaluate(&ctx2));
 
         // bool context vs int condition
         let mut ctx3 = FeatureContext::new();
         ctx3.insert("active", true.into());
         let cond3 = make_condition("active", OperatorKind::Equals, json!(1));
-        assert!(!evaluate_condition(&cond3, &ctx3));
+        assert!(!cond3.evaluate(&ctx3));
     }
 
     #[test]
@@ -727,10 +729,10 @@ mod tests {
         ctx.insert("status", "active".into());
 
         let cond = make_condition("status", OperatorKind::NotEquals, json!("inactive"));
-        assert!(evaluate_condition(&cond, &ctx));
+        assert!(cond.evaluate(&ctx));
 
         let cond2 = make_condition("status", OperatorKind::NotEquals, json!("active"));
-        assert!(!evaluate_condition(&cond2, &ctx));
+        assert!(!cond2.evaluate(&ctx));
     }
 
     #[test]
@@ -750,12 +752,12 @@ mod tests {
         let mut ctx_both = FeatureContext::new();
         ctx_both.insert("org", "sentry".into());
         ctx_both.insert("user", "mark@sentry.io".into());
-        assert!(evaluate_feature("test", &feature, &ctx_both));
+        assert!(feature.evaluate("test", &ctx_both));
 
         let mut ctx_one = FeatureContext::new();
         ctx_one.insert("org", "sentry".into());
         ctx_one.insert("user", "other@test.com".into());
-        assert!(!evaluate_feature("test", &feature, &ctx_one));
+        assert!(!feature.evaluate("test", &ctx_one));
     }
 
     #[test]
@@ -777,15 +779,15 @@ mod tests {
 
         let mut ctx1 = FeatureContext::new();
         ctx1.insert("org", "sentry".into());
-        assert!(evaluate_feature("test", &feature, &ctx1));
+        assert!(feature.evaluate("test", &ctx1));
 
         let mut ctx2 = FeatureContext::new();
         ctx2.insert("is_free", true.into());
-        assert!(evaluate_feature("test", &feature, &ctx2));
+        assert!(feature.evaluate("test", &ctx2));
 
         let mut ctx3 = FeatureContext::new();
         ctx3.insert("org", "other".into());
         ctx3.insert("is_free", false.into());
-        assert!(!evaluate_feature("test", &feature, &ctx3));
+        assert!(!feature.evaluate("test", &ctx3));
     }
 }
