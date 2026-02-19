@@ -283,19 +283,21 @@ thread_local! {
     static SAMPLE_COUNTER: Cell<u64> = const { Cell::new(0) };
 }
 
-fn should_sample(sample_rate: f64) -> bool {
-    if sample_rate >= 1.0 {
-        return true;
+impl DebugConfig {
+    fn should_sample(&self) -> bool {
+        if self.sample_rate >= 1.0 {
+            return true;
+        }
+        if self.sample_rate <= 0.0 {
+            return false;
+        }
+        let interval = (1.0 / self.sample_rate).round() as u64;
+        SAMPLE_COUNTER.with(|c| {
+            let n = c.get();
+            c.set(n.wrapping_add(1));
+            n % interval.max(1) == 0
+        })
     }
-    if sample_rate <= 0.0 {
-        return false;
-    }
-    let interval = (1.0 / sample_rate).round() as u64;
-    SAMPLE_COUNTER.with(|c| {
-        let n = c.get();
-        c.set(n.wrapping_add(1));
-        n % interval.max(1) == 0
-    })
 }
 
 // Evaluation
@@ -312,7 +314,7 @@ impl FeatureData {
         for segment in &self.segments {
             if segment.all_conditions_match(ctx) {
                 let result = segment.in_rollout(ctx);
-                if cfg.log_match && should_sample(cfg.sample_rate) {
+                if cfg.log_match && cfg.should_sample() {
                     eprintln!(
                         "[sentry-options] feature '{}' segment '{}' matched, in_rollout={}",
                         feature_name, segment.name, result
@@ -324,7 +326,7 @@ impl FeatureData {
             }
         }
 
-        if cfg.log_match && should_sample(cfg.sample_rate) {
+        if cfg.log_match && cfg.should_sample() {
             eprintln!(
                 "[sentry-options] feature '{}' did not match: context={{{}}}",
                 feature_name,
