@@ -199,26 +199,13 @@ impl Default for FeatureContext {
 #[derive(Deserialize)]
 pub(crate) struct FeatureData {
     pub(crate) enabled: bool,
-    #[allow(dead_code)]
-    description: Option<String>,
-    #[allow(dead_code)]
-    owner: Option<OwnerData>,
     #[serde(default)]
     pub(crate) segments: Vec<SegmentData>,
 }
 
 #[derive(Deserialize)]
-struct OwnerData {
-    #[allow(dead_code)]
-    team: String,
-    #[allow(dead_code)]
-    email: Option<String>,
-}
-
-#[derive(Deserialize)]
 pub(crate) struct SegmentData {
-    #[allow(dead_code)]
-    name: String,
+    pub(crate) name: String,
     #[serde(default = "default_rollout")]
     pub(crate) rollout: u8,
     #[serde(default)]
@@ -231,8 +218,6 @@ fn default_rollout() -> u8 {
 
 #[derive(Deserialize)]
 pub(crate) struct ConditionData {
-    #[allow(dead_code)]
-    name: Option<String>,
     pub(crate) property: String,
     pub(crate) operator: OperatorData,
 }
@@ -456,7 +441,6 @@ mod tests {
     // Helper builders to avoid verbose JSON parsing in every test
     fn make_condition(property: &str, kind: OperatorKind, value: JsonValue) -> ConditionData {
         ConditionData {
-            name: None,
             property: property.to_string(),
             operator: OperatorData { kind, value },
         }
@@ -471,12 +455,7 @@ mod tests {
     }
 
     fn make_feature(enabled: bool, segments: Vec<SegmentData>) -> FeatureData {
-        FeatureData {
-            enabled,
-            description: None,
-            owner: None,
-            segments,
-        }
+        FeatureData { enabled, segments }
     }
 
     // ---- FeatureContext id tests ----
