@@ -2,10 +2,13 @@
 
 use std::sync::OnceLock;
 
-use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
-use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use ::sentry_options::{
+    ContextValue, FeatureChecker, FeatureContext, Options as RustOptions,
+    OptionsError as RustOptionsError,
+};
+use pyo3::exceptions::{PyException, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
 
 // Global options instance
@@ -70,6 +73,76 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
+/// Convert a Python value to a ContextValue.
+///
+/// bool must be checked before int because Python's bool is a subclass of int.
+fn py_to_context_value(val: &Bound<'_, PyAny>) -> PyResult<ContextValue> {
+    if val.is_instance_of::<PyBool>() {
+        return Ok(ContextValue::Bool(val.extract::<bool>()?));
+    }
+    if val.is_instance_of::<PyInt>() {
+        return Ok(ContextValue::Int(val.extract::<i64>()?));
+    }
+    if val.is_instance_of::<PyFloat>() {
+        return Ok(ContextValue::Float(val.extract::<f64>()?));
+    }
+    if val.is_instance_of::<PyString>() {
+        return Ok(ContextValue::String(val.extract::<String>()?));
+    }
+    if val.is_instance_of::<PyList>() {
+        let list = val.extract::<Bound<'_, PyList>>()?;
+        return py_list_to_context_value(&list);
+    }
+    Err(PyTypeError::new_err(format!(
+        "unsupported context value type: {}",
+        val.get_type().name()?
+    )))
+}
+
+/// Convert a Python list to a typed ContextValue list variant.
+///
+/// Type is determined by the first element; empty lists are not supported.
+fn py_list_to_context_value(list: &Bound<'_, PyList>) -> PyResult<ContextValue> {
+    if list.is_empty() {
+        return Err(PyTypeError::new_err(
+            "empty lists are not supported as context values",
+        ));
+    }
+    let first = list.get_item(0)?;
+    if first.is_instance_of::<PyBool>() {
+        let mut out = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            out.push(item.extract::<bool>()?);
+        }
+        return Ok(ContextValue::BoolList(out));
+    }
+    if first.is_instance_of::<PyInt>() {
+        let mut out = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            out.push(item.extract::<i64>()?);
+        }
+        return Ok(ContextValue::IntList(out));
+    }
+    if first.is_instance_of::<PyFloat>() {
+        let mut out = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            out.push(item.extract::<f64>()?);
+        }
+        return Ok(ContextValue::FloatList(out));
+    }
+    if first.is_instance_of::<PyString>() {
+        let mut out = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            out.push(item.extract::<String>()?);
+        }
+        return Ok(ContextValue::StringList(out));
+    }
+    Err(PyTypeError::new_err(format!(
+        "unsupported list element type: {}",
+        first.get_type().name()?
+    )))
+}
+
 fn options_err(err: RustOptionsError) -> PyErr {
     match err {
         RustOptionsError::UnknownNamespace(ns) => {
@@ -111,6 +184,19 @@ fn options(namespace: String) -> PyResult<NamespaceOptions> {
     })
 }
 
+/// Get a feature checker for evaluating feature flags in the given namespace.
+///
+/// Raises RuntimeError if init() has not been called.
+#[pyfunction]
+fn features(namespace: String) -> PyResult<PyFeatureChecker> {
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    Ok(PyFeatureChecker {
+        inner: FeatureChecker::new(namespace, opts),
+    })
+}
+
 /// Handle for accessing options within a specific namespace.
 #[pyclass]
 struct NamespaceOptions {
@@ -141,14 +227,55 @@ impl NamespaceOptions {
     }
 }
 
+/// Arbitrary application data passed to feature flag evaluation.
+#[pyclass(name = "FeatureContext")]
+struct PyFeatureContext {
+    inner: FeatureContext,
+}
+
+#[pymethods]
+impl PyFeatureContext {
+    #[new]
+    #[pyo3(signature = (data, *, identity_fields=None))]
+    fn new(data: &Bound<'_, PyDict>, identity_fields: Option<Vec<String>>) -> PyResult<Self> {
+        let mut ctx = FeatureContext::new();
+        for (key, value) in data.iter() {
+            let key: String = key.extract()?;
+            let cv = py_to_context_value(&value)?;
+            ctx.insert(key, cv);
+        }
+        if let Some(fields) = identity_fields {
+            ctx.identity_fields(fields.iter().map(|s| s.as_str()).collect());
+        }
+        Ok(PyFeatureContext { inner: ctx })
+    }
+}
+
+/// Handle for evaluating feature flags within a specific namespace.
+#[pyclass(name = "FeatureChecker")]
+struct PyFeatureChecker {
+    inner: FeatureChecker,
+}
+
+#[pymethods]
+impl PyFeatureChecker {
+    /// Check whether `feature_name` is enabled for the given context.
+    fn has(&self, feature_name: &str, context: &PyFeatureContext) -> bool {
+        self.inner.has(feature_name, &context.inner)
+    }
+}
+
 /// Python module definition.
 #[pymodule]
 fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
+    m.add_function(wrap_pyfunction!(features, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
+    m.add_class::<PyFeatureContext>()?;
+    m.add_class::<PyFeatureChecker>()?;
     // Exceptions
     m.add("OptionsError", m.py().get_type::<OptionsError>())?;
     m.add("SchemaError", m.py().get_type::<SchemaError>())?;

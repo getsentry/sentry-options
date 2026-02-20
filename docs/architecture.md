@@ -16,12 +16,14 @@ Multi-language configuration system for Sentry with JSON schemas as the source o
 │       ├─→ Load schemas at startup                           │
 │       ├─→ Validate values against schemas                   │
 │       ├─→ Background file watching + atomic refresh         │
-│       └─→ Simple API: options.get(namespace, key)           │
+│       ├─→ Simple API: options(namespace).get(key)           │
+│       └─→ Feature API: features(namespace).has(name, ctx)   │
 │                                                             │
-│  Python client library                                      │
+│  Python client library (PyO3 bindings)                      │
 │       ├─→ Load schemas at startup                           │
 │       ├─→ Validate values against schemas                   │
-│       └─→ Simple API: option_group(namespace).get(key)      │
+│       ├─→ Simple API: options(namespace).get(key)           │
+│       └─→ Feature API: features(namespace).has(name, ctx)   │
 │                                                             │
 │  Write tool (Rust CLI)                                      │
 │       ├─→ Validates against schemas                         │
@@ -49,9 +51,8 @@ sentry-options/
 │   │       └── src/lib.rs
 │   │
 │   └── python/
-│       └── sentry_options/
-│           ├── __init__.py
-│           └── api.py
+│       └── src/
+│           └── lib.rs               # PyO3 bindings (exposes Python API)
 │
 ├── sentry-options-cli/              # CLI tool
 │   ├── Cargo.toml
@@ -120,6 +121,72 @@ Each property must have:
 
 `additionalProperties: false` is auto-injected to reject unknown options.
 
+## Feature Flags
+
+Feature flags are stored as JSON-serialized strings under `features.{name}` keys in the schema and values. The clients parse and evaluate them at runtime via `FeatureChecker`.
+
+### Feature Config Format
+
+Feature configs are stored as a JSON string (the schema type is `string`):
+
+```json
+{
+  "enabled": true,
+  "segments": [
+    {
+      "name": "internal-orgs",
+      "rollout": 100,
+      "conditions": [
+        {
+          "property": "organization_slug",
+          "operator": {
+            "kind": "in",
+            "value": ["sentry", "sentry-test"]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Evaluation logic:**
+- Feature is disabled immediately if `enabled: false`
+- Segments are evaluated in order; the first matching segment wins (OR logic)
+- All conditions within a segment must match (AND logic)
+- `rollout` (0–100) gates the matched segment by a stable hash of the context identity
+
+### FeatureContext
+
+`FeatureContext` holds arbitrary application data passed to feature evaluation. Supported value types mirror the schema types: `string`, `integer`, `float`, `boolean`, and typed lists thereof.
+
+**Identity fields** determine which context properties are hashed to compute the stable rollout bucket (0–99). The hash uses SHA1 on the colon-joined field values — matching Python's `flagpole` library for cross-language consistency. If no identity fields are set, all context fields are used (sorted lexicographically).
+
+### Supported Operators
+
+| Operator | Property type | Operator value |
+|----------|--------------|----------------|
+| `in` | scalar | array — property must appear in list |
+| `not_in` | scalar | array — property must not appear in list |
+| `contains` | list | scalar — list must contain the value |
+| `not_contains` | list | scalar — list must not contain the value |
+| `equals` | scalar | scalar — exact match (strings: case-insensitive) |
+| `not_equals` | scalar | scalar — not equal |
+
+### Schema Registration
+
+Feature keys must be declared in the schema with `"type": "string"` and an empty-string default:
+
+```json
+{
+  "features.organizations:my-feature": {
+    "type": "string",
+    "default": "",
+    "description": "Feature flag for my-feature"
+  }
+}
+```
+
 ## Values Format
 
 ### Input: YAML Files
@@ -180,30 +247,48 @@ Output format:
 ### Python
 
 ```python
-from sentry_options import option_group
+from sentry_options import init, options, features, FeatureContext
 
-opts = option_group('getsentry')
+# Initialize once at startup (reads SENTRY_OPTIONS_DIR or /etc/sentry-options)
+init()
+
+# Read configuration values
+opts = options('getsentry')
 url: str = opts.get('system.url-prefix')
 rate: float = opts.get('traces.sample-rate')
 
-# Testing
-from sentry_options.testing import override_options
-
-def test_feature():
-    with override_options(getsentry={'feature.enabled': True}):
-        assert my_feature_works()
+# Evaluate feature flags
+fc = features('getsentry')
+ctx = FeatureContext(
+    {'organization_slug': 'sentry', 'user_id': 42},
+    identity_fields=['organization_slug'],
+)
+if fc.has('organizations:my-feature', ctx):
+    ...
 ```
 
 ### Rust
 
 ```rust
-use sentry_options::Options;
+use sentry_options::{init, options, features, FeatureContext};
 
 fn main() -> anyhow::Result<()> {
-    let options = Options::new(schemas_dir, values_dir)?;
+    // Initialize once at startup (reads SENTRY_OPTIONS_DIR or /etc/sentry-options)
+    init()?;
 
-    let url = options.get("getsentry", "system.url-prefix")?;
-    let rate = options.get("getsentry", "traces.sample-rate")?;
+    // Read configuration values
+    let opts = options("getsentry");
+    let url = opts.get("system.url-prefix")?;
+    let rate = opts.get("traces.sample-rate")?;
+
+    // Evaluate feature flags
+    let fc = features("getsentry");
+    let mut ctx = FeatureContext::new();
+    ctx.insert("organization_slug", "sentry".into());
+    ctx.identity_fields(vec!["organization_slug"]);
+    if fc.has("organizations:my-feature", &ctx) {
+        // ...
+    }
 
     Ok(())
 }
@@ -243,7 +328,7 @@ Reject unknown options, fail fast on type mismatches.
 - Type mismatch → Error
 - `null` values → Error (use defaults instead)
 
-### 4. JSON Number Handling
+### 5. JSON Number Handling
 
 - Schema says `integer` → Reject `5.5`, accept `5`
 - Schema says `number` → Accept both `5` and `5.5`
