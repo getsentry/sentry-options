@@ -92,6 +92,37 @@ impl Options {
 
         Ok(default.clone())
     }
+
+    /// Check if an option has a value.
+    ///
+    /// Returns true if the option is defined and has a value, will return
+    /// false if the option is defined and does not have a value.
+    ///
+    /// If the namespace or option are not defined, an Err will be returned.
+    pub fn isset(&self, namespace: &str, key: &str) -> Result<bool> {
+        let schema = self
+            .registry
+            .get(namespace)
+            .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
+
+        if !schema.options.contains_key(key) {
+            return Err(OptionsError::UnknownOption {
+                namespace: namespace.into(),
+                key: key.into(),
+            });
+        }
+
+        let values_guard = self
+            .values
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if let Some(ns_values) = values_guard.get(namespace) {
+            Ok(ns_values.contains_key(key))
+        } else {
+            Ok(false)
+        }
+    }
 }
 
 /// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
@@ -127,6 +158,11 @@ impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
         self.options.get(&self.namespace, key)
+    }
+
+    /// Check if an option has a key defined, or if the default is being used.
+    pub fn isset(&self, key: &str) -> Result<bool> {
+        self.options.isset(&self.namespace, key)
     }
 }
 
@@ -273,5 +309,33 @@ mod tests {
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "opt").unwrap(), json!("default_val"));
+    }
+
+    #[test]
+    fn isset_with_defined_and_undefined_keys() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        fs::create_dir_all(&schemas).unwrap();
+
+        let values = temp.path().join("values");
+        create_values(&values, "test", r#"{"options": {"has-value": "yes"}}"#);
+
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "has-value": {"type": "string", "default": "", "description": ""},
+                    "defined-with-default": {"type": "string", "default": "default_val", "description": "Opt"}
+                }
+            }"#,
+        );
+
+        let options = Options::from_directory(temp.path()).unwrap();
+        assert!(options.isset("test", "not-defined").is_err());
+        assert!(!options.isset("test", "defined-with-default").unwrap());
+        assert!(options.isset("test", "has-value").unwrap());
     }
 }
