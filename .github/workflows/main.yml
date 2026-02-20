@@ -221,7 +221,6 @@ jobs:
     with:
       schemas-path: sentry-options/schemas
       build-from-source: ${{ needs.check-cli-changes.outputs.build-from-source == 'true' }}
-    secrets: inherit
 
   python-client-test:
     name: Python Client Tests
