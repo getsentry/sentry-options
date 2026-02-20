@@ -93,12 +93,12 @@ impl Options {
         Ok(default.clone())
     }
 
-    // Check if an option has a value.
-    //
-    // Returns true if the option is defined and has a value, will return
-    // false if the option is defined and does not have a value.
-    //
-    // If the namespace or option are not defined, an Err will be returned.
+    /// Check if an option has a value.
+    ///
+    /// Returns true if the option is defined and has a value, will return
+    /// false if the option is defined and does not have a value.
+    ///
+    /// If the namespace or option are not defined, an Err will be returned.
     pub fn isset(&self, namespace: &str, key: &str) -> Result<bool> {
         let schema = self
             .registry
