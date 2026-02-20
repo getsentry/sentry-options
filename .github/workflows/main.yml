@@ -9,21 +9,6 @@ on:
   pull_request:
 
 jobs:
-  tox:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-        - {env: py312, python: '3.12'}
-        - {env: py313, python: '3.13'}
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python }}
-    - run: python -mpip install --upgrade setuptools tox virtualenv
-    - run: tox -e ${{ matrix.env }}
-
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-24.04
@@ -260,7 +245,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build-python, build-python-sdist, build-rust, pre-commit, tox, rust-lint, rust-test, validate-schema-changes, python-client-test]
+    needs: [build-python, build-python-sdist, build-rust, pre-commit, rust-lint, rust-test, validate-schema-changes, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:

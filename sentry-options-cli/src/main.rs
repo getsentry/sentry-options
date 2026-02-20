@@ -1,4 +1,5 @@
 mod loader;
+mod option_usage;
 mod output;
 mod repo_schema_config;
 mod schema_evolution;
@@ -13,6 +14,7 @@ use clap::{Args, Parser, Subcommand};
 use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegistry};
 
 use loader::{ensure_no_duplicate_keys, load_and_validate};
+use option_usage::check_option_usage;
 use output::{OutputFormat, generate_configmap, generate_json, write_configmap_yaml, write_json};
 
 /// Result type for operations
@@ -167,6 +169,21 @@ enum Commands {
             help = "repository name for namespace prefix validation"
         )]
         repo: String,
+
+        #[arg(long, help = "output the deleted options as a space-separated string")]
+        report_deletions: bool,
+    },
+    #[command(name = "check-option-usage")]
+    CheckOptionUsage {
+        #[arg(
+            long,
+            required = true,
+            help = "space-separated colon delimited list of namespace:option pairs"
+        )]
+        deletions: String,
+
+        #[arg(long, required = true, help = "root directory of the sentry options")]
+        root: String,
     },
 }
 
@@ -284,6 +301,7 @@ fn cli_validate_schema_changes(
     base_sha: String,
     head_sha: String,
     repo: String,
+    report_deletions: bool,
     quiet: bool,
 ) -> Result<()> {
     let base_temp = tempfile::tempdir()?;
@@ -302,12 +320,24 @@ fn cli_validate_schema_changes(
     let base_extracted = base_temp.path().join(&schemas_path);
     let head_extracted = head_temp.path().join(&schemas_path);
 
-    schema_evolution::detect_changes(&base_extracted, &head_extracted, &repo, quiet)?;
+    schema_evolution::detect_changes(
+        &base_extracted,
+        &head_extracted,
+        &repo,
+        report_deletions,
+        quiet,
+    )?;
 
     if !quiet {
-        println!("Schema validation passed");
+        eprintln!("Schema validation passed");
     }
 
+    Ok(())
+}
+
+fn cli_check_option_usage(deletions: String, root: String) -> Result<()> {
+    let res = check_option_usage(deletions, Path::new(&root))?;
+    println!("{}", res);
     Ok(())
 }
 
@@ -323,7 +353,9 @@ fn main() {
             base_sha,
             head_sha,
             repo,
-        } => cli_validate_schema_changes(base_sha, head_sha, repo, cli.quiet),
+            report_deletions,
+        } => cli_validate_schema_changes(base_sha, head_sha, repo, report_deletions, cli.quiet),
+        Commands::CheckOptionUsage { deletions, root } => cli_check_option_usage(deletions, root),
     };
 
     if let Err(e) = result {

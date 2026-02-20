@@ -24,7 +24,7 @@ sentry-options replaces database-stored configuration with git-managed, schema-v
 ┌─────────────────────────────────────────────────────────────────┐
 │                         CI Pipeline                             │
 │  sentry-options-automator repo                                  │
-│    └── option_values/seer/default/options.yaml                  │
+│    └── option-values/seer/default/values.yaml                   │
 │              ↓                                                  │
 │    sentry-options-cli (validates against schema)                │
 │              ↓                                                  │
@@ -49,7 +49,7 @@ sentry-options replaces database-stored configuration with git-managed, schema-v
 | Component | Location | Purpose |
 |-----------|----------|---------|
 | **Schemas** | Service repo (e.g., `seer/sentry-options/schemas/`) | Define options with types and defaults |
-| **Values** | `sentry-options-automator/option_values/` | Runtime configuration values |
+| **Values** | `sentry-options-automator/option-values/` | Runtime configuration values |
 | **CLI** | `sentry-options-cli` | Fetches schemas, validates YAML, generates ConfigMaps |
 | **Client** | `sentry_options` (Python) | Reads options at runtime with hot-reload |
 
@@ -78,12 +78,20 @@ All these changes can be deployed together - the library uses schema defaults wh
       "type": "integer",
       "default": 100,
       "description": "Rate limit per second"
+    },
+    "feature.enabled_slugs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": ["getsentry"],
+      "description": "Which orgs to enable the feature for"
     }
   }
 }
 ```
 
-**Supported types:** `string`, `integer`, `number`, `boolean` (arrays and objects coming soon)
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array` (nested arrays and objects coming soon)
+
+> An option of type `array` requires the `"items"` object as seen in the example schema. All types are supported except `array` (for now).
 
 **Namespace naming:** The namespace directory must be either `{repo}` (exact match) or `{repo}-*` (prefixed). For example, in the `seer` repo: `seer`, `seer-autofix`, `seer-grouping` are valid; `autofix` alone is not.
 
@@ -229,14 +237,14 @@ Add your service to `repos.json`:
 
 #### 2. Create Values File
 
-`option_values/{namespace}/default/options.yaml`:
+`option-values/{namespace}/default/values.yaml`:
 ```yaml
 options:
   feature.enabled: true
   feature.rate_limit: 200
 ```
 
-Region-specific overrides in `option_values/{namespace}/{region}/options.yaml`.
+Region-specific overrides in `option-values/{namespace}/{region}/values.yaml`.
 
 **That's it!** The CI will automatically validate your values against your schema, and the CD pipeline will deploy ConfigMaps to all regions on merge.
 
@@ -294,14 +302,14 @@ Replace `{namespace}` with your actual namespace (e.g., `seer`). The ConfigMap n
 The `default/` directory contains base values inherited by all targets. Region directories contain overrides merged with defaults. Each namespace/target produces a ConfigMap named `sentry-options-{namespace}` with target-specific values:
 
 ```
-option_values/
+option-values/
 ├── seer/
-│   ├── default/options.yaml      → Base values (inherited, not deployed directly)
-│   ├── us/options.yaml           → ConfigMap: sentry-options-seer (default + us merged) → deployed to US cluster
-│   └── de/options.yaml           → ConfigMap: sentry-options-seer (default + de merged) → deployed to DE cluster
+│   ├── default/values.yaml      → Base values (inherited, not deployed directly)
+│   ├── us/values.yaml           → ConfigMap: sentry-options-seer-us (default + us merged)
+│   └── de/values.yaml           → ConfigMap: sentry-options-seer-de (default + de merged)
 └── relay/
-    ├── default/options.yaml      → Base values (inherited, not deployed directly)
-    └── us/options.yaml           → ConfigMap: sentry-options-relay (default + us merged) → deployed to US cluster
+    ├── default/values.yaml      → Base values (inherited, not deployed directly)
+    └── us/values.yaml           → ConfigMap: sentry-options-relay-us (default + us merged)
 ```
 
 **What is a target?** A target represents a deployment environment or region (e.g., `us`, `de`, `s4s`). Each target gets its own ConfigMap with values merged from `default/` plus target-specific overrides. The mapping of targets to Kubernetes clusters is configured in the CD pipeline.
@@ -315,12 +323,12 @@ The CD pipeline iterates over each namespace and non-default target to generate 
 sentry-options-cli fetch-schemas --config repos.json --out schemas/
 
 # Validate values against schema
-sentry-options-cli validate-values --schemas schemas/ --root option_values/
+sentry-options-cli validate-values --schemas schemas/ --root option-values/
 
 # Generate ConfigMap for ONE namespace/target (run per combination)
 sentry-options-cli write \
   --schemas schemas/ \
-  --root option_values/ \
+  --root option-values/ \
   --output-format configmap \
   --namespace seer \
   --target us \
@@ -337,12 +345,12 @@ The CLI generates one ConfigMap per invocation by merging `default/` values with
 ```
 sentry-options-automator/
 ├── repos.json                     # Tracks schema sources (url, path, sha)
-├── option_values/                 # Values for new system
+├── option-values/                 # Values for new system
 │   └── {namespace}/
 │       ├── default/
-│       │   └── options.yaml
+│       │   └── values.yaml
 │       └── {region}/
-│           └── options.yaml
+│           └── values.yaml
 ├── options/                       # Legacy system (unchanged)
 │   ├── default/
 │   └── regions/
@@ -350,7 +358,7 @@ sentry-options-automator/
 │   └── sentry-options-validate.yml
 └── gocd/pipelines/
     ├── sentry-options.yaml        # Legacy pipeline
-    └── sentry-options-new.yaml    # New system pipeline
+    └── new-sentry-options.yaml    # New system pipeline
 ```
 
 **Note:** The composite action for schema validation (`validate-schema`) is in the `sentry-options` repo, not sentry-options-automator.

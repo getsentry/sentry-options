@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
+use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
 
 // Global options instance
@@ -58,7 +58,14 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
             }
         }
         Value::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
-        Value::Array(_) => Err(PyValueError::new_err("Arrays not yet supported")),
+        Value::Array(arr) => {
+            let list = PyList::empty(py);
+            for item in arr {
+                let py_item = json_to_py(py, item)?; // parse child recursively
+                list.append(py_item)?;
+            }
+            Ok(list.into_any().unbind())
+        }
         Value::Object(_) => Err(PyValueError::new_err("Objects not yet supported")),
     }
 }
@@ -120,6 +127,13 @@ impl NamespaceOptions {
             .get(&self.namespace, key)
             .map_err(options_err)?;
         json_to_py(py, &value)
+    }
+
+    /// Check if an option has a defined value.
+    fn isset(&self, key: &str) -> PyResult<bool> {
+        self.options
+            .isset(&self.namespace, key)
+            .map_err(options_err)
     }
 
     fn __repr__(&self) -> String {
