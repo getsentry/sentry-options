@@ -179,14 +179,14 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  validate-schema-changes:
-    name: Validate Schema Changes
+  check-cli-changes:
+    name: Check for CLI Changes
     runs-on: ubuntu-latest
+    outputs:
+      build-from-source: ${{ steps.cli-changes.outputs.cli }}
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
 
       - name: Check for CLI source changes
         id: cli-changes
@@ -199,10 +199,13 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
 
-      - uses: ./.github/actions/validate-schema
-        with:
-          schemas-path: sentry-options/schemas
-          build-from-source: ${{ steps.cli-changes.outputs.cli }}
+  validate-schema-changes:
+    name: Validate Schema Changes
+    needs: check-cli-changes
+    uses: ./.github/workflows/validate-schema.yml
+    with:
+      schemas-path: sentry-options/schemas
+      build-from-source: ${{ needs.check-cli-changes.outputs.build-from-source == 'true' }}
 
   python-client-test:
     name: Python Client Tests
