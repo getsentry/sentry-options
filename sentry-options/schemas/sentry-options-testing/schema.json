@@ -30,7 +30,7 @@
     "demo-option": {
       "type": "string",
       "default": "hello everyone",
-      "description": "A string option to demo to dev-infra"
+      "description": "A string option to demo to dev-infra "
     }
   }
 }
