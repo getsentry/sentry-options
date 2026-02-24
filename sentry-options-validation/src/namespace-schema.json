@@ -18,15 +18,39 @@
           "type": "object",
           "properties": {
             "type": {
-              "enum": ["string", "integer", "number", "boolean"]
+              "enum": ["string", "integer", "number", "boolean", "array"]
             },
             "default": {},
             "description": {
               "type": "string"
+            },
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": ["string", "integer", "number", "boolean"]
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": false
             }
           },
           "required": ["type", "default", "description"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "array"
+                  }
+                }
+              },
+              "then": {
+                "required": ["items"]
+              }
+            }
+          ]
         }
       },
       "additionalProperties": false

@@ -95,20 +95,28 @@ JSON schemas define available options with types and defaults:
 | Integer | `"type": "integer"` | `42` |
 | Float | `"type": "number"` | `3.14` |
 | Boolean | `"type": "boolean"` | `true` |
+| Array | `"type": "array"` | `[1,2,3]` |
 
-**Future:** Lists (`list[int]`, `list[str]`) and TypedDicts for structured options.
+> Array types of string, integer, float, and boolean are accepted.
+
+**Future:** TypedDicts for structured options, and nested arrays.
 
 ### Schema Requirements
 
 Each schema file must have:
+
 - `version` - Semver string (e.g., `"1.0"`)
 - `type` - Must be `"object"`
 - `properties` - Map of option definitions
 
 Each property must have:
-- `type` - One of: `string`, `integer`, `number`, `boolean`
+
+- `type` - One of: `string`, `integer`, `number`, `boolean`, or `array`
 - `default` - Default value (must match declared type)
 - `description` - Human-readable description
+- `items` - If the `type` is `array`. This should be an object of the following form:
+
+`{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`.
 
 `additionalProperties: false` is auto-injected to reject unknown options.
 

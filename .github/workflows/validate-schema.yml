@@ -1,0 +1,101 @@
+name: Validate Schema Changes
+
+on:
+  workflow_call:
+    inputs:
+      schemas-path:
+        description: "Path to the schemas directory"
+        type: string
+        default: "schemas"
+      cli-version:
+        description: "Version of sentry-options-cli to install"
+        type: string
+        default: "0.0.14"
+      build-from-source:
+        description: "Build CLI from source instead of downloading release binary"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-detect-deletions:
+    runs-on: ubuntu-latest
+    outputs:
+      deletions: ${{ steps.validate.outputs.deletions }}
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust Toolchain
+        if: github.event_name == 'pull_request' && inputs.build-from-source
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Cache Cargo
+        if: github.event_name == 'pull_request' && inputs.build-from-source
+        uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
+      - name: Build sentry-options-cli from source
+        if: github.event_name == 'pull_request' && inputs.build-from-source
+        run: |
+          cargo build --release -p sentry-options-cli
+          echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
+
+      - name: Download sentry-options-cli from releases
+        if: github.event_name == 'pull_request' && !inputs.build-from-source
+        env:
+          CLI_VERSION: ${{ inputs.cli-version }}
+          CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-musl
+        run: |
+          curl -sSL -o /usr/local/bin/sentry-options-cli \
+            https://github.com/getsentry/sentry-options/releases/download/"$CLI_VERSION"/"$CLI_BINARY"
+          chmod +x /usr/local/bin/sentry-options-cli
+
+      - name: Validate schema changes and detect deletions
+        id: validate
+        if: github.event_name == 'pull_request'
+        env:
+          SENTRY_OPTIONS_DIR: "${{ inputs.schemas-path }}"
+        run: |
+          set -euo pipefail
+
+          DELETIONS=$(sentry-options-cli validate-schema-changes \
+            --base-sha "${{ github.event.pull_request.base.sha }}" \
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --report-deletions)
+
+          echo "deletions=$DELETIONS" >> $GITHUB_OUTPUT
+
+  check-usage:
+    needs: validate-and-detect-deletions
+    if: needs.validate-and-detect-deletions.outputs.deletions != ''
+    uses: getsentry/sentry-options-automator/.github/workflows/check-option-usage.yml@be3ff84cb2c01107484d86f1915be261161ae4bb
+    with:
+      deletions: ${{ needs.validate-and-detect-deletions.outputs.deletions }}
+    secrets: inherit
+
+  verify-safe-deletion:
+    needs: [validate-and-detect-deletions, check-usage]
+    if: always() && needs.validate-and-detect-deletions.outputs.deletions != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if deleted options are still in use
+        run: |
+          if [ "${{ needs.check-usage.result }}" != "success" ]; then
+            echo "Couldn't verify option usage, see workflow run in the options-automator repo."
+            exit 1
+          fi
+
+          IN_USE="${{ needs.check-usage.outputs.in_use }}"
+
+          if [ -n "$IN_USE" ]; then
+            echo "Cannot delete options that are still defined in sentry-options-automator:"
+            echo "$IN_USE"
+            exit 1
+          else
+            echo "All deleted options are safe to remove"
+          fi

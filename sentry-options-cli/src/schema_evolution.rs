@@ -77,10 +77,6 @@ fn compare_schemas(
                 namespace: namespace.to_string(),
                 name: key.to_string(),
             });
-            errors.push(ValidationError::SchemaError {
-                file: format!("schemas/{}/schema.json", namespace).into(),
-                message: format!("Option '{}.{}' was removed", namespace, key),
-            });
             continue;
         };
 
@@ -98,6 +94,37 @@ fn compare_schemas(
                     namespace, key, old_meta.option_type, new_meta.option_type
                 ),
             });
+        }
+
+        // 5b. changing array items type
+        if old_meta.option_type == "array" && new_meta.option_type == "array" {
+            let old_items_type = old_meta
+                .property_schema
+                .get("items")
+                .and_then(|i| i.get("type"))
+                .and_then(|t| t.as_str());
+            let new_items_type = new_meta
+                .property_schema
+                .get("items")
+                .and_then(|i| i.get("type"))
+                .and_then(|t| t.as_str());
+
+            if old_items_type != new_items_type {
+                let old_type_str = old_items_type.unwrap_or("unknown");
+                let new_type_str = new_items_type.unwrap_or("unknown");
+                modified_options.push(SchemaChangeAction::TypeChanged {
+                    context: format!("{}.{}", namespace, key),
+                    old: format!("array<{}>", old_type_str),
+                    new: format!("array<{}>", new_type_str),
+                });
+                errors.push(ValidationError::SchemaError {
+                    file: format!("schemas/{}/schema.json", namespace).into(),
+                    message: format!(
+                        "Option '{}.{}' array items type changed from '{}' to '{}'",
+                        namespace, key, old_type_str, new_type_str
+                    ),
+                });
+            }
         }
 
         // 6. changing option default
@@ -141,9 +168,9 @@ fn compare_schemas(
 /// # Allowed changes:
 /// 1. Adding new namespaces
 /// 2. Adding new options
+/// 3. Removing options (if unused!)
 ///
 /// # Forbidden changes (will error):
-/// 3. Removing options
 /// 4. Removing namespaces
 /// 5. Changing option types
 /// 6. Changing default values
@@ -151,6 +178,7 @@ pub fn detect_changes(
     old_dir: &Path,
     new_dir: &Path,
     repo_name: &str,
+    report_deletions: bool,
     quiet: bool,
 ) -> ValidationResult<()> {
     let old_registry = SchemaRegistry::from_directory(old_dir)?;
@@ -215,12 +243,12 @@ pub fn detect_changes(
     }
 
     if !quiet {
-        println!("Schema Changes:");
+        eprintln!("Schema Changes:");
         if changelog.is_empty() {
-            println!("\tNo changes");
+            eprintln!("\tNo changes");
         }
-        for change in changelog {
-            println!("\t{}", change);
+        for change in &changelog {
+            eprintln!("\t{}", change);
         }
     }
 
@@ -230,6 +258,17 @@ pub fn detect_changes(
             println!("\t{}", error);
         }
         return Err(ValidationError::ValidationErrors(errors));
+    }
+
+    if report_deletions {
+        // need to rebuild this because it's merged into the changelog
+        let mut deletions: Vec<String> = Vec::new();
+        for change in &changelog {
+            if let SchemaChangeAction::OptionRemoved { namespace, name } = change {
+                deletions.push(format!("{}:{}", namespace, name));
+            }
+        }
+        println!("{}", deletions.join(" "));
     }
 
     Ok(())
@@ -306,7 +345,7 @@ mod tests {
         create_schema(&old_dir, "test", &schema);
         create_schema(&new_dir, "test", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_ok());
     }
 
@@ -321,7 +360,7 @@ mod tests {
         create_schema(&old_dir, "test", &schema);
         // new_dir is empty - namespace was removed
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -333,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn test_removed_option_fails() {
+    fn test_removed_option_passes() {
         let (old_dir, new_dir) = setup_dirs();
 
         // Build old schema with two options
@@ -350,15 +389,8 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
-        assert!(result.is_err());
-        match result {
-            Err(ValidationError::ValidationErrors(errors)) => {
-                assert_eq!(errors.len(), 1);
-                assert_error_contains(&errors, "Option 'test.key2' was removed");
-            }
-            _ => panic!("Expected ValidationErrors for removed option"),
-        }
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -378,7 +410,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -386,6 +418,53 @@ mod tests {
                 assert_error_contains(&errors, "type changed from 'string' to 'integer'");
             }
             _ => panic!("Expected ValidationErrors for type change"),
+        }
+    }
+
+    #[test]
+    fn test_array_items_type_change_fails() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        // Build old schema with array of integers
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "array-key".to_string(),
+            json!({
+                "type": "array",
+                "items": {"type": "integer"},
+                "default": [1, 2, 3],
+                "description": "Test array option"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        // Modify schema - change array items type to string
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "array-key".to_string(),
+                json!({
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": ["a", "b", "c"],
+                    "description": "Test array option"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert!(!errors.is_empty());
+                assert_error_contains(
+                    &errors,
+                    "array items type changed from 'integer' to 'string'",
+                );
+            }
+            _ => panic!("Expected ValidationErrors for array items type change"),
         }
     }
 
@@ -406,7 +485,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -431,7 +510,7 @@ mod tests {
         create_schema(&new_dir, "test", &schema);
         create_schema(&new_dir, "test-new", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_ok());
     }
 
@@ -452,7 +531,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_ok());
     }
 
@@ -473,7 +552,7 @@ mod tests {
         create_schema(&old_dir, "test", &old_schema);
         create_schema(&new_dir, "test", &new_schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -504,7 +583,7 @@ mod tests {
         create_schema(&new_dir, "test-ns1", &schema1);
         create_schema(&new_dir, "test-ns2", &schema2);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "test", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_ok());
     }
 
@@ -519,7 +598,7 @@ mod tests {
         create_schema(&old_dir, "myrepo", &schema);
         create_schema(&new_dir, "myrepo", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", false, true);
         assert!(result.is_ok());
     }
 
@@ -534,7 +613,7 @@ mod tests {
         create_schema(&old_dir, "myrepo-testing", &schema);
         create_schema(&new_dir, "myrepo-testing", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", false, true);
         assert!(result.is_ok());
     }
 
@@ -548,7 +627,7 @@ mod tests {
 
         create_schema(&new_dir, "other-testing", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {
@@ -568,7 +647,7 @@ mod tests {
 
         create_schema(&new_dir, "testing", &schema);
 
-        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", true);
+        let result = detect_changes(old_dir.path(), new_dir.path(), "myrepo", false, true);
         assert!(result.is_err());
         match result {
             Err(ValidationError::ValidationErrors(errors)) => {

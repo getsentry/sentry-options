@@ -1,4 +1,64 @@
 # Changelog
+## 0.0.14
+
+### New Features ✨
+
+#### Cli
+
+- Output deletions with flag by @kenzoengineer in [#79](https://github.com/getsentry/sentry-options/pull/79)
+- Add option usage check by @kenzoengineer in [#77](https://github.com/getsentry/sentry-options/pull/77)
+
+#### Other
+
+- (docs) Update claude skills and docs by @hubertdeng123 in [#70](https://github.com/getsentry/sentry-options/pull/70)
+- (release) Add uv setup step in release by @kenzoengineer in [#83](https://github.com/getsentry/sentry-options/pull/83)
+- (validation) Adds supports for lists of primitives by @kenzoengineer in [#69](https://github.com/getsentry/sentry-options/pull/69)
+
+### Bug Fixes 🐛
+
+- (cli) Fix merge conflict issue by @kenzoengineer in [#82](https://github.com/getsentry/sentry-options/pull/82)
+
+### Internal Changes 🔧
+
+- (release) Regenerate the uv lock on release + update composite action to use musl by @kenzoengineer in [#76](https://github.com/getsentry/sentry-options/pull/76)
+- Remove old python code by @hubertdeng123 in [#81](https://github.com/getsentry/sentry-options/pull/81)
+
+## 0.0.13
+
+### Bug Fixes 🐛
+
+- (ci) Musl binary but manylinux python by @kenzoengineer in [#75](https://github.com/getsentry/sentry-options/pull/75)
+
+## 0.0.12
+
+### New Features ✨
+
+- (deployment) Remove target from configmap filename by @kenzoengineer in [#74](https://github.com/getsentry/sentry-options/pull/74)
+- (docs) Populate README.md by @kenzoengineer in [#64](https://github.com/getsentry/sentry-options/pull/64)
+- (skills) Add onboard/add-option skills by @hubertdeng123 in [#68](https://github.com/getsentry/sentry-options/pull/68)
+- (watcher) Allow suppression of missing dir errors with env var by @kenzoengineer in [#73](https://github.com/getsentry/sentry-options/pull/73)
+
+## 0.0.11
+
+### New Features ✨
+
+- (release) Use manylinux by @hubertdeng123 in [#67](https://github.com/getsentry/sentry-options/pull/67)
+
+## 0.0.10
+
+### New Features ✨
+
+- (validation) Improve value validation error message by @kenzoengineer in [#66](https://github.com/getsentry/sentry-options/pull/66)
+
+### Internal Changes 🔧
+
+- (ci) Bump validate-schema version to 0.0.9 and add auto bumping by @kenzoengineer in [#63](https://github.com/getsentry/sentry-options/pull/63)
+- Update integration guide by @hubertdeng123 in [#58](https://github.com/getsentry/sentry-options/pull/58)
+
+### Other
+
+- demo: New string option by @kenzoengineer in [#65](https://github.com/getsentry/sentry-options/pull/65)
+
 ## 0.0.9
 
 ### New Features ✨

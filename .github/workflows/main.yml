@@ -9,21 +9,6 @@ on:
   pull_request:
 
 jobs:
-  tox:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-        - {env: py312, python: '3.12'}
-        - {env: py313, python: '3.13'}
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python }}
-    - run: python -mpip install --upgrade setuptools tox virtualenv
-    - run: tox -e ${{ matrix.env }}
-
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-24.04
@@ -73,25 +58,23 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            manylinux: musllinux_1_1
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
           - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            manylinux: musllinux_1_1
+            target: aarch64-unknown-linux-gnu
+            manylinux: auto
           - os: macos-14
             target: x86_64-apple-darwin
           - os: macos-15
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Install build dependencies
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release --out dist -m clients/python/Cargo.toml
+          before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: wheel-${{ matrix.target }}
@@ -130,9 +113,11 @@ jobs:
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Install build dependencies
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install musl tools (Linux only)
+        if: contains(matrix.target, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
       - name: Install Rust Toolchain
         run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }} --no-self-update
       - uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
@@ -196,14 +181,14 @@ jobs:
       - name: Run tests
         run: cargo test --features testing
 
-  validate-schema-changes:
-    name: Validate Schema Changes
+  check-cli-changes:
+    name: Check for CLI Changes
     runs-on: ubuntu-latest
+    outputs:
+      build-from-source: ${{ steps.cli-changes.outputs.cli }}
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
 
       - name: Check for CLI source changes
         id: cli-changes
@@ -216,10 +201,13 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
 
-      - uses: ./.github/actions/validate-schema
-        with:
-          schemas-path: sentry-options/schemas
-          build-from-source: ${{ steps.cli-changes.outputs.cli }}
+  validate-schema-changes:
+    name: Validate Schema Changes
+    needs: check-cli-changes
+    uses: ./.github/workflows/validate-schema.yml
+    with:
+      schemas-path: sentry-options/schemas
+      build-from-source: ${{ needs.check-cli-changes.outputs.build-from-source == 'true' }}
 
   python-client-test:
     name: Python Client Tests
@@ -261,7 +249,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build-python, build-python-sdist, build-rust, pre-commit, tox, rust-lint, rust-test, validate-schema-changes, python-client-test]
+    needs: [build-python, build-python-sdist, build-rust, pre-commit, rust-lint, rust-test, validate-schema-changes, python-client-test]
     if: always()
     runs-on: ubuntu-latest
     steps:

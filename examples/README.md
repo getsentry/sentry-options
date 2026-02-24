@@ -5,6 +5,7 @@ This guide walks through deploying the sentry-options example to a Kubernetes cl
 ## Overview
 
 The deployment model:
+
 - **Schemas** are baked into the Docker image at build time
 - **Values** are mounted via Kubernetes ConfigMap at runtime
 - The client watches for ConfigMap changes and hot-reloads values without pod restart
@@ -30,6 +31,7 @@ docker push REGION-docker.pkg.dev/PROJECT_ID/REPO/sentry-options-test:latest
 ```
 
 Example for sandbox `sbx-hdeng-1`:
+
 ```bash
 docker tag sentry-options-example \
   us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
@@ -98,7 +100,7 @@ spec:
       volumes:
       - name: values
         configMap:
-          name: sentry-options-sentry-options-testing-default
+          name: sentry-options-sentry-options-testing
 ```
 
 Apply the deployment:
