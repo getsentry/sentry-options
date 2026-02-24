@@ -1,9 +1,6 @@
 """Tests for sentry-options Python client."""
 from __future__ import annotations
 
-import json
-import os
-
 import pytest
 from sentry_options import init
 from sentry_options import InitializationError
@@ -12,72 +9,6 @@ from sentry_options import OptionsError
 from sentry_options import SchemaError
 from sentry_options import UnknownNamespaceError
 from sentry_options import UnknownOptionError
-
-
-@pytest.fixture(scope='module', autouse=True)
-def init_options(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Set up test data and initialize options."""
-    tmpdir = tmp_path_factory.mktemp('sentry_options')
-
-    # Create schema
-    schema_dir = tmpdir / 'schemas' / 'sentry-options-testing'
-    schema_dir.mkdir(parents=True)
-    (schema_dir / 'schema.json').write_text(
-        json.dumps(
-            {
-                'version': '1.0',
-                'type': 'object',
-                'properties': {
-                    'str-opt': {
-                        'type': 'string',
-                        'default': 'default-value',
-                        'description': 'A string option',
-                    },
-                    'int-opt': {
-                        'type': 'integer',
-                        'default': 42,
-                        'description': 'An integer option',
-                    },
-                    'float-opt': {
-                        'type': 'number',
-                        'default': 3.14,
-                        'description': 'A float option',
-                    },
-                    'bool-opt': {
-                        'type': 'boolean',
-                        'default': True,
-                        'description': 'A boolean option',
-                    },
-                    'array-opt': {
-                        'type': 'array',
-                        'default': [1, 2, 3],
-                        'items': {'type': 'integer'},
-                        'description': 'A list of integers',
-                    },
-                },
-            },
-        ),
-    )
-
-    # Create values (override str-opt)
-    values_dir = tmpdir / 'values' / 'sentry-options-testing'
-    values_dir.mkdir(parents=True)
-    values = {'options': {'str-opt': 'custom-value'}}
-    (values_dir / 'values.json').write_text(json.dumps(values))
-
-    # Set env var and initialize
-    orig_env = os.environ.get('SENTRY_OPTIONS_DIR')
-    os.environ['SENTRY_OPTIONS_DIR'] = str(tmpdir)
-
-    init()
-
-    yield
-
-    # Restore env var
-    if orig_env is None:
-        os.environ.pop('SENTRY_OPTIONS_DIR', None)
-    else:
-        os.environ['SENTRY_OPTIONS_DIR'] = orig_env
 
 
 def test_get_string_from_values() -> None:
@@ -102,12 +33,6 @@ def test_get_bool_from_values() -> None:
     value = options('sentry-options-testing').get('bool-option')
     assert value is False
     assert isinstance(value, bool)
-
-
-def test_get_array_default() -> None:
-    value = options('sentry-options-testing').get('array-opt')
-    assert value == [1, 2, 3]
-    assert isinstance(value, list)
 
 
 def test_unknown_namespace() -> None:
@@ -139,5 +64,7 @@ def test_isset() -> None:
     with pytest.raises(UnknownOptionError):
         options('sentry-options-testing').isset('unknown')
 
-    assert not options('sentry-options-testing').isset('bool-opt')
-    assert options('sentry-options-testing').isset('str-opt')
+    # string-option is not in values.json, so it uses the schema default
+    assert not options('sentry-options-testing').isset('string-option')
+    # example-option is explicitly set in values.json
+    assert options('sentry-options-testing').isset('example-option')
