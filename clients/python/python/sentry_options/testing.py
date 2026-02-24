@@ -11,40 +11,19 @@ Import this module to enable test overrides:
 from __future__ import annotations
 
 import contextlib
-import threading
 from collections.abc import Generator
-from typing import Any
 
-from sentry_options._core import _register_override_hook
+from sentry_options._core import _clear_override
+from sentry_options._core import _set_override
 from sentry_options._core import _validate_option
 
-# Thread-local override storage
-_local = threading.local()
-
-
-def _get_overrides() -> dict[tuple[str, str], Any]:
-    if not hasattr(_local, 'overrides'):
-        _local.overrides = {}
-    return _local.overrides
-
-
-def _override_hook(namespace: str, key: str) -> Any:
-    """Called by Rust extension on every get() when hook is registered."""
-    return _get_overrides().get((namespace, key))
-
-
-# Register hook when this module is imported
-# Silently ignore if already registered (e.g., multiple imports)
-try:
-    _register_override_hook(_override_hook)
-except RuntimeError:
-    pass
+OptionValue = str | int | float | bool | list[str | int | float | bool]
 
 
 @contextlib.contextmanager
 def override_options(
     namespace: str,
-    overrides: dict[str, Any],
+    overrides: dict[str, OptionValue],
 ) -> Generator[None]:
     """
     Override option values for testing.
@@ -63,16 +42,13 @@ def override_options(
 
     Note: Overrides are thread-local. They won't apply to spawned threads.
     """
-    # Validate all overrides before applying any (auto-inits if needed)
+    # Validate all overrides before applying any
     for key, value in overrides.items():
         _validate_option(namespace, key, value)
 
-    store = _get_overrides()
-    previous: dict[str, Any] = {}
-
+    previous: dict[str, object] = {}
     for key, value in overrides.items():
-        previous[key] = store.get((namespace, key))
-        store[(namespace, key)] = value
+        previous[key] = _set_override(namespace, key, value)
 
     try:
         yield
@@ -80,9 +56,9 @@ def override_options(
         for key in overrides:
             prev = previous[key]
             if prev is None:
-                store.pop((namespace, key), None)
+                _clear_override(namespace, key)
             else:
-                store[(namespace, key)] = prev
+                _set_override(namespace, key, prev)
 
 
 __all__ = ['override_options']

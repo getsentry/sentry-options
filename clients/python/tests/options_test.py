@@ -35,6 +35,12 @@ def test_get_bool_from_values() -> None:
     assert isinstance(value, bool)
 
 
+def test_get_array_default() -> None:
+    value = options('sentry-options-testing').get('array-option')
+    assert value == [1, 2, 3]
+    assert isinstance(value, list)
+
+
 def test_unknown_namespace() -> None:
     with pytest.raises(UnknownNamespaceError, match='nonexistent'):
         options('nonexistent').get('any-key')

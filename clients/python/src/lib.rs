@@ -1,5 +1,7 @@
 //! Python bindings for sentry-options using PyO3.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
@@ -11,8 +13,10 @@ use serde_json::Value;
 // Global options instance
 static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 
-// Hook for testing module to register override checker
-static OVERRIDE_HOOK: OnceLock<Py<PyAny>> = OnceLock::new();
+// Thread-local override storage for testing
+thread_local! {
+    static OVERRIDES: RefCell<HashMap<String, HashMap<String, Value>>> = RefCell::new(HashMap::new());
+}
 
 // Custom exception hierarchy
 pyo3::create_exception!(
@@ -87,9 +91,21 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
         )?))
     } else if let Ok(s) = obj.extract::<String>() {
         Ok(Value::String(s))
+    } else if let Ok(list) = obj.cast::<PyList>() {
+        let items: Result<Vec<Value>, _> = list.iter().map(|item| py_to_json(&item)).collect();
+        Ok(Value::Array(items?))
     } else {
         Err(PyValueError::new_err("Unsupported type for override"))
     }
+}
+
+/// Check thread-local overrides for a value.
+fn get_override(namespace: &str, key: &str) -> Option<Value> {
+    OVERRIDES.with(|o| {
+        o.borrow()
+            .get(namespace)
+            .and_then(|ns| ns.get(key).cloned())
+    })
 }
 
 fn options_err(err: RustOptionsError) -> PyErr {
@@ -144,12 +160,8 @@ struct NamespaceOptions {
 impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
-        // Fast path: check if hook registered (atomic load, ~1-2ns)
-        if let Some(hook) = OVERRIDE_HOOK.get() {
-            let result = hook.call1(py, (&self.namespace, key))?;
-            if !result.is_none(py) {
-                return Ok(result);
-            }
+        if let Some(value) = get_override(&self.namespace, key) {
+            return json_to_py(py, &value);
         }
 
         // Normal path - get from values/defaults
@@ -172,14 +184,37 @@ impl NamespaceOptions {
     }
 }
 
-// Testing utilities - hook registration and validation
+// Testing utilities - override storage and validation
 
-/// Register an override hook function (called by testing.py on import).
+/// Set a thread-local override. Returns the previous value (as a Python object) or None.
 #[pyfunction]
-fn _register_override_hook(hook: Py<PyAny>) -> PyResult<()> {
-    OVERRIDE_HOOK
-        .set(hook)
-        .map_err(|_| PyRuntimeError::new_err("Override hook already registered"))
+fn _set_override(
+    py: Python<'_>,
+    namespace: String,
+    key: String,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let json_value = py_to_json(value)?;
+    let previous = OVERRIDES.with(|o| {
+        o.borrow_mut()
+            .entry(namespace)
+            .or_default()
+            .insert(key, json_value)
+    });
+    match previous {
+        Some(v) => json_to_py(py, &v),
+        None => Ok(py.None()),
+    }
+}
+
+/// Clear a thread-local override.
+#[pyfunction]
+fn _clear_override(namespace: String, key: String) {
+    OVERRIDES.with(|o| {
+        if let Some(ns_map) = o.borrow_mut().get_mut(&namespace) {
+            ns_map.remove(&key);
+        }
+    });
 }
 
 /// Validate an option value against the schema (used by testing.py).
@@ -218,7 +253,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<InitializationError>(),
     )?;
     // Testing utilities (only called by testing.py)
-    m.add_function(wrap_pyfunction!(_register_override_hook, m)?)?;
+    m.add_function(wrap_pyfunction!(_set_override, m)?)?;
+    m.add_function(wrap_pyfunction!(_clear_override, m)?)?;
     m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
     Ok(())
 }
