@@ -12,10 +12,10 @@
       "default": 0.0,
       "description": "An example float option"
     },
-    "int-option": {
-      "type": "integer",
-      "default": 0,
-      "description": "An example integer option"
+    "bool-option": {
+      "type": "boolean",
+      "default": false,
+      "description": "An example boolean option"
     },
     "string-option": {
       "type": "string",
