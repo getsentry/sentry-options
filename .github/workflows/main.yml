@@ -203,6 +203,7 @@ jobs:
     name: Validate Schema Changes
     needs: check-cli-changes
     uses: ./.github/workflows/validate-schema.yml
+    secrets: inherit
     with:
       schemas-path: sentry-options/schemas
       build-from-source: ${{ needs.check-cli-changes.outputs.build-from-source == 'true' }}

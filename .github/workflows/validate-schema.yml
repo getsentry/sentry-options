@@ -21,9 +21,8 @@ permissions:
 
 jobs:
   validate-and-detect-deletions:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    outputs:
-      deletions: ${{ steps.validate.outputs.deletions }}
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -31,21 +30,21 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust Toolchain
-        if: github.event_name == 'pull_request' && inputs.build-from-source
+        if: inputs.build-from-source
         run: rustup toolchain install stable --profile minimal --no-self-update
 
       - name: Cache Cargo
-        if: github.event_name == 'pull_request' && inputs.build-from-source
+        if: inputs.build-from-source
         uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
 
       - name: Build sentry-options-cli from source
-        if: github.event_name == 'pull_request' && inputs.build-from-source
+        if: inputs.build-from-source
         run: |
           cargo build --release -p sentry-options-cli
           echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
 
       - name: Download sentry-options-cli from releases
-        if: github.event_name == 'pull_request' && !inputs.build-from-source
+        if: '!inputs.build-from-source'
         env:
           CLI_VERSION: ${{ inputs.cli-version }}
           CLI_BINARY: sentry-options-cli-x86_64-unknown-linux-musl
@@ -56,7 +55,6 @@ jobs:
 
       - name: Validate schema changes and detect deletions
         id: validate
-        if: github.event_name == 'pull_request'
         env:
           SENTRY_OPTIONS_DIR: "${{ inputs.schemas-path }}"
         run: |
@@ -69,3 +67,43 @@ jobs:
             --report-deletions)
 
           echo "deletions=$DELETIONS" >> $GITHUB_OUTPUT
+
+      - name: Copy CLI binary before later checkout overwrites it
+        if: steps.validate.outputs.deletions != '' && inputs.build-from-source
+        run: cp "${{ github.workspace }}/target/release/sentry-options-cli" /usr/local/bin/sentry-options-cli
+
+      - name: Generate token for sentry-options-automator
+        id: app-token
+        if: steps.validate.outputs.deletions != ''
+        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
+        with:
+          app_id: ${{ vars.SENTRY_INTERNAL_APP_ID }}
+          private_key: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
+
+      - name: Checkout sentry-options-automator (option-values only)
+        if: steps.validate.outputs.deletions != ''
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: getsentry/sentry-options-automator
+          token: ${{ steps.app-token.outputs.token }}
+          sparse-checkout: option-values
+          sparse-checkout-cone-mode: true
+
+      - name: Check option usage
+        if: steps.validate.outputs.deletions != ''
+        env:
+          DELETIONS: ${{ steps.validate.outputs.deletions }}
+        run: |
+          set -euo pipefail
+
+          RESULT=$(sentry-options-cli check-option-usage \
+            --deletions "$DELETIONS" \
+            --root ./option-values)
+
+          if [ -n "$RESULT" ]; then
+            echo "Cannot delete options that are still defined in sentry-options-automator:"
+            echo "$RESULT"
+            exit 1
+          fi
+
+          echo "All deleted options are safe to remove"
