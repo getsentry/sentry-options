@@ -123,6 +123,7 @@ ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 
 #### 3. Add Dependency
 
+**Python:**
 ```toml
 # pyproject.toml
 dependencies = [
@@ -130,8 +131,16 @@ dependencies = [
 ]
 ```
 
+**Rust:**
+```toml
+# Cargo.toml
+[dependencies]
+sentry-options = "0.0.14"
+```
+
 #### 4. Initialize and Use
 
+**Python:**
 ```python
 from sentry_options import init, options
 
@@ -146,11 +155,28 @@ if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
 ```
 
+**Rust:**
+```rust
+use sentry_options::{init, options};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
+
+    let opts = options("seer");
+    if opts.get("feature.enabled")? == serde_json::json!(true) {
+        let rate = opts.get("feature.rate_limit")?;
+    }
+    Ok(())
+}
+```
+
 #### 5. Override Options in Tests
 
-Use `override_options` to temporarily replace option values in tests. Overrides are validated against the schema — unknown keys and type mismatches raise errors.
+Use `override_options` to temporarily replace option values in tests. Overrides are validated against the schema — unknown keys and type mismatches raise errors. Overrides are thread-local and won't apply to spawned threads.
 
-**Setup:** Add a `conftest.py` to initialize options once per test session:
+**Python:**
+
+Add a `conftest.py` to initialize options once per test session:
 
 ```python
 # conftest.py
@@ -161,8 +187,6 @@ from sentry_options import init
 def _init_options() -> None:
     init()
 ```
-
-**Usage:**
 
 ```python
 from sentry_options import options
@@ -180,7 +204,27 @@ def test_nested_overrides():
         assert options('seer').get('feature.rate_limit') == 50
 ```
 
-Overrides are thread-local and won't apply to spawned threads.
+**Rust:**
+
+Use `ensure_initialized()` for idempotent init (safe to call from parallel test threads). `override_options()` returns a guard that restores values when dropped.
+
+```rust
+use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::options;
+use serde_json::json;
+
+#[test]
+fn test_feature_enabled() {
+    ensure_initialized().unwrap();
+    let _guard = override_options(&[
+        ("seer", "feature.enabled", json!(true)),
+    ]).unwrap();
+
+    let opts = options("seer");
+    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
+    // guard dropped here — value restored
+}
+```
 
 #### 6. Test Locally
 

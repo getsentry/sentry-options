@@ -225,12 +225,13 @@ def test_nested():
 ```rust
 use sentry_options::{init, options};
 
-fn main() {
-    init().unwrap();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
 
     let opts = options("getsentry");
-    let url = opts.get("system.url-prefix").unwrap();
-    let rate = opts.get("traces.sample-rate").unwrap();
+    let url = opts.get("system.url-prefix")?;
+    let rate = opts.get("traces.sample-rate")?;
+    Ok(())
 }
 ```
 
