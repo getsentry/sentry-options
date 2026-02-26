@@ -146,9 +146,46 @@ if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
 ```
 
-#### 5. Test Locally
+#### 5. Override Options in Tests
 
-Before deploying, test your integration locally. The library automatically looks for a `sentry-options/` directory in your working directory.
+Use `override_options` to temporarily replace option values in tests. Overrides are validated against the schema — unknown keys and type mismatches raise errors.
+
+**Setup:** Add a `conftest.py` to initialize options once per test session:
+
+```python
+# conftest.py
+import pytest
+from sentry_options import init
+
+@pytest.fixture(scope='session', autouse=True)
+def _init_options() -> None:
+    init()
+```
+
+**Usage:**
+
+```python
+from sentry_options import options
+from sentry_options.testing import override_options
+
+def test_feature_enabled():
+    with override_options('seer', {'feature.enabled': True}):
+        assert options('seer').get('feature.enabled') is True
+
+# Nesting works — inner overrides restore to outer values on exit
+def test_nested_overrides():
+    with override_options('seer', {'feature.rate_limit': 50}):
+        with override_options('seer', {'feature.rate_limit': 100}):
+            assert options('seer').get('feature.rate_limit') == 100
+        assert options('seer').get('feature.rate_limit') == 50
+```
+
+Overrides are thread-local and won't apply to spawned threads.
+
+#### 6. Test Locally
+
+Before deploying, test your integration locally.
+ The library automatically looks for a `sentry-options/` directory in your working directory.
 
 **Remember:** Namespace directories must be prefixed with your repo name (e.g., `seer`, `seer-autofix`).
 
@@ -183,7 +220,7 @@ sentry-options/
 
 To test hot-reload, modify `values.json` while your service is running - changes should be picked up within 5 seconds.
 
-#### 6. Add Schema Validation CI
+#### 7. Add Schema Validation CI
 
 `.github/workflows/validate-sentry-options.yml`:
 ```yaml
