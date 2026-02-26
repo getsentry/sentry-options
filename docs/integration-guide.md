@@ -273,29 +273,29 @@ PR: Update schema.json    →    PR: Update repos.json SHA
 
 ### Phase 3: ops Repo Changes
 
-Can happen anytime - use `optional: true` so pods start without ConfigMap.
+Can happen anytime — pods start normally without the ConfigMap, falling back to schema defaults.
 
-The ops repo uses Jinja2 templating. Add volume and volumeMount to your deployment.yaml:
+Add pod annotations to your deployment so the sentry-options injector automatically mounts the ConfigMap:
 
 ```yaml
 # deployment.yaml
-      containers:
-        - name: {{ values.service }}
-          # ... existing config ...
-          volumeMounts:
-          # ... existing mounts ...
-          - name: sentry-options-values
-            mountPath: /etc/sentry-options/values/{namespace}
-            readOnly: true
-      volumes:
-      # ... existing volumes ...
-      - name: sentry-options-values
-        configMap:
-          name: sentry-options-{namespace}
-          optional: true  # Pod starts with defaults if ConfigMap missing
+spec:
+  template:
+    metadata:
+      annotations:
+        options.sentry.io/inject: 'true'
+        options.sentry.io/namespace: {namespace}
 ```
 
-Replace `{namespace}` with your actual namespace (e.g., `seer`). The ConfigMap name is simply `sentry-options-{namespace}` (e.g., `sentry-options-seer`), with the appropriate target's values deployed to each region's cluster.
+The injector automatically adds the necessary volumes and volume mounts based on these annotations. No manual volume configuration is needed.
+
+For multiple namespaces, use a comma-separated list:
+
+```yaml
+options.sentry.io/namespace: seer-code-review,seer
+```
+
+Replace `{namespace}` with your actual namespace (e.g., `seer`). The appropriate target's values are deployed to each region's cluster.
 
 ## ConfigMap Generation
 
