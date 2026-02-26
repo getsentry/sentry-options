@@ -10,7 +10,6 @@ use sentry_options_validation::{
 use serde_json::Value;
 use thiserror::Error;
 
-#[cfg(feature = "testing")]
 pub mod testing;
 
 static GLOBAL_OPTIONS: OnceLock<Options> = OnceLock::new();
@@ -71,7 +70,6 @@ impl Options {
 
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, namespace: &str, key: &str) -> Result<Value> {
-        #[cfg(feature = "testing")]
         if let Some(value) = testing::get_override(namespace, key) {
             return Ok(value);
         }

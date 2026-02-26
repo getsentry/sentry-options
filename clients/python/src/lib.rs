@@ -1,7 +1,5 @@
 //! Python bindings for sentry-options using PyO3.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
@@ -12,11 +10,6 @@ use serde_json::Value;
 
 // Global options instance
 static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
-
-// Thread-local override storage for testing
-thread_local! {
-    static OVERRIDES: RefCell<HashMap<String, HashMap<String, Value>>> = RefCell::new(HashMap::new());
-}
 
 // Custom exception hierarchy
 pyo3::create_exception!(
@@ -99,15 +92,6 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
     }
 }
 
-/// Check thread-local overrides for a value.
-fn get_override(namespace: &str, key: &str) -> Option<Value> {
-    OVERRIDES.with(|o| {
-        o.borrow()
-            .get(namespace)
-            .and_then(|ns| ns.get(key).cloned())
-    })
-}
-
 fn options_err(err: RustOptionsError) -> PyErr {
     match err {
         RustOptionsError::UnknownNamespace(ns) => {
@@ -160,11 +144,6 @@ struct NamespaceOptions {
 impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
-        if let Some(value) = get_override(&self.namespace, key) {
-            return json_to_py(py, &value);
-        }
-
-        // Normal path - get from values/defaults
         let value = self
             .options
             .get(&self.namespace, key)
@@ -195,12 +174,8 @@ fn _set_override(
     value: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let json_value = py_to_json(value)?;
-    let previous = OVERRIDES.with(|o| {
-        o.borrow_mut()
-            .entry(namespace)
-            .or_default()
-            .insert(key, json_value)
-    });
+    let previous = ::sentry_options::testing::get_override(&namespace, &key);
+    ::sentry_options::testing::set_override(&namespace, &key, json_value);
     match previous {
         Some(v) => json_to_py(py, &v),
         None => Ok(py.None()),
@@ -210,11 +185,7 @@ fn _set_override(
 /// Clear a thread-local override.
 #[pyfunction]
 fn _clear_override(namespace: String, key: String) {
-    OVERRIDES.with(|o| {
-        if let Some(ns_map) = o.borrow_mut().get_mut(&namespace) {
-            ns_map.remove(&key);
-        }
-    });
+    ::sentry_options::testing::clear_override(&namespace, &key);
 }
 
 /// Validate an option value against the schema (used by testing.py).

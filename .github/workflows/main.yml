@@ -179,7 +179,7 @@ jobs:
           key: ${{ github.job }}
 
       - name: Run tests
-        run: cargo test --features testing
+        run: cargo test
 
   check-cli-changes:
     name: Check for CLI Changes
