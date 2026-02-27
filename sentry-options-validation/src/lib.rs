@@ -372,11 +372,12 @@ impl SchemaRegistry {
         // Extract option metadata before transforming the schema (feature properties won't have
         // type/default so they're naturally skipped by the existing extraction logic)
         let mut options = HashMap::new();
+        let mut has_feature_keys = false;
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 // Skip feature flag properties — they're handled by the Feature schema
                 if prop_name.starts_with("features.") {
-                    continue;
+                    has_feature_keys = true;
                 }
                 if let (Some(prop_type), Some(default_value)) = (
                     prop_value.get("type").and_then(|t| t.as_str()),
@@ -395,15 +396,8 @@ impl SchemaRegistry {
             }
         }
 
-        // Find all the feature flag keys and update the schema for those keys
-        // to reference the Feature definition so that values validation knows how
-        // to validate the feature flag structure.
-        let has_feature_keys = schema
-            .get("properties")
-            .and_then(|p| p.as_object())
-            .map(|props| props.keys().any(|k| k.starts_with("features.")))
-            .unwrap_or_default();
-
+        // If an options schema includes a feature flag, splice in the definitions
+        // so that values can be validated.
         if has_feature_keys {
             let feature_defs: Value =
                 serde_json::from_str(FEATURE_SCHEMA_DEFS_JSON).map_err(|e| {
