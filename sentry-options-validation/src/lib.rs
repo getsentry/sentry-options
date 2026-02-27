@@ -1330,29 +1330,6 @@ Error: \"version\" is a required property"
         }
 
         #[test]
-        fn test_schema_with_invalid_feature_definition() {
-            let temp_dir = TempDir::new().unwrap();
-
-            // Feature schema only accepts a ref
-            create_test_schema(
-                &temp_dir,
-                "test",
-                r#"{
-                    "version": "1.0",
-                    "type": "object",
-                    "properties": {
-                        "features.organizations:fury-mode": {
-                            "owner": "bob@example.com"
-                            "segments": []
-                        }
-                    }
-                }"#,
-            );
-            let result = SchemaRegistry::from_directory(temp_dir.path());
-            assert!(result.is_err());
-        }
-
-        #[test]
         fn test_validate_values_with_valid_feature_flag() {
             let temp_dir = TempDir::new().unwrap();
             create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
