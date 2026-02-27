@@ -398,19 +398,13 @@ impl SchemaRegistry {
         // Find all the feature flag keys and update the schema for those keys
         // to reference the Feature definition so that values validation knows how
         // to validate the feature flag structure.
-        let feature_keys: Vec<String> = schema
+        let has_feature_keys = schema
             .get("properties")
             .and_then(|p| p.as_object())
-            .map(|props| {
-                props
-                    .keys()
-                    .filter(|k| k.starts_with("features."))
-                    .cloned()
-                    .collect()
-            })
+            .map(|props| props.keys().any(|k| k.starts_with("features.")))
             .unwrap_or_default();
 
-        if !feature_keys.is_empty() {
+        if has_feature_keys {
             let feature_defs: Value =
                 serde_json::from_str(FEATURE_SCHEMA_DEFS_JSON).map_err(|e| {
                     ValidationError::InternalError(format!(
@@ -421,12 +415,6 @@ impl SchemaRegistry {
 
             if let Some(obj) = schema.as_object_mut() {
                 obj.insert("definitions".to_string(), feature_defs);
-            }
-
-            if let Some(properties) = schema.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                for key in feature_keys {
-                    properties.insert(key, json!({"$ref": "#/definitions/Feature"}));
-                }
             }
         }
 
@@ -1306,25 +1294,20 @@ Error: \"version\" is a required property"
     mod feature_flag_tests {
         use super::*;
 
-        const FEATURE_VALUES: &str = r#"{
+        const FEATURE_SCHEMA: &str = r##"{
             "version": "1.0",
             "type": "object",
             "properties": {
                 "features.organizations:fury-mode": {
-                    "name": "organizations:fury-mode",
-                    "owner": {"team": "hybrid-cloud"},
-                    "segments": [],
-                    "created_at": "2024-01-01",
-                    "enabled": true,
-                    "description": "enables fury mode"
+                  "$ref": "#/definitions/Feature"
                 }
             }
-        }"#;
+        }"##;
 
         #[test]
         fn test_schema_with_valid_feature_flag() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             assert!(SchemaRegistry::from_directory(temp_dir.path()).is_ok());
         }
 
@@ -1334,7 +1317,7 @@ Error: \"version\" is a required property"
             create_test_schema(
                 &temp_dir,
                 "test",
-                r#"{
+                r##"{
                     "version": "1.0",
                     "type": "object",
                     "properties": {
@@ -1344,48 +1327,19 @@ Error: \"version\" is a required property"
                             "description": "A regular option"
                         },
                         "features.organizations:fury-mode": {
-                            "name": "organizations:fury-mode",
-                            "owner": {"team": "hybrid-cloud"},
-                            "segments": [],
-                            "created_at": "2024-01-01"
+                            "$ref": "#/definitions/Feature"
                         }
                     }
-                }"#,
+                }"##,
             );
             assert!(SchemaRegistry::from_directory(temp_dir.path()).is_ok());
         }
 
         #[test]
-        fn test_schema_with_feature_flag_missing_owner_fails() {
+        fn test_schema_with_invalid_feature_definition() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(
-                &temp_dir,
-                "test",
-                r#"{
-                    "version": "1.0",
-                    "type": "object",
-                    "properties": {
-                        "features.organizations:fury-mode": {
-                            "name": "organizations:fury-mode",
-                            "segments": [],
-                            "created_at": "2024-01-01"
-                        }
-                    }
-                }"#,
-            );
-            let result = SchemaRegistry::from_directory(temp_dir.path());
-            assert!(result.is_err());
-            match result {
-                Err(ValidationError::SchemaError { message, .. }) => {
-                    assert!(message.contains("\"owner\" is a required property"));
-                }
-                _ => panic!("Expected SchemaError for missing owner"),
-            }
-        }
 
-        #[test]
-        fn test_schema_with_feature_flag_missing_created_at_fails() {
-            let temp_dir = TempDir::new().unwrap();
+            // Feature schema only accepts a ref
             create_test_schema(
                 &temp_dir,
                 "test",
@@ -1394,8 +1348,7 @@ Error: \"version\" is a required property"
                     "type": "object",
                     "properties": {
                         "features.organizations:fury-mode": {
-                            "name": "organizations:fury-mode",
-                            "owner": {"team": "hybrid-cloud"},
+                            "owner": "bob@example.com"
                             "segments": []
                         }
                     }
@@ -1403,18 +1356,12 @@ Error: \"version\" is a required property"
             );
             let result = SchemaRegistry::from_directory(temp_dir.path());
             assert!(result.is_err());
-            match result {
-                Err(ValidationError::SchemaError { message, .. }) => {
-                    assert!(message.contains("\"created_at\" is a required property"));
-                }
-                _ => panic!("Expected SchemaError for missing created_at"),
-            }
         }
 
         #[test]
         fn test_validate_values_with_valid_feature_flag() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
             let result = registry.validate_values(
@@ -1434,7 +1381,7 @@ Error: \"version\" is a required property"
         #[test]
         fn test_validate_values_with_feature_flag_missing_required_field_fails() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
             // Missing owner field
@@ -1454,7 +1401,7 @@ Error: \"version\" is a required property"
         #[test]
         fn test_validate_values_with_feature_flag_invalid_owner_fails() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
             // Owner missing required team field
@@ -1475,7 +1422,7 @@ Error: \"version\" is a required property"
         #[test]
         fn test_validate_values_feature_with_segments_and_conditions() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
             let result = registry.validate_values(
@@ -1508,7 +1455,7 @@ Error: \"version\" is a required property"
         #[test]
         fn test_validate_values_feature_with_multiple_condition_operators() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
             let result = registry.validate_values(
@@ -1539,7 +1486,7 @@ Error: \"version\" is a required property"
         #[test]
         fn test_validate_values_feature_with_invalid_condition_operator_fails() {
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
             // Use an operator that doesn't exist
@@ -1570,9 +1517,9 @@ Error: \"version\" is a required property"
 
         #[test]
         fn test_schema_feature_flag_not_in_options_map() {
-            // Feature flags are not added to the options HashMap (handled separately in Stage 3)
+            // Feature flags are not added to default values
             let temp_dir = TempDir::new().unwrap();
-            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
             let schema = registry.get("test").unwrap();
 
@@ -1589,7 +1536,7 @@ Error: \"version\" is a required property"
             create_test_schema(
                 &temp_dir,
                 "test",
-                r#"{
+                r##"{
                     "version": "1.0",
                     "type": "object",
                     "properties": {
@@ -1599,13 +1546,10 @@ Error: \"version\" is a required property"
                             "description": "A regular option"
                         },
                         "features.organizations:fury-mode": {
-                            "name": "organizations:fury-mode",
-                            "owner": {"team": "hybrid-cloud"},
-                            "segments": [],
-                            "created_at": "2024-01-01"
+                            "$ref": "#/definitions/Feature"
                         }
                     }
-                }"#,
+                }"##,
             );
             let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 

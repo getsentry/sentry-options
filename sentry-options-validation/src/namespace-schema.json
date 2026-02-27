@@ -211,7 +211,13 @@
       "type": "object",
       "patternProperties": {
         "^features\\.": {
-          "$ref": "#/definitions/Feature"
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/Feature"
+            }
+          }
         },
         "^(?!features\\.)": {
           "type": "object",
