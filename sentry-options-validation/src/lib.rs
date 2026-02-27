@@ -23,6 +23,10 @@ use std::time::{Duration, Instant};
 
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
+
+/// Embedded Feature type definitions for injecting into namespace schemas that contain feature flags
+const FEATURE_SCHEMA_DEFS_JSON: &str = include_str!("feature-schema-defs.json");
+
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
 
@@ -365,22 +369,15 @@ impl SchemaRegistry {
         namespace: &str,
         path: &Path,
     ) -> ValidationResult<Arc<NamespaceSchema>> {
-        // Inject additionalProperties: false to reject unknown options
-        if let Some(obj) = schema.as_object_mut() {
-            obj.insert("additionalProperties".to_string(), json!(false));
-        }
-
-        // Use the schema file directly as the validator
-        let validator =
-            jsonschema::validator_for(&schema).map_err(|e| ValidationError::SchemaError {
-                file: path.to_path_buf(),
-                message: format!("Failed to compile validator: {}", e),
-            })?;
-
-        // Extract option metadata and validate types
+        // Extract option metadata before transforming the schema (feature properties won't have
+        // type/default so they're naturally skipped by the existing extraction logic)
         let mut options = HashMap::new();
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
+                // Skip feature flag properties — they're handled by the Feature schema
+                if prop_name.starts_with("features.") {
+                    continue;
+                }
                 if let (Some(prop_type), Some(default_value)) = (
                     prop_value.get("type").and_then(|t| t.as_str()),
                     prop_value.get("default"),
@@ -397,6 +394,53 @@ impl SchemaRegistry {
                 }
             }
         }
+
+        // Find all the feature flag keys and update the schema for those keys
+        // to reference the Feature definition so that values validation knows how
+        // to validate the feature flag structure.
+        let feature_keys: Vec<String> = schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .map(|props| {
+                props
+                    .keys()
+                    .filter(|k| k.starts_with("features."))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !feature_keys.is_empty() {
+            let feature_defs: Value =
+                serde_json::from_str(FEATURE_SCHEMA_DEFS_JSON).map_err(|e| {
+                    ValidationError::InternalError(format!(
+                        "Invalid feature-schema-defs JSON: {}",
+                        e
+                    ))
+                })?;
+
+            if let Some(obj) = schema.as_object_mut() {
+                obj.insert("definitions".to_string(), feature_defs);
+            }
+
+            if let Some(properties) = schema.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                for key in feature_keys {
+                    properties.insert(key, json!({"$ref": "#/definitions/Feature"}));
+                }
+            }
+        }
+
+        // Inject additionalProperties: false to reject unknown options
+        if let Some(obj) = schema.as_object_mut() {
+            obj.insert("additionalProperties".to_string(), json!(false));
+        }
+
+        // Use the (potentially transformed) schema as the validator
+        let validator =
+            jsonschema::validator_for(&schema).map_err(|e| ValidationError::SchemaError {
+                file: path.to_path_buf(),
+                message: format!("Failed to compile validator: {}", e),
+            })?;
 
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
@@ -1257,6 +1301,329 @@ Error: \"version\" is a required property"
         let result = registry.load_values_json(&values_dir);
 
         assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+    }
+
+    mod feature_flag_tests {
+        use super::*;
+
+        const FEATURE_VALUES: &str = r#"{
+            "version": "1.0",
+            "type": "object",
+            "properties": {
+                "features.organizations:fury-mode": {
+                    "name": "organizations:fury-mode",
+                    "owner": {"team": "hybrid-cloud"},
+                    "segments": [],
+                    "created_at": "2024-01-01",
+                    "enabled": true,
+                    "description": "enables fury mode"
+                }
+            }
+        }"#;
+
+        #[test]
+        fn test_schema_with_valid_feature_flag() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            assert!(SchemaRegistry::from_directory(temp_dir.path()).is_ok());
+        }
+
+        #[test]
+        fn test_schema_with_feature_and_regular_option() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "my-option": {
+                            "type": "string",
+                            "default": "hello",
+                            "description": "A regular option"
+                        },
+                        "features.organizations:fury-mode": {
+                            "name": "organizations:fury-mode",
+                            "owner": {"team": "hybrid-cloud"},
+                            "segments": [],
+                            "created_at": "2024-01-01"
+                        }
+                    }
+                }"#,
+            );
+            assert!(SchemaRegistry::from_directory(temp_dir.path()).is_ok());
+        }
+
+        #[test]
+        fn test_schema_with_feature_flag_missing_owner_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "features.organizations:fury-mode": {
+                            "name": "organizations:fury-mode",
+                            "segments": [],
+                            "created_at": "2024-01-01"
+                        }
+                    }
+                }"#,
+            );
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(result.is_err());
+            match result {
+                Err(ValidationError::SchemaError { message, .. }) => {
+                    assert!(message.contains("\"owner\" is a required property"));
+                }
+                _ => panic!("Expected SchemaError for missing owner"),
+            }
+        }
+
+        #[test]
+        fn test_schema_with_feature_flag_missing_created_at_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "features.organizations:fury-mode": {
+                            "name": "organizations:fury-mode",
+                            "owner": {"team": "hybrid-cloud"},
+                            "segments": []
+                        }
+                    }
+                }"#,
+            );
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(result.is_err());
+            match result {
+                Err(ValidationError::SchemaError { message, .. }) => {
+                    assert!(message.contains("\"created_at\" is a required property"));
+                }
+                _ => panic!("Expected SchemaError for missing created_at"),
+            }
+        }
+
+        #[test]
+        fn test_validate_values_with_valid_feature_flag() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "owner": {"team": "hybrid-cloud"},
+                        "segments": [],
+                        "created_at": "2024-01-01"
+                    }
+                }),
+            );
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_validate_values_with_feature_flag_missing_required_field_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            // Missing owner field
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "segments": [],
+                        "created_at": "2024-01-01"
+                    }
+                }),
+            );
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn test_validate_values_with_feature_flag_invalid_owner_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            // Owner missing required team field
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "owner": {"email": "test@example.com"},
+                        "segments": [],
+                        "created_at": "2024-01-01"
+                    }
+                }),
+            );
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn test_validate_values_feature_with_segments_and_conditions() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "owner": {"team": "hybrid-cloud"},
+                        "enabled": true,
+                        "created_at": "2024-01-01T00:00:00",
+                        "segments": [
+                            {
+                                "name": "internal orgs",
+                                "rollout": 50,
+                                "conditions": [
+                                    {
+                                        "property": "organization_slug",
+                                        "operator": "in",
+                                        "value": ["sentry-test", "sentry"]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }),
+            );
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_validate_values_feature_with_multiple_condition_operators() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "owner": {"team": "hybrid-cloud"},
+                        "created_at": "2024-01-01",
+                        "segments": [
+                            {
+                                "name": "free accounts",
+                                "conditions": [
+                                    {
+                                        "property": "subscription_is_free",
+                                        "operator": "equals",
+                                        "value": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }),
+            );
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_validate_values_feature_with_invalid_condition_operator_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            // Use an operator that doesn't exist
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "owner": {"team": "hybrid-cloud"},
+                        "created_at": "2024-01-01",
+                        "segments": [
+                            {
+                                "name": "test segment",
+                                "conditions": [
+                                    {
+                                        "property": "some_prop",
+                                        "operator": "invalid_operator",
+                                        "value": "some_value"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }),
+            );
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn test_schema_feature_flag_not_in_options_map() {
+            // Feature flags are not added to the options HashMap (handled separately in Stage 3)
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_VALUES);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            let schema = registry.get("test").unwrap();
+
+            assert!(
+                schema
+                    .get_default("features.organizations:fury-mode")
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn test_validate_values_feature_and_regular_option_together() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "my-option": {
+                            "type": "string",
+                            "default": "hello",
+                            "description": "A regular option"
+                        },
+                        "features.organizations:fury-mode": {
+                            "name": "organizations:fury-mode",
+                            "owner": {"team": "hybrid-cloud"},
+                            "segments": [],
+                            "created_at": "2024-01-01"
+                        }
+                    }
+                }"#,
+            );
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            // Both options are valid
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "my-option": "world",
+                    "features.organizations:fury-mode": {
+                        "name": "organizations:fury-mode",
+                        "owner": {"team": "hybrid-cloud"},
+                        "segments": [],
+                        "created_at": "2024-01-01"
+                    }
+                }),
+            );
+            assert!(result.is_ok());
+        }
     }
 
     mod watcher_tests {
