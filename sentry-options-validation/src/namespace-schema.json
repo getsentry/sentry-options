@@ -21,7 +21,8 @@
               "type": "string",
               "pattern": "#/definitions/Feature"
             }
-          }
+          },
+          "additionalProperties": false
         },
         "^(?!features\\.)": {
           "type": "object",
