@@ -346,9 +346,7 @@ fn eval_contains(ctx_val: &ContextValue, condition_val: &Value) -> bool {
             list.iter().any(|cv| cv.to_lowercase() == s_lower)
         }),
         ContextValue::IntList(list) => condition_val.as_i64().is_some_and(|i| list.contains(&i)),
-        ContextValue::FloatList(list) => condition_val
-            .as_f64()
-            .is_some_and(|f| list.iter().any(|&cv| cv == f)),
+        ContextValue::FloatList(list) => condition_val.as_f64().is_some_and(|f| list.contains(&f)),
         ContextValue::BoolList(list) => condition_val.as_bool().is_some_and(|b| list.contains(&b)),
         _ => false,
     }
