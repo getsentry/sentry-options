@@ -31,7 +31,7 @@ Phase 2: sentry-options-automator
     └── Register service in repos.json, create values files
               ↓ (merge)
 Phase 3: ops Repo
-    └── Add ConfigMap volume mount to deployment.yaml
+    └── Add injection annotations to deployment.yaml
 ```
 
 ---
@@ -282,40 +282,32 @@ After generating the files, tell the user:
 > 2. CI will validate your values against the schema
 > 3. Merge the PR - CD will deploy ConfigMaps to all regions
 >
-> When ready, continue to Phase 3 for the ops repo changes.
+> When ready, continue to Phase 3 for the ops repo annotation changes.
 
 ---
 
 ## Phase 3: ops Repo Changes
 
-This phase can happen anytime - use `optional: true` so pods start without the ConfigMap.
+This phase can happen anytime — pods start normally without the ConfigMap, falling back to schema defaults.
 
 ### 3.1 Show Deployment Changes
 
-Tell the user to add these volume mounts to their `deployment.yaml` in the ops repo:
+Tell the user to add pod annotations to their `deployment.yaml` in the ops repo so the sentry-options injector automatically mounts the ConfigMap:
 
 ```yaml
 # deployment.yaml
-      containers:
-        - name: {{ values.service }}
-          # ... existing config ...
-          volumeMounts:
-          # ... existing mounts ...
-          - name: sentry-options-values
-            mountPath: /etc/sentry-options/values/{namespace}
-            readOnly: true
-      volumes:
-      # ... existing volumes ...
-      - name: sentry-options-values
-        configMap:
-          name: sentry-options-{namespace}
-          optional: true  # Pod starts with defaults if ConfigMap missing
+spec:
+  template:
+    metadata:
+      annotations:
+        options.sentry.io/inject: 'true'
+        options.sentry.io/namespace: {namespace}
 ```
 
 **Template variables:**
-- `{namespace}` - The actual namespace (e.g., `seer`)
+- `{namespace}` - The actual namespace (e.g., `seer`). For multiple namespaces, use a comma-separated list (e.g., `seer-code-review,seer`).
 
-This produces ConfigMap names like `sentry-options-seer`. Each region's cluster receives the ConfigMap with values specific to that target.
+The injector automatically adds the necessary volumes and volume mounts based on these annotations. No manual volume configuration is needed.
 
 ---
 
