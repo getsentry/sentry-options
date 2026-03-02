@@ -283,7 +283,7 @@ impl Segment {
         if self.rollout >= 100 {
             return true;
         }
-        context.id() % 100 <= self.rollout
+        context.id() % 100 < self.rollout
     }
 }
 
