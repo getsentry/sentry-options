@@ -18,7 +18,7 @@
       },
       "enabled": {
         "type": "boolean",
-        "default": true,
+        "default": false,
         "description": "Whether the feature is enabled."
       },
       "created_at": {
