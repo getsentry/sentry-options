@@ -10,6 +10,7 @@ description = "Rust client for sentry-options config system"
 sentry-options-validation.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+sha1.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
