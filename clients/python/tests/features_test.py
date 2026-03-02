@@ -17,7 +17,7 @@ def make_context(
 
 def test_features_returns_checker() -> None:
     checker = features(NAMESPACE)
-    assert repr(checker) == 'FeatureChecker("sentry-options-testing")'
+    assert repr(checker) == 'FeatureChecker(...)'
 
 
 def test_feature_context_repr() -> None:
