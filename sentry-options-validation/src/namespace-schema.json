@@ -14,7 +14,7 @@
     "properties": {
       "type": "object",
       "patternProperties": {
-        "^features\\.": {
+        "^feature\\.": {
           "type": "object",
           "properties": {
             "$ref": {
@@ -25,7 +25,7 @@
           "required": ["$ref"],
           "additionalProperties": false
         },
-        "^(?!features\\.)": {
+        "^(?!feature\\.)": {
           "type": "object",
           "properties": {
             "type": {

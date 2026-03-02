@@ -376,7 +376,7 @@ impl SchemaRegistry {
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 // Skip feature flag properties — they're handled by the Feature schema
-                if prop_name.starts_with("features.") {
+                if prop_name.starts_with("feature.") {
                     has_feature_keys = true;
                 }
                 if let (Some(prop_type), Some(default_value)) = (
@@ -1292,7 +1292,7 @@ Error: \"version\" is a required property"
             "version": "1.0",
             "type": "object",
             "properties": {
-                "features.organizations:fury-mode": {
+                "feature.organizations:fury-mode": {
                   "$ref": "#/definitions/Feature"
                 }
             }
@@ -1320,7 +1320,7 @@ Error: \"version\" is a required property"
                             "default": "hello",
                             "description": "A regular option"
                         },
-                        "features.organizations:fury-mode": {
+                        "feature.organizations:fury-mode": {
                             "$ref": "#/definitions/Feature"
                         }
                     }
@@ -1341,7 +1341,7 @@ Error: \"version\" is a required property"
                     "version": "1.0",
                     "type": "object",
                     "properties": {
-                        "features.organizations:fury-mode": {
+                        "feature.organizations:fury-mode": {
                             "nope": "nope"
                         }
                     }
@@ -1360,7 +1360,7 @@ Error: \"version\" is a required property"
             let result = registry.validate_values(
                 "test",
                 &json!({
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "segments": [],
@@ -1381,7 +1381,7 @@ Error: \"version\" is a required property"
             let result = registry.validate_values(
                 "test",
                 &json!({
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "segments": [],
                         "created_at": "2024-01-01"
@@ -1401,7 +1401,7 @@ Error: \"version\" is a required property"
             let result = registry.validate_values(
                 "test",
                 &json!({
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "owner": {"email": "test@example.com"},
                         "segments": [],
@@ -1421,7 +1421,7 @@ Error: \"version\" is a required property"
             let result = registry.validate_values(
                 "test",
                 &json!({
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "enabled": true,
@@ -1454,7 +1454,7 @@ Error: \"version\" is a required property"
             let result = registry.validate_values(
                 "test",
                 &json!({
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "created_at": "2024-01-01",
@@ -1486,7 +1486,7 @@ Error: \"version\" is a required property"
             let result = registry.validate_values(
                 "test",
                 &json!({
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "created_at": "2024-01-01",
@@ -1518,7 +1518,7 @@ Error: \"version\" is a required property"
 
             assert!(
                 schema
-                    .get_default("features.organizations:fury-mode")
+                    .get_default("feature.organizations:fury-mode")
                     .is_none()
             );
         }
@@ -1538,7 +1538,7 @@ Error: \"version\" is a required property"
                             "default": "hello",
                             "description": "A regular option"
                         },
-                        "features.organizations:fury-mode": {
+                        "feature.organizations:fury-mode": {
                             "$ref": "#/definitions/Feature"
                         }
                     }
@@ -1551,7 +1551,7 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "my-option": "world",
-                    "features.organizations:fury-mode": {
+                    "feature.organizations:fury-mode": {
                         "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "segments": [],
