@@ -1,8 +1,12 @@
 //! Python bindings for sentry-options using PyO3.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
+use ::sentry_options::{
+    ContextValue as RustContextValue, FeatureChecker as RustFeatureChecker,
+    FeatureContext as RustFeatureContext, Options as RustOptions, OptionsError as RustOptionsError,
+};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString};
@@ -86,6 +90,113 @@ fn options_err(err: RustOptionsError) -> PyErr {
     }
 }
 
+/// Convert a Python value to a Rust ContextValue.
+fn py_to_context_value(py: Python<'_>, value: &Py<PyAny>) -> PyResult<RustContextValue> {
+    let bound = value.bind(py);
+    // Check bool before int: Python bool is a subclass of int
+    if bound.is_instance_of::<PyBool>() {
+        let b: bool = bound.extract()?;
+        return Ok(RustContextValue::Bool(b));
+    }
+    if bound.is_instance_of::<PyInt>() {
+        let i: i64 = bound.extract()?;
+        return Ok(RustContextValue::Int(i));
+    }
+    if bound.is_instance_of::<PyFloat>() {
+        let f: f64 = bound.extract()?;
+        return Ok(RustContextValue::Float(f));
+    }
+    if bound.is_instance_of::<PyString>() {
+        let s: String = bound.extract()?;
+        return Ok(RustContextValue::String(s));
+    }
+    if let Ok(list) = bound.cast::<PyList>() {
+        if list.is_empty() {
+            return Ok(RustContextValue::StringList(vec![]));
+        }
+        let first = list.get_item(0)?;
+        if first.is_instance_of::<PyBool>() {
+            let bools: Vec<bool> = list.extract()?;
+            return Ok(RustContextValue::BoolList(bools));
+        }
+        if first.is_instance_of::<PyInt>() {
+            let ints: Vec<i64> = list.extract()?;
+            return Ok(RustContextValue::IntList(ints));
+        }
+        if first.is_instance_of::<PyFloat>() {
+            let floats: Vec<f64> = list.extract()?;
+            return Ok(RustContextValue::FloatList(floats));
+        }
+        if first.is_instance_of::<PyString>() {
+            let strings: Vec<String> = list.extract()?;
+            return Ok(RustContextValue::StringList(strings));
+        }
+        return Err(PyValueError::new_err(
+            "Unsupported list element type in FeatureContext",
+        ));
+    }
+    Err(PyValueError::new_err(format!(
+        "Unsupported FeatureContext value type: {}",
+        bound.get_type().name()?
+    )))
+}
+
+/// Feature evaluation context holding arbitrary key-value data.
+///
+/// Pass a dict of context data and optional identity_fields to control
+/// rollout bucketing. Identity fields are sorted and hashed to produce
+/// a stable identifier used for percentage rollouts.
+#[pyclass(name = "FeatureContext", unsendable)]
+struct PyFeatureContext {
+    inner: RustFeatureContext,
+}
+
+#[pymethods]
+impl PyFeatureContext {
+    #[new]
+    #[pyo3(signature = (data, *, identity_fields=None))]
+    fn new(
+        data: HashMap<String, Py<PyAny>>,
+        identity_fields: Option<Vec<String>>,
+        py: Python<'_>,
+    ) -> PyResult<Self> {
+        let mut ctx = RustFeatureContext::new();
+        for (key, val) in &data {
+            let cv = py_to_context_value(py, val)?;
+            ctx.insert(key, cv);
+        }
+        if let Some(fields) = identity_fields {
+            let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
+            ctx.identity_fields(field_refs);
+        }
+        Ok(PyFeatureContext { inner: ctx })
+    }
+
+    fn __repr__(&self) -> String {
+        "FeatureContext(...)".to_string()
+    }
+}
+
+/// Handle for evaluating feature flags within a specific namespace.
+#[pyclass(name = "FeatureChecker")]
+struct PyFeatureChecker {
+    inner: RustFeatureChecker,
+}
+
+#[pymethods]
+impl PyFeatureChecker {
+    /// Check whether a feature flag is enabled for a given context.
+    ///
+    /// Returns false if the feature is not defined, not enabled, or conditions don't match.
+    fn has(&self, feature_name: &str, context: PyRef<'_, PyFeatureContext>) -> bool {
+        self.inner.has(feature_name, &context.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        "FeatureChecker(...)".to_string()
+    }
+}
+
 /// Initialize global options using fallback chain: SENTRY_OPTIONS_DIR env var,
 /// then /etc/sentry-options if it exists, otherwise sentry-options/.
 #[pyfunction]
@@ -108,6 +219,19 @@ fn options(namespace: String) -> PyResult<NamespaceOptions> {
     Ok(NamespaceOptions {
         namespace,
         options: opts,
+    })
+}
+
+/// Get a feature checker for a namespace.
+///
+/// Raises RuntimeError if init() has not been called.
+#[pyfunction]
+fn features(namespace: String) -> PyResult<PyFeatureChecker> {
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    Ok(PyFeatureChecker {
+        inner: RustFeatureChecker::new(namespace, opts),
     })
 }
 
@@ -147,8 +271,11 @@ fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
+    m.add_function(wrap_pyfunction!(features, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
+    m.add_class::<PyFeatureContext>()?;
+    m.add_class::<PyFeatureChecker>()?;
     // Exceptions
     m.add("OptionsError", m.py().get_type::<OptionsError>())?;
     m.add("SchemaError", m.py().get_type::<SchemaError>())?;

@@ -455,6 +455,10 @@ pub struct FeatureChecker {
 }
 
 impl FeatureChecker {
+    pub fn new(namespace: String, options: &'static crate::Options) -> Self {
+        Self { namespace, options }
+    }
+
     /// Check whether a feature flag is enabled for a given context.
     ///
     /// Returns false if the feature is not defined, not enabled, or conditions don't match.
