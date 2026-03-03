@@ -2135,6 +2135,7 @@ dependencies = [
 name = "sentry-options"
 version = "0.0.14"
 dependencies = [
+ "num",
  "sentry-options-validation",
  "serde_json",
  "sha1",
