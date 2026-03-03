@@ -207,8 +207,8 @@ impl FeatureContext {
         // modulo will trim off the u64 overflow, and let us break the bigint
         // into its pieces (there will only be one).
         let small: BigInt = bigint % 1000000000;
-
-        small.to_u64_digits().1[0]
+        let id_parts = small.to_u64_digits().1;
+        if id_parts.is_empty() { 0 } else { id_parts[0] }
     }
 }
 
@@ -591,7 +591,6 @@ mod tests {
         let Ok(val) = opts.get("test", &key) else {
             return false;
         };
-        dbg!(&val);
         Feature::from_json(&val).is_some_and(|f| f.matches(ctx))
     }
 
