@@ -208,7 +208,8 @@ impl FeatureContext {
         // into its pieces (there will only be one).
         let small: BigInt = bigint % 1000000000;
 
-        small.to_u64_digits().1[0]
+        let digits = small.to_u64_digits().1;
+        if digits.is_empty() { 0 } else { digits[0] }
     }
 }
 
@@ -591,7 +592,6 @@ mod tests {
         let Ok(val) = opts.get("test", &key) else {
             return false;
         };
-        dbg!(&val);
         Feature::from_json(&val).is_some_and(|f| f.matches(ctx))
     }
 

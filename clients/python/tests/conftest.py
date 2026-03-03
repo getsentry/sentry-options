@@ -54,13 +54,13 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
                         'description': 'A list of integers',
                     },
                     # Feature flag entries
-                    'features.organizations:enabled-feature': {
+                    'feature.organizations:enabled-feature': {
                         '$ref': '#/definitions/Feature',
                     },
-                    'features.organizations:disabled-feature': {
+                    'feature.organizations:disabled-feature': {
                         '$ref': '#/definitions/Feature',
                     },
-                    'features.organizations:rollout-zero': {
+                    'feature.organizations:rollout-zero': {
                         '$ref': '#/definitions/Feature',
                     },
                 },
@@ -76,7 +76,7 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
             {
                 'options': {
                     'str-opt': 'custom-value',
-                    'features.organizations:enabled-feature': {
+                    'feature.organizations:enabled-feature': {
                         'name': 'enabled-feature',
                         'enabled': True,
                         'owner': {'team': 'test-team'},
@@ -95,7 +95,7 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
                             },
                         ],
                     },
-                    'features.organizations:disabled-feature': {
+                    'feature.organizations:disabled-feature': {
                         'name': 'disabled-feature',
                         'enabled': False,
                         'owner': {'team': 'test-team'},
@@ -114,7 +114,7 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
                             },
                         ],
                     },
-                    'features.organizations:rollout-zero': {
+                    'feature.organizations:rollout-zero': {
                         'name': 'rollout-zero',
                         'enabled': True,
                         'owner': {'team': 'test-team'},
