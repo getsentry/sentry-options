@@ -3,6 +3,7 @@
 //! Provides [`FeatureContext`], [`ContextValue`], and [`FeatureChecker`] for
 //! evaluating feature flags stored in the options system.
 
+use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -161,6 +162,7 @@ impl FeatureContext {
     /// The result is cached and reset when identity fields or context data change.
     /// When no identity fields are set, all context keys are used (non-deterministic
     /// rollout across contexts with different keys).
+    /// The id value is mostly used to id % 100 < rollout.
     pub fn id(&self) -> u64 {
         if let Some(id) = self.cached_id.get() {
             return id;
@@ -170,27 +172,43 @@ impl FeatureContext {
         id
     }
 
+    /// Compute the id for a FeatureContext.
+    ///
+    /// The original python implementation used a bigint value
+    /// derived from the sha1 hash.
+    ///
+    /// This method returns a u64 which contains the lower place
+    /// values of the bigint so that our rollout modulo math is
+    /// consistent with the original python implementation.
     fn compute_id(&self) -> u64 {
-        let mut sorted_keys: Vec<&String> = if self.identity_fields.is_empty() {
-            self.data.keys().collect()
-        } else {
-            self.identity_fields
-                .iter()
-                .filter(|f| self.data.contains_key(f.as_str()))
-                .collect()
-        };
-        sorted_keys.sort();
+        let mut identity_fields: Vec<&String> = self
+            .identity_fields
+            .iter()
+            .filter(|f| self.data.contains_key(f.as_str()))
+            .collect();
+        if identity_fields.is_empty() {
+            identity_fields = self.data.keys().collect();
+        }
+        identity_fields.sort();
 
-        let mut parts: Vec<String> = Vec::with_capacity(sorted_keys.len() * 2);
-        for key in sorted_keys {
+        let mut parts: Vec<String> = Vec::with_capacity(identity_fields.len() * 2);
+        for key in identity_fields {
             parts.push(key.clone());
             parts.push(self.data[key.as_str()].to_id_string());
         }
-
         let mut hasher = Sha1::new();
         hasher.update(parts.join(":").as_bytes());
         let digest = hasher.finalize();
-        u64::from_be_bytes(digest[..8].try_into().expect("SHA1 digest is 20 bytes"))
+
+        // Create a BigInt to preserve all the 20bytes of the hash digest.
+        let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
+
+        // We only need the lower places from the big int to retain compatiblity
+        // modulo will trim off the u64 overflow, and let us break the bigint
+        // into its pieces (there will only be one).
+        let small: BigInt = bigint % 1000000000;
+
+        small.to_u64_digits().1[0]
     }
 }
 
@@ -461,7 +479,7 @@ impl FeatureChecker {
     ///
     /// Returns false if the feature is not defined, not enabled, or conditions don't match.
     pub fn has(&self, feature_name: &str, context: &FeatureContext) -> bool {
-        let key = format!("features.{feature_name}");
+        let key = format!("feature.{feature_name}");
 
         let feature_val = match self.options.get(&self.namespace, &key) {
             Ok(v) => v,
@@ -525,7 +543,7 @@ mod tests {
         "version": "1.0",
         "type": "object",
         "properties": {
-            "features.organizations:test-feature": {
+            "feature.organizations:test-feature": {
                 "$ref": "#/definitions/Feature"
             }
         }
@@ -539,7 +557,7 @@ mod tests {
 
         let values = temp.path().join("values");
         let values_json = format!(
-            r#"{{"options": {{"features.organizations:test-feature": {}}}}}"#,
+            r#"{{"options": {{"feature.organizations:test-feature": {}}}}}"#,
             feature_json
         );
         create_values(&values, "test", &values_json);
@@ -569,10 +587,11 @@ mod tests {
     }
 
     fn check(opts: &Options, feature: &str, ctx: &FeatureContext) -> bool {
-        let key = format!("features.{feature}");
+        let key = format!("feature.{feature}");
         let Ok(val) = opts.get("test", &key) else {
             return false;
         };
+        dbg!(&val);
         Feature::from_json(&val).is_some_and(|f| f.matches(ctx))
     }
 
@@ -636,6 +655,42 @@ mod tests {
         other_ctx.insert("org_id", 123.into());
 
         assert_ne!(make_ctx().id(), other_ctx.id());
+    }
+
+    #[test]
+    fn test_feature_context_id_value_align_with_python() {
+        // Context.id() determines rollout rates with modulo
+        // This implementation should generate the same rollout slots
+        // as the previous implementation did.
+        let ctx = FeatureContext::new();
+        assert_eq!(ctx.id() % 100, 5, "should match with python implementation");
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", "bar".into());
+        ctx.insert("baz", "barfoo".into());
+        ctx.identity_fields(vec!["foo"]);
+        assert_eq!(ctx.id() % 100, 62);
+
+        // Undefined fields should not contribute to the id.
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", "bar".into());
+        ctx.insert("baz", "barfoo".into());
+        ctx.identity_fields(vec!["foo", "whoops"]);
+        assert_eq!(ctx.id() % 100, 62);
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", "bar".into());
+        ctx.insert("baz", "barfoo".into());
+        ctx.identity_fields(vec!["foo", "baz"]);
+        assert_eq!(ctx.id() % 100, 1);
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", "bar".into());
+        ctx.insert("baz", "barfoo".into());
+        // When there is no overlap with identity fields and data,
+        // all fields should be used
+        ctx.identity_fields(vec!["whoops", "nope"]);
+        assert_eq!(ctx.id() % 100, 1);
     }
 
     #[test]
@@ -729,7 +784,8 @@ mod tests {
         ctx.insert("user_id", 42.into());
         ctx.insert("organization_id", 123.into());
 
-        let id_mod = ctx.id() % 100;
+        // Add 1 to get around fence post with < vs <=
+        let id_mod = (ctx.id() % 100) + 1;
         let cond = in_condition("organization_id", "123");
 
         let (opts_at, _t1) = setup_feature_options(&feature_json(true, id_mod, &cond));
