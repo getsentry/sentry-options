@@ -375,12 +375,13 @@ impl SchemaRegistry {
     ///     "description": "..."
     /// }
     fn inject_object_constraints(schema: &mut Value) {
-        if let Some(obj) = schema.as_object_mut() {
-            if let Some(props) = obj.get("properties").and_then(|p| p.as_object()) {
-                let required: Vec<Value> = props.keys().map(|k| Value::String(k.clone())).collect();
-                obj.insert("required".to_string(), Value::Array(required));
-                obj.insert("additionalProperties".to_string(), json!(false));
-            }
+        if let Some(obj) = schema.as_object_mut()
+            && let Some(props) = obj.get("properties").and_then(|p| p.as_object())
+        {
+            let required: Vec<Value> =
+                props.keys().map(|k| Value::String(k.clone())).collect();
+            obj.insert("required".to_string(), Value::Array(required));
+            obj.insert("additionalProperties".to_string(), json!(false));
         }
     }
 
@@ -406,12 +407,13 @@ impl SchemaRegistry {
 
                 if prop_type == "object" {
                     Self::inject_object_constraints(prop_value);
-                } else if prop_type == "array" {
-                    if let Some(items) = prop_value.get_mut("items") {
-                        let items_type = items.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                        if items_type == "object" {
-                            Self::inject_object_constraints(items);
-                        }
+                } else if prop_type == "array"
+                    && let Some(items) = prop_value.get_mut("items")
+                {
+                    let items_type =
+                        items.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if items_type == "object" {
+                        Self::inject_object_constraints(items);
                     }
                 }
             }
