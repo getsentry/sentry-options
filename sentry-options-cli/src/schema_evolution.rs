@@ -27,6 +27,10 @@ enum SchemaChangeAction {
         old: String,
         new: String,
     },
+    ShapeChanged {
+        context: String,    // namespace.option
+        option_type: String, // "object" or "array<object>"
+    },
 }
 
 impl fmt::Display for SchemaChangeAction {
@@ -49,6 +53,12 @@ impl fmt::Display for SchemaChangeAction {
             }
             SchemaChangeAction::DefaultChanged { context, old, new } => {
                 write!(f, "~ Default:\t {}: {} -> {}", context, old, new)
+            }
+            SchemaChangeAction::ShapeChanged {
+                context,
+                option_type,
+            } => {
+                write!(f, "~ Shape:\t {} ({}) shape changed", context, option_type)
             }
         }
     }
@@ -122,6 +132,52 @@ fn compare_schemas(
                     message: format!(
                         "Option '{}.{}' array items type changed from '{}' to '{}'",
                         namespace, key, old_type_str, new_type_str
+                    ),
+                });
+            }
+        }
+
+        // 5c. changing object shape
+        if old_meta.option_type == "object" && new_meta.option_type == "object" {
+            let old_props = old_meta.property_schema.get("properties");
+            let new_props = new_meta.property_schema.get("properties");
+
+            if old_props != new_props {
+                modified_options.push(SchemaChangeAction::ShapeChanged {
+                    context: format!("{}.{}", namespace, key),
+                    option_type: "object".to_string(),
+                });
+                errors.push(ValidationError::SchemaError {
+                    file: format!("schemas/{}/schema.json", namespace).into(),
+                    message: format!(
+                        "Option '{}.{}' object shape was modified",
+                        namespace, key
+                    ),
+                });
+            }
+        }
+
+        // 5d. changing array-of-objects item shape
+        if old_meta.option_type == "array" && new_meta.option_type == "array" {
+            let old_item_props = old_meta
+                .property_schema
+                .get("items")
+                .and_then(|i| i.get("properties"));
+            let new_item_props = new_meta
+                .property_schema
+                .get("items")
+                .and_then(|i| i.get("properties"));
+
+            if old_item_props.is_some() && old_item_props != new_item_props {
+                modified_options.push(SchemaChangeAction::ShapeChanged {
+                    context: format!("{}.{}", namespace, key),
+                    option_type: "array<object>".to_string(),
+                });
+                errors.push(ValidationError::SchemaError {
+                    file: format!("schemas/{}/schema.json", namespace).into(),
+                    message: format!(
+                        "Option '{}.{}' array item object shape was modified",
+                        namespace, key
                     ),
                 });
             }
@@ -465,6 +521,135 @@ mod tests {
                 );
             }
             _ => panic!("Expected ValidationErrors for array items type change"),
+        }
+    }
+
+    #[test]
+    fn test_object_shape_change_fails() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "config".to_string(),
+            json!({
+                "type": "object",
+                "properties": {
+                    "host": {"type": "string"},
+                    "port": {"type": "integer"}
+                },
+                "default": {"host": "localhost", "port": 8080},
+                "description": "Test object option"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        // Modify shape: change port type from integer to string
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "config".to_string(),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "host": {"type": "string"},
+                        "port": {"type": "string"}
+                    },
+                    "default": {"host": "localhost", "port": "8080"},
+                    "description": "Test object option"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "object shape was modified");
+            }
+            _ => panic!("Expected ValidationErrors for object shape change"),
+        }
+    }
+
+    #[test]
+    fn test_object_identical_shape_passes() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut options = serde_json::Map::new();
+        options.insert(
+            "config".to_string(),
+            json!({
+                "type": "object",
+                "properties": {
+                    "host": {"type": "string"},
+                    "port": {"type": "integer"}
+                },
+                "default": {"host": "localhost", "port": 8080},
+                "description": "Test object option"
+            }),
+        );
+        let schema = build_schema(options);
+
+        create_schema(&old_dir, "test", &schema);
+        create_schema(&new_dir, "test", &schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_array_of_objects_shape_change_fails() {
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "endpoints".to_string(),
+            json!({
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "weight": {"type": "integer"}
+                    }
+                },
+                "default": [],
+                "description": "Test array of objects"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        // Modify item shape: add a new field
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "endpoints".to_string(),
+                json!({
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string"},
+                            "weight": {"type": "integer"},
+                            "enabled": {"type": "boolean"}
+                        }
+                    },
+                    "default": [],
+                    "description": "Test array of objects"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "array item object shape was modified");
+            }
+            _ => panic!("Expected ValidationErrors for array item shape change"),
         }
     }
 

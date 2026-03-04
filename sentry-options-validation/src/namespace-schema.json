@@ -18,7 +18,7 @@
           "type": "object",
           "properties": {
             "type": {
-              "enum": ["string", "integer", "number", "boolean", "array"]
+              "enum": ["string", "integer", "number", "boolean", "array", "object"]
             },
             "default": {},
             "description": {
@@ -28,11 +28,31 @@
               "type": "object",
               "properties": {
                 "type": {
-                  "enum": ["string", "integer", "number", "boolean"]
+                  "enum": ["string", "integer", "number", "boolean", "object"]
+                },
+                "properties": {
+                  "$ref": "#/$defs/shape"
                 }
               },
               "required": ["type"],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "object"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": ["properties"]
+                  }
+                }
+              ]
+            },
+            "properties": {
+              "$ref": "#/$defs/shape"
             }
           },
           "required": ["type", "default", "description"],
@@ -49,6 +69,18 @@
               "then": {
                 "required": ["items"]
               }
+            },
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "object"
+                  }
+                }
+              },
+              "then": {
+                "required": ["properties"]
+              }
             }
           ]
         }
@@ -57,5 +89,23 @@
     }
   },
   "required": ["version", "type", "properties"],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "shape": {
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": ["string", "integer", "number", "boolean"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

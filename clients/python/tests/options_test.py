@@ -53,6 +53,29 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> None:
                         'items': {'type': 'integer'},
                         'description': 'A list of integers',
                     },
+                    'object-opt': {
+                        'type': 'object',
+                        'properties': {
+                            'host': {'type': 'string'},
+                            'port': {'type': 'integer'},
+                        },
+                        'default': {'host': 'localhost', 'port': 8080},
+                        'description': 'An object option',
+                    },
+                    'array-of-objects-opt': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'url': {'type': 'string'},
+                                'weight': {'type': 'integer'},
+                            },
+                        },
+                        'default': [
+                            {'url': 'https://a.example.com', 'weight': 1},
+                        ],
+                        'description': 'An array of objects option',
+                    },
                 },
             },
         ),
@@ -108,6 +131,22 @@ def test_get_array_default() -> None:
     assert value == [1, 2, 3]
     assert isinstance(value, list)
 
+
+def test_get_object_default() -> None:
+    value = options('sentry-options-testing').get('object-opt')
+    assert value == {'host': 'localhost', 'port': 8080}
+    assert isinstance(value, dict)
+    assert isinstance(value['host'], str)
+    assert isinstance(value['port'], int)
+
+
+def test_get_array_of_objects_default() -> None:
+    value = options('sentry-options-testing').get('array-of-objects-opt')
+    assert value == [{'url': 'https://a.example.com', 'weight': 1}]
+    assert isinstance(value, list)
+    assert isinstance(value[0], dict)
+    assert isinstance(value[0]['url'], str)
+    assert isinstance(value[0]['weight'], int)
 
 def test_unknown_namespace() -> None:
     with pytest.raises(UnknownNamespaceError, match='nonexistent'):

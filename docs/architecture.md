@@ -96,10 +96,53 @@ JSON schemas define available options with types and defaults:
 | Float | `"type": "number"` | `3.14` |
 | Boolean | `"type": "boolean"` | `true` |
 | Array | `"type": "array"` | `[1,2,3]` |
+| Object | `"type": "object"` | `{"host": "localhost", "port": 8080}` |
 
-> Array types of string, integer, float, and boolean are accepted.
+> Array items can be primitives (`string`, `integer`, `number`, `boolean`) or `object`.
 
-**Future:** TypedDicts for structured options, and nested arrays.
+#### Object Type
+
+Objects require a `properties` field that defines the shape. Each field in `properties`
+must have a `type` (one of: `string`, `integer`, `number`, `boolean`). All fields are
+required — partial objects are not allowed.
+
+```json
+{
+  "my-config": {
+    "type": "object",
+    "properties": {
+      "host": { "type": "string" },
+      "port": { "type": "integer" }
+    },
+    "default": { "host": "localhost", "port": 8080 },
+    "description": "Service configuration"
+  }
+}
+```
+
+#### Array of Objects
+
+Arrays of objects define the item shape in `items.properties`. All items must
+follow the same shape (homogeneous).
+
+```json
+{
+  "endpoints": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "weight": { "type": "integer" }
+      }
+    },
+    "default": [],
+    "description": "Weighted endpoints"
+  }
+}
+```
+
+Nested objects (objects within objects) are not supported — object fields must be primitives.
 
 ### Schema Requirements
 
@@ -111,14 +154,13 @@ Each schema file must have:
 
 Each property must have:
 
-- `type` - One of: `string`, `integer`, `number`, `boolean`, or `array`
+- `type` - One of: `string`, `integer`, `number`, `boolean`, `array`, or `object`
 - `default` - Default value (must match declared type)
 - `description` - Human-readable description
-- `items` - If the `type` is `array`. This should be an object of the following form:
+- `items` - Required when `type` is `array`. An object with `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, `boolean`, or `object`. When items type is `object`, a `properties` field defining the item shape is also required.
+- `properties` - Required when `type` is `object`. An object mapping field names to `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`.
 
-`{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`.
-
-`additionalProperties: false` is auto-injected to reject unknown options.
+`additionalProperties: false` is auto-injected to reject unknown options and unknown object fields.
 
 ## Values Format
 

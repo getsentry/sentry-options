@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
 
 // Global options instance
@@ -66,7 +66,14 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
             }
             Ok(list.into_any().unbind())
         }
-        Value::Object(_) => Err(PyValueError::new_err("Objects not yet supported")),
+        Value::Object(map) => {
+            let dict = PyDict::new(py);
+            for (k, v) in map {
+                let py_val = json_to_py(py, v)?;
+                dict.set_item(k, py_val)?;
+            }
+            Ok(dict.into_any().unbind())
+        }
     }
 }
 
