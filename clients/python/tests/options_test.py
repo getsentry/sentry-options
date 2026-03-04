@@ -148,6 +148,7 @@ def test_get_array_of_objects_default() -> None:
     assert isinstance(value[0]['url'], str)
     assert isinstance(value[0]['weight'], int)
 
+
 def test_unknown_namespace() -> None:
     with pytest.raises(UnknownNamespaceError, match='nonexistent'):
         options('nonexistent').get('any-key')

@@ -28,7 +28,7 @@ enum SchemaChangeAction {
         new: String,
     },
     ShapeChanged {
-        context: String,    // namespace.option
+        context: String,     // namespace.option
         option_type: String, // "object" or "array<object>"
     },
 }
@@ -149,10 +149,7 @@ fn compare_schemas(
                 });
                 errors.push(ValidationError::SchemaError {
                     file: format!("schemas/{}/schema.json", namespace).into(),
-                    message: format!(
-                        "Option '{}.{}' object shape was modified",
-                        namespace, key
-                    ),
+                    message: format!("Option '{}.{}' object shape was modified", namespace, key),
                 });
             }
         }
