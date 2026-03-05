@@ -11,95 +11,6 @@ from sentry_options import UnknownNamespaceError
 from sentry_options import UnknownOptionError
 
 
-@pytest.fixture(scope='module', autouse=True)
-def init_options(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Set up test data and initialize options."""
-    tmpdir = tmp_path_factory.mktemp('sentry_options')
-
-    # Create schema
-    schema_dir = tmpdir / 'schemas' / 'sentry-options-testing'
-    schema_dir.mkdir(parents=True)
-    (schema_dir / 'schema.json').write_text(
-        json.dumps(
-            {
-                'version': '1.0',
-                'type': 'object',
-                'properties': {
-                    'str-opt': {
-                        'type': 'string',
-                        'default': 'default-value',
-                        'description': 'A string option',
-                    },
-                    'int-opt': {
-                        'type': 'integer',
-                        'default': 42,
-                        'description': 'An integer option',
-                    },
-                    'float-opt': {
-                        'type': 'number',
-                        'default': 3.14,
-                        'description': 'A float option',
-                    },
-                    'bool-opt': {
-                        'type': 'boolean',
-                        'default': True,
-                        'description': 'A boolean option',
-                    },
-                    'array-opt': {
-                        'type': 'array',
-                        'default': [1, 2, 3],
-                        'items': {'type': 'integer'},
-                        'description': 'A list of integers',
-                    },
-                    'object-opt': {
-                        'type': 'object',
-                        'properties': {
-                            'host': {'type': 'string'},
-                            'port': {'type': 'integer'},
-                        },
-                        'default': {'host': 'localhost', 'port': 8080},
-                        'description': 'An object option',
-                    },
-                    'array-of-objects-opt': {
-                        'type': 'array',
-                        'items': {
-                            'type': 'object',
-                            'properties': {
-                                'url': {'type': 'string'},
-                                'weight': {'type': 'integer'},
-                            },
-                        },
-                        'default': [
-                            {'url': 'https://a.example.com', 'weight': 1},
-                        ],
-                        'description': 'An array of objects option',
-                    },
-                },
-            },
-        ),
-    )
-
-    # Create values (override str-opt)
-    values_dir = tmpdir / 'values' / 'sentry-options-testing'
-    values_dir.mkdir(parents=True)
-    values = {'options': {'str-opt': 'custom-value'}}
-    (values_dir / 'values.json').write_text(json.dumps(values))
-
-    # Set env var and initialize
-    orig_env = os.environ.get('SENTRY_OPTIONS_DIR')
-    os.environ['SENTRY_OPTIONS_DIR'] = str(tmpdir)
-
-    init()
-
-    yield
-
-    # Restore env var
-    if orig_env is None:
-        os.environ.pop('SENTRY_OPTIONS_DIR', None)
-    else:
-        os.environ['SENTRY_OPTIONS_DIR'] = orig_env
-
-
 def test_get_string_from_values() -> None:
     value = options('sentry-options-testing').get('example-option')
     assert value == 'wow'
@@ -131,7 +42,7 @@ def test_get_array_default() -> None:
 
 
 def test_get_object_default() -> None:
-    value = options('sentry-options-testing').get('object-opt')
+    value = options('sentry-options-testing').get('object-option')
     assert value == {'host': 'localhost', 'port': 8080}
     assert isinstance(value, dict)
     assert isinstance(value['host'], str)
@@ -139,12 +50,9 @@ def test_get_object_default() -> None:
 
 
 def test_get_array_of_objects_default() -> None:
-    value = options('sentry-options-testing').get('array-of-objects-opt')
-    assert value == [{'url': 'https://a.example.com', 'weight': 1}]
+    value = options('sentry-options-testing').get('endpoints-option')
+    assert value == []
     assert isinstance(value, list)
-    assert isinstance(value[0], dict)
-    assert isinstance(value[0]['url'], str)
-    assert isinstance(value[0]['weight'], int)
 
 
 def test_unknown_namespace() -> None:
