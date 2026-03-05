@@ -249,34 +249,86 @@ Output format:
 ### Python
 
 ```python
-from sentry_options import option_group
+from sentry_options import init, options
 
-opts = option_group('getsentry')
+init()
+opts = options('getsentry')
 url: str = opts.get('system.url-prefix')
 rate: float = opts.get('traces.sample-rate')
+```
 
-# Testing
+#### Testing (Python)
+
+Use the `override_options` context manager to temporarily replace option values in tests.
+Overrides are validated against the schema (unknown keys and type mismatches raise errors).
+Requires `init()` to have been called first — use a `conftest.py` fixture:
+
+```python
+# conftest.py
+import pytest
+from sentry_options import init
+
+@pytest.fixture(scope='session', autouse=True)
+def _init_options() -> None:
+    init()
+```
+
+```python
+from sentry_options import options
 from sentry_options.testing import override_options
 
 def test_feature():
-    with override_options(getsentry={'feature.enabled': True}):
-        assert my_feature_works()
+    with override_options('getsentry', {'feature.enabled': True}):
+        assert options('getsentry').get('feature.enabled') is True
+
+# Nesting is supported — inner overrides restore to outer values
+def test_nested():
+    with override_options('getsentry', {'rate': 0.5}):
+        with override_options('getsentry', {'rate': 1.0}):
+            assert options('getsentry').get('rate') == 1.0
+        assert options('getsentry').get('rate') == 0.5
 ```
 
 ### Rust
 
 ```rust
-use sentry_options::Options;
+use sentry_options::{init, options};
 
-fn main() -> anyhow::Result<()> {
-    let options = Options::new(schemas_dir, values_dir)?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
 
-    let url = options.get("getsentry", "system.url-prefix")?;
-    let rate = options.get("getsentry", "traces.sample-rate")?;
-
+    let opts = options("getsentry");
+    let url = opts.get("system.url-prefix")?;
+    let rate = opts.get("traces.sample-rate")?;
     Ok(())
 }
 ```
+
+#### Testing (Rust)
+
+Use `ensure_initialized()` for idempotent init in tests (safe to call from parallel threads).
+Use `override_options()` which returns a guard that restores values when dropped.
+Overrides are validated against the schema.
+
+```rust
+use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::options;
+use serde_json::json;
+
+#[test]
+fn test_feature() {
+    ensure_initialized().unwrap();
+    let _guard = override_options(&[
+        ("getsentry", "feature.enabled", json!(true)),
+    ]).unwrap();
+
+    let opts = options("getsentry");
+    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
+    // guard dropped here — value restored
+}
+```
+
+Overrides are thread-local and won't apply to spawned threads.
 
 ### Write Tool
 

@@ -52,6 +52,12 @@
       },
       "default": [],
       "description": "An example array of objects option"
+    },
+    "array-option": {
+      "type": "array",
+      "default": [1, 2, 3],
+      "items": {"type": "integer"},
+      "description": "An example array option"
     }
   }
 }

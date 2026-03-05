@@ -1,7 +1,5 @@
+"""Tests for sentry-options Python client."""
 from __future__ import annotations
-
-import json
-import os
 
 import pytest
 from sentry_options import init
@@ -103,31 +101,31 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 
 def test_get_string_from_values() -> None:
-    value = options('sentry-options-testing').get('str-opt')
-    assert value == 'custom-value'
+    value = options('sentry-options-testing').get('example-option')
+    assert value == 'wow'
     assert isinstance(value, str)
 
 
-def test_get_int_default() -> None:
-    value = options('sentry-options-testing').get('int-opt')
-    assert value == 42
+def test_get_int_from_values() -> None:
+    value = options('sentry-options-testing').get('int-option')
+    assert value == 123
     assert isinstance(value, int)
 
 
-def test_get_float_default() -> None:
-    value = options('sentry-options-testing').get('float-opt')
-    assert value == 3.14
+def test_get_float_from_values() -> None:
+    value = options('sentry-options-testing').get('float-option')
+    assert value == 1.2
     assert isinstance(value, float)
 
 
-def test_get_bool_default() -> None:
-    value = options('sentry-options-testing').get('bool-opt')
-    assert value is True
+def test_get_bool_from_values() -> None:
+    value = options('sentry-options-testing').get('bool-option')
+    assert value is False
     assert isinstance(value, bool)
 
 
 def test_get_array_default() -> None:
-    value = options('sentry-options-testing').get('array-opt')
+    value = options('sentry-options-testing').get('array-option')
     assert value == [1, 2, 3]
     assert isinstance(value, list)
 
@@ -178,5 +176,7 @@ def test_isset() -> None:
     with pytest.raises(UnknownOptionError):
         options('sentry-options-testing').isset('unknown')
 
-    assert not options('sentry-options-testing').isset('bool-opt')
-    assert options('sentry-options-testing').isset('str-opt')
+    # string-option is not in values.json, so it uses the schema default
+    assert not options('sentry-options-testing').isset('string-option')
+    # example-option is explicitly set in values.json
+    assert options('sentry-options-testing').isset('example-option')
