@@ -2,10 +2,10 @@
 
 use std::sync::OnceLock;
 
-use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
+use sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use serde_json::Value;
 
 // Global options instance
@@ -66,7 +66,14 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
             }
             Ok(list.into_any().unbind())
         }
-        Value::Object(_) => Err(PyValueError::new_err("Objects not yet supported")),
+        Value::Object(map) => {
+            let dict = PyDict::new(py);
+            for (k, v) in map {
+                let py_val = json_to_py(py, v)?;
+                dict.set_item(k, py_val)?;
+            }
+            Ok(dict.into_any().unbind())
+        }
     }
 }
 
@@ -87,6 +94,15 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
     } else if let Ok(list) = obj.cast::<PyList>() {
         let items: Result<Vec<Value>, _> = list.iter().map(|item| py_to_json(&item)).collect();
         Ok(Value::Array(items?))
+    } else if let Ok(dict) = obj.cast::<PyDict>() {
+        let mut map = serde_json::Map::new();
+        for (k, v) in dict.iter() {
+            let key: String = k
+                .extract()
+                .map_err(|_| PyValueError::new_err("Dict keys must be strings"))?;
+            map.insert(key, py_to_json(&v)?);
+        }
+        Ok(Value::Object(map))
     } else {
         Err(PyValueError::new_err("Unsupported type for override"))
     }

@@ -41,6 +41,20 @@ def test_get_array_default() -> None:
     assert isinstance(value, list)
 
 
+def test_get_object_default() -> None:
+    value = options('sentry-options-testing').get('object-option')
+    assert value == {'host': 'localhost', 'port': 8080}
+    assert isinstance(value, dict)
+    assert isinstance(value['host'], str)
+    assert isinstance(value['port'], int)
+
+
+def test_get_array_of_objects_default() -> None:
+    value = options('sentry-options-testing').get('endpoints-option')
+    assert value == []
+    assert isinstance(value, list)
+
+
 def test_unknown_namespace() -> None:
     with pytest.raises(UnknownNamespaceError, match='nonexistent'):
         options('nonexistent').get('any-key')

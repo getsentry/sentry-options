@@ -32,6 +32,27 @@
       "default": "hello everyone",
       "description": "A string option to demo to dev-infra"
     },
+    "object-option": {
+      "type": "object",
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "type": "integer" }
+      },
+      "default": { "host": "localhost", "port": 8080 },
+      "description": "An example object option"
+    },
+    "endpoints-option": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "weight": { "type": "integer" }
+        }
+      },
+      "default": [],
+      "description": "An example array of objects option"
+    },
     "array-option": {
       "type": "array",
       "default": [1, 2, 3],
