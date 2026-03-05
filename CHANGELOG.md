@@ -1,4 +1,24 @@
 # Changelog
+## 0.0.15
+
+### New Features ✨
+
+- (ci) Migrate `validate-schema` composite action to become reusable workflow and include deletion check by @kenzoengineer in [#78](https://github.com/getsentry/sentry-options/pull/78)
+- (core) Adds object support by @kenzoengineer in [#93](https://github.com/getsentry/sentry-options/pull/93)
+- (testing) Option Overrides for testing by @hubertdeng123 in [#50](https://github.com/getsentry/sentry-options/pull/50)
+- Add isset() by @markstory in [#85](https://github.com/getsentry/sentry-options/pull/85)
+
+### Bug Fixes 🐛
+
+#### Ci
+
+- Use local checkout for deletion validation by @kenzoengineer in [#89](https://github.com/getsentry/sentry-options/pull/89)
+- Remove reusable workflow call to fix CI by @kenzoengineer in [#88](https://github.com/getsentry/sentry-options/pull/88)
+
+### Documentation 📚
+
+- Use envoy injector to mount configmaps by @hubertdeng123 in [#90](https://github.com/getsentry/sentry-options/pull/90)
+
 ## 0.0.14
 
 ### New Features ✨
