@@ -99,6 +99,9 @@
           "properties": {
             "type": {
               "enum": ["string", "integer", "number", "boolean"]
+            },
+            "optional": {
+              "type": "boolean"
             }
           },
           "required": ["type"],
