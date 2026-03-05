@@ -378,7 +378,11 @@ impl SchemaRegistry {
         if let Some(obj) = schema.as_object_mut()
             && let Some(props) = obj.get("properties").and_then(|p| p.as_object())
         {
-            let required: Vec<Value> = props.keys().map(|k| Value::String(k.clone())).collect();
+            let required: Vec<Value> = props
+                .iter()
+                .filter(|(_, v)| !v.get("optional").and_then(|o| o.as_bool()).unwrap_or(false))
+                .map(|(k, _)| Value::String(k.clone()))
+                .collect();
             obj.insert("required".to_string(), Value::Array(required));
             obj.insert("additionalProperties".to_string(), json!(false));
         }
@@ -2267,6 +2271,223 @@ Error: \"version\" is a required property"
             let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
             let result = registry.load_values_json(&values_dir);
             assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        // Optional field tests
+
+        #[test]
+        fn test_object_optional_field_can_be_omitted_from_default() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "debug": {"type": "boolean", "optional": true}
+                            },
+                            "default": {"host": "localhost"},
+                            "description": "Config with optional field"
+                        }
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            let schema = registry.get("test").unwrap();
+            assert_eq!(schema.options["config"].option_type, "object");
+        }
+
+        #[test]
+        fn test_object_optional_field_can_be_included_in_default() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "debug": {"type": "boolean", "optional": true}
+                            },
+                            "default": {"host": "localhost", "debug": true},
+                            "description": "Config with optional field included"
+                        }
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            assert!(registry.get("test").is_some());
+        }
+
+        #[test]
+        fn test_object_optional_field_wrong_type_rejected() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "debug": {"type": "boolean", "optional": true}
+                            },
+                            "default": {"host": "localhost", "debug": "not-a-bool"},
+                            "description": "Optional field wrong type"
+                        }
+                    }
+                }"#,
+            );
+
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_object_required_field_still_required_with_optional_present() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "port": {"type": "integer"},
+                                "debug": {"type": "boolean", "optional": true}
+                            },
+                            "default": {"debug": true},
+                            "description": "Missing required fields"
+                        }
+                    }
+                }"#,
+            );
+
+            let result = SchemaRegistry::from_directory(temp_dir.path());
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_object_optional_field_omitted_from_values() {
+            let temp_dir = TempDir::new().unwrap();
+            let (schemas_dir, values_dir) = create_test_schema_with_values(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "debug": {"type": "boolean", "optional": true}
+                            },
+                            "default": {"host": "localhost"},
+                            "description": "Config"
+                        }
+                    }
+                }"#,
+                r#"{
+                    "options": {
+                        "config": {"host": "example.com"}
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+            let result = registry.load_values_json(&values_dir);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_object_optional_field_included_in_values() {
+            let temp_dir = TempDir::new().unwrap();
+            let (schemas_dir, values_dir) = create_test_schema_with_values(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "debug": {"type": "boolean", "optional": true}
+                            },
+                            "default": {"host": "localhost"},
+                            "description": "Config"
+                        }
+                    }
+                }"#,
+                r#"{
+                    "options": {
+                        "config": {"host": "example.com", "debug": true}
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+            let result = registry.load_values_json(&values_dir);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_array_of_objects_optional_field_omitted() {
+            let temp_dir = TempDir::new().unwrap();
+            let (schemas_dir, values_dir) = create_test_schema_with_values(
+                &temp_dir,
+                "test",
+                r#"{
+                    "version": "1.0",
+                    "type": "object",
+                    "properties": {
+                        "endpoints": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "url": {"type": "string"},
+                                    "weight": {"type": "integer", "optional": true}
+                                }
+                            },
+                            "default": [],
+                            "description": "Endpoints"
+                        }
+                    }
+                }"#,
+                r#"{
+                    "options": {
+                        "endpoints": [
+                            {"url": "https://a.example.com"},
+                            {"url": "https://b.example.com", "weight": 2}
+                        ]
+                    }
+                }"#,
+            );
+
+            let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+            let result = registry.load_values_json(&values_dir);
+            assert!(result.is_ok());
         }
     }
 }

@@ -103,8 +103,8 @@ JSON schemas define available options with types and defaults:
 #### Object Type
 
 Objects require a `properties` field that defines the shape. Each field in `properties`
-must have a `type` (one of: `string`, `integer`, `number`, `boolean`). All fields are
-required — partial objects are not allowed.
+must have a `type` (one of: `string`, `integer`, `number`, `boolean`). By default all
+fields are required — partial objects are not allowed unless fields are marked optional.
 
 ```json
 {
@@ -119,6 +119,33 @@ required — partial objects are not allowed.
   }
 }
 ```
+
+#### Optional Fields
+
+Individual fields within an object (or array-of-objects item) can be marked as optional
+by adding `"optional": true`. Optional fields may be omitted from defaults and values.
+When omitted, no default is auto-populated — callers must handle the absence.
+
+```json
+{
+  "my-config": {
+    "type": "object",
+    "properties": {
+      "host": { "type": "string" },
+      "port": { "type": "integer" },
+      "label": { "type": "string", "optional": true }
+    },
+    "default": { "host": "localhost", "port": 8080 },
+    "description": "Service configuration with optional label"
+  }
+}
+```
+
+In this example, `host` and `port` are required, while `label` can be omitted.
+If provided, `label` must still be a `string` — type validation still applies.
+
+Schema evolution treats any change to the `properties` shape (including adding or
+removing `"optional"`) as a breaking change (`ShapeChanged`).
 
 #### Array of Objects
 
@@ -158,7 +185,7 @@ Each property must have:
 - `default` - Default value (must match declared type)
 - `description` - Human-readable description
 - `items` - Required when `type` is `array`. An object with `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, `boolean`, or `object`. When items type is `object`, a `properties` field defining the item shape is also required.
-- `properties` - Required when `type` is `object`. An object mapping field names to `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`.
+- `properties` - Required when `type` is `object`. An object mapping field names to `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`. Fields may include `"optional": true` to allow omission.
 
 `additionalProperties: false` is auto-injected to reject unknown options and unknown object fields.
 
