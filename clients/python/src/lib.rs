@@ -70,6 +70,28 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
+/// Convert Python object to serde_json::Value.
+fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
+    if obj.is_none() {
+        Ok(Value::Null)
+    } else if let Ok(b) = obj.extract::<bool>() {
+        Ok(Value::Bool(b))
+    } else if let Ok(i) = obj.extract::<i64>() {
+        Ok(Value::Number(i.into()))
+    } else if let Ok(f) = obj.extract::<f64>() {
+        Ok(Value::Number(serde_json::Number::from_f64(f).ok_or_else(
+            || PyValueError::new_err("Cannot convert NaN or Infinity to JSON"),
+        )?))
+    } else if let Ok(s) = obj.extract::<String>() {
+        Ok(Value::String(s))
+    } else if let Ok(list) = obj.cast::<PyList>() {
+        let items: Result<Vec<Value>, _> = list.iter().map(|item| py_to_json(&item)).collect();
+        Ok(Value::Array(items?))
+    } else {
+        Err(PyValueError::new_err("Unsupported type for override"))
+    }
+}
+
 fn options_err(err: RustOptionsError) -> PyErr {
     match err {
         RustOptionsError::UnknownNamespace(ns) => {
@@ -141,9 +163,46 @@ impl NamespaceOptions {
     }
 }
 
+// Testing utilities - override storage and validation
+
+/// Set a thread-local override. Returns the previous value (as a Python object) or None.
+#[pyfunction]
+fn _set_override(
+    py: Python<'_>,
+    namespace: String,
+    key: String,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let json_value = py_to_json(value)?;
+    let previous = ::sentry_options::testing::get_override(&namespace, &key);
+    ::sentry_options::testing::set_override(&namespace, &key, json_value);
+    match previous {
+        Some(v) => json_to_py(py, &v),
+        None => Ok(py.None()),
+    }
+}
+
+/// Clear a thread-local override.
+#[pyfunction]
+fn _clear_override(namespace: String, key: String) {
+    ::sentry_options::testing::clear_override(&namespace, &key);
+}
+
+/// Validate an option value against the schema (used by testing.py).
+#[pyfunction]
+fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    let json_value = py_to_json(value)?;
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    opts.validate_override(&namespace, &key, &json_value)
+        .map_err(options_err)?;
+    Ok(())
+}
+
 /// Python module definition.
 #[pymodule]
-fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
@@ -164,5 +223,9 @@ fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InitializationError",
         m.py().get_type::<InitializationError>(),
     )?;
+    // Testing utilities (only called by testing.py)
+    m.add_function(wrap_pyfunction!(_set_override, m)?)?;
+    m.add_function(wrap_pyfunction!(_clear_override, m)?)?;
+    m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
     Ok(())
 }

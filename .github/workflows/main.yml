@@ -165,6 +165,8 @@ jobs:
   rust-test:
     name: Rust Tests
     runs-on: ubuntu-latest
+    env:
+      SENTRY_OPTIONS_DIR: ${{ github.workspace }}/sentry-options
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -211,6 +213,8 @@ jobs:
   python-client-test:
     name: Python Client Tests
     runs-on: ubuntu-latest
+    env:
+      SENTRY_OPTIONS_DIR: ${{ github.workspace }}/sentry-options
     strategy:
       matrix:
         python: ['3.11', '3.12', '3.13', '3.14']
