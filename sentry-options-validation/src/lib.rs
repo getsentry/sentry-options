@@ -485,11 +485,6 @@ impl SchemaRegistry {
             }
         }
 
-        // Inject additionalProperties: false to reject unknown options
-        if let Some(obj) = schema.as_object_mut() {
-            obj.insert("additionalProperties".to_string(), json!(false));
-        }
-
         // Use the (potentially transformed) schema as the validator
         let validator =
             jsonschema::validator_for(&schema).map_err(|e| ValidationError::SchemaError {
