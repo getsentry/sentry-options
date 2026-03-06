@@ -448,7 +448,7 @@ impl SchemaRegistry {
         let mut has_feature_keys = false;
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
-                // Skip feature flag properties — they're handled by the Feature schema
+                // Detect feature flags so that we can augment the schema with defs.
                 if prop_name.starts_with("feature.") {
                     has_feature_keys = true;
                 }
