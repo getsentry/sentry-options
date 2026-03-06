@@ -63,6 +63,9 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
                     'feature.organizations:rollout-zero': {
                         '$ref': '#/definitions/Feature',
                     },
+                    'feature.organizations:rollout-mid': {
+                        '$ref': '#/definitions/Feature',
+                    },
                 },
             },
         ),
@@ -128,6 +131,25 @@ def init_options(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
                                         'property': 'organization_id',
                                         'operator': 'in',
                                         'value': [123],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                    'feature.organizations:rollout-mid': {
+                        'name': 'rollout-mid',
+                        'enabled': True,
+                        'owner': {'team': 'test-team'},
+                        'created_at': '2024-01-01',
+                        'segments': [
+                            {
+                                'name': 'is_trial',
+                                'rollout': 50,
+                                'conditions': [
+                                    {
+                                        'property': 'is_trial',
+                                        'operator': 'equals',
+                                        'value': True,
                                     },
                                 ],
                             },
