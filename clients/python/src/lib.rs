@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use ::sentry_options::{
-    ContextValue as RustContextValue, FeatureChecker as RustFeatureChecker,
-    FeatureContext as RustFeatureContext, Options as RustOptions, OptionsError as RustOptionsError,
+    FeatureChecker as RustFeatureChecker, FeatureContext as RustFeatureContext,
+    Options as RustOptions, OptionsError as RustOptionsError,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -128,57 +128,6 @@ fn options_err(err: RustOptionsError) -> PyErr {
     }
 }
 
-/// Convert a Python value to a Rust ContextValue.
-fn py_to_context_value(py: Python<'_>, value: &Py<PyAny>) -> PyResult<RustContextValue> {
-    let bound = value.bind(py);
-    // Check bool before int: Python bool is a subclass of int
-    if bound.is_instance_of::<PyBool>() {
-        let b: bool = bound.extract()?;
-        return Ok(RustContextValue::Bool(b));
-    }
-    if bound.is_instance_of::<PyInt>() {
-        let i: i64 = bound.extract()?;
-        return Ok(RustContextValue::Int(i));
-    }
-    if bound.is_instance_of::<PyFloat>() {
-        let f: f64 = bound.extract()?;
-        return Ok(RustContextValue::Float(f));
-    }
-    if bound.is_instance_of::<PyString>() {
-        let s: String = bound.extract()?;
-        return Ok(RustContextValue::String(s));
-    }
-    if let Ok(list) = bound.cast::<PyList>() {
-        if list.is_empty() {
-            return Ok(RustContextValue::StringList(vec![]));
-        }
-        let first = list.get_item(0)?;
-        if first.is_instance_of::<PyBool>() {
-            let bools: Vec<bool> = list.extract()?;
-            return Ok(RustContextValue::BoolList(bools));
-        }
-        if first.is_instance_of::<PyInt>() {
-            let ints: Vec<i64> = list.extract()?;
-            return Ok(RustContextValue::IntList(ints));
-        }
-        if first.is_instance_of::<PyFloat>() {
-            let floats: Vec<f64> = list.extract()?;
-            return Ok(RustContextValue::FloatList(floats));
-        }
-        if first.is_instance_of::<PyString>() {
-            let strings: Vec<String> = list.extract()?;
-            return Ok(RustContextValue::StringList(strings));
-        }
-        return Err(PyValueError::new_err(
-            "Unsupported list element type in FeatureContext",
-        ));
-    }
-    Err(PyValueError::new_err(format!(
-        "Unsupported FeatureContext value type: {}",
-        bound.get_type().name()?
-    )))
-}
-
 /// Feature evaluation context holding arbitrary key-value data.
 ///
 /// Pass a dict of context data and optional identity_fields to control
@@ -200,8 +149,8 @@ impl PyFeatureContext {
     ) -> PyResult<Self> {
         let mut ctx = RustFeatureContext::new();
         for (key, val) in &data {
-            let cv = py_to_context_value(py, val)?;
-            ctx.insert(key, cv);
+            let json_val = py_to_json(val.bind(py))?;
+            ctx.insert(key, json_val);
         }
         if let Some(fields) = identity_fields {
             let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();

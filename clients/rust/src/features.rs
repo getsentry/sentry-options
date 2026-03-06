@@ -1,7 +1,7 @@
 //! Feature flag evaluation.
 //!
-//! Provides [`FeatureContext`], [`ContextValue`], and [`FeatureChecker`] for
-//! evaluating feature flags stored in the options system.
+//! Provides [`FeatureContext`] and [`FeatureChecker`] for evaluating feature
+//! flags stored in the options system.
 
 use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
@@ -11,105 +11,31 @@ use std::sync::OnceLock;
 use serde_json::Value;
 use sha1::{Digest, Sha1};
 
-/// A typed value that can be stored in a [`FeatureContext`].
-#[derive(Debug, Clone)]
-pub enum ContextValue {
-    String(String),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    StringList(Vec<String>),
-    IntList(Vec<i64>),
-    FloatList(Vec<f64>),
-    BoolList(Vec<bool>),
-}
-
-impl From<&str> for ContextValue {
-    fn from(s: &str) -> Self {
-        ContextValue::String(s.to_string())
-    }
-}
-
-impl From<String> for ContextValue {
-    fn from(s: String) -> Self {
-        ContextValue::String(s)
-    }
-}
-
-impl From<i32> for ContextValue {
-    fn from(i: i32) -> Self {
-        ContextValue::Int(i as i64)
-    }
-}
-
-impl From<i64> for ContextValue {
-    fn from(i: i64) -> Self {
-        ContextValue::Int(i)
-    }
-}
-
-impl From<f32> for ContextValue {
-    fn from(f: f32) -> Self {
-        ContextValue::Float(f as f64)
-    }
-}
-
-impl From<f64> for ContextValue {
-    fn from(f: f64) -> Self {
-        ContextValue::Float(f)
-    }
-}
-
-impl From<bool> for ContextValue {
-    fn from(b: bool) -> Self {
-        ContextValue::Bool(b)
-    }
-}
-
-impl From<Vec<String>> for ContextValue {
-    fn from(v: Vec<String>) -> Self {
-        ContextValue::StringList(v)
-    }
-}
-
-impl From<Vec<i64>> for ContextValue {
-    fn from(v: Vec<i64>) -> Self {
-        ContextValue::IntList(v)
-    }
-}
-
-impl From<Vec<f64>> for ContextValue {
-    fn from(v: Vec<f64>) -> Self {
-        ContextValue::FloatList(v)
-    }
-}
-
-impl From<Vec<bool>> for ContextValue {
-    fn from(v: Vec<bool>) -> Self {
-        ContextValue::BoolList(v)
-    }
-}
-
-impl ContextValue {
-    /// Produce a Python-compatible string representation for identity hashing.
-    fn to_id_string(&self) -> String {
-        match self {
-            ContextValue::String(s) => s.clone(),
-            ContextValue::Int(i) => i.to_string(),
-            ContextValue::Float(f) => {
+/// Produce a Python-compatible string representation for identity hashing.
+fn value_to_id_string(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(f) = n.as_f64() {
                 // Match Python's str() output: 1.0 -> "1.0", 1.5 -> "1.5"
                 if f.fract() == 0.0 {
                     format!("{f:.1}")
                 } else {
                     f.to_string()
                 }
+            } else {
+                n.to_string()
             }
-            ContextValue::Bool(b) => if *b { "True" } else { "False" }.to_string(),
-            ContextValue::StringList(v) => format!("{v:?}"),
-            ContextValue::IntList(v) => format!("{v:?}"),
-            ContextValue::FloatList(v) => format!("{v:?}"),
-            ContextValue::BoolList(v) => format!("{v:?}"),
         }
+        Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+        Value::Array(arr) => {
+            let items: Vec<String> = arr.iter().map(value_to_id_string).collect();
+            format!("[{}]", items.join(", "))
+        }
+        Value::Null => "None".to_string(),
+        Value::Object(_) => value.to_string(),
     }
 }
 
@@ -118,7 +44,7 @@ impl ContextValue {
 /// Contains arbitrary key-value data used to evaluate feature flag conditions.
 /// The identity fields determine which fields are used for rollout bucketing.
 pub struct FeatureContext {
-    data: HashMap<String, ContextValue>,
+    data: HashMap<String, Value>,
     identity_fields: Vec<String>,
     cached_id: Cell<Option<u64>>,
 }
@@ -142,13 +68,13 @@ impl FeatureContext {
     }
 
     /// Insert a key-value pair into the context.
-    pub fn insert(&mut self, key: &str, value: ContextValue) {
-        self.data.insert(key.to_string(), value);
+    pub fn insert(&mut self, key: &str, value: impl Into<Value>) {
+        self.data.insert(key.to_string(), value.into());
         self.cached_id.set(None);
     }
 
     /// Get a context value by key.
-    pub fn get(&self, key: &str) -> Option<&ContextValue> {
+    pub fn get(&self, key: &str) -> Option<&Value> {
         self.data.get(key)
     }
 
@@ -194,7 +120,7 @@ impl FeatureContext {
         let mut parts: Vec<String> = Vec::with_capacity(identity_fields.len() * 2);
         for key in identity_fields {
             parts.push(key.clone());
-            parts.push(self.data[key.as_str()].to_id_string());
+            parts.push(value_to_id_string(&self.data[key.as_str()]));
         }
         let mut hasher = Sha1::new();
         hasher.update(parts.join(":").as_bytes());
@@ -203,7 +129,7 @@ impl FeatureContext {
         // Create a BigInt to preserve all the 20bytes of the hash digest.
         let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
 
-        // We only need the lower places from the big int to retain compatiblity
+        // We only need the lower places from the big int to retain compatibility.
         // modulo will trim off the u64 overflow, and let us break the bigint
         // into its pieces (there will only be one).
         let small: BigInt = bigint % 1000000000;
@@ -340,72 +266,82 @@ impl Condition {
     }
 }
 
-fn eval_in(ctx_val: &ContextValue, condition_val: &Value) -> bool {
+/// Check if a scalar context value is contained in a condition array.
+/// String comparison is case-insensitive.
+fn eval_in(ctx_val: &Value, condition_val: &Value) -> bool {
     let Some(arr) = condition_val.as_array() else {
         return false;
     };
     match ctx_val {
-        ContextValue::String(s) => {
+        Value::String(s) => {
             let s_lower = s.to_lowercase();
             arr.iter()
                 .any(|v| v.as_str().is_some_and(|cv| cv.to_lowercase() == s_lower))
         }
-        ContextValue::Int(i) => arr.iter().any(|v| v.as_i64().is_some_and(|cv| cv == *i)),
-        ContextValue::Float(f) => arr.iter().any(|v| v.as_f64().is_some_and(|cv| cv == *f)),
-        ContextValue::Bool(b) => arr.iter().any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                arr.iter().any(|v| v.as_i64().is_some_and(|cv| cv == i))
+            } else if let Some(f) = n.as_f64() {
+                arr.iter().any(|v| v.as_f64().is_some_and(|cv| cv == f))
+            } else {
+                false
+            }
+        }
+        Value::Bool(b) => arr.iter().any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
         _ => false,
     }
 }
 
-fn eval_contains(ctx_val: &ContextValue, condition_val: &Value) -> bool {
-    match ctx_val {
-        ContextValue::StringList(list) => condition_val.as_str().is_some_and(|s| {
+/// Check if a context array contains a condition scalar value.
+/// String comparison is case-insensitive.
+fn eval_contains(ctx_val: &Value, condition_val: &Value) -> bool {
+    let Some(ctx_arr) = ctx_val.as_array() else {
+        return false;
+    };
+    match condition_val {
+        Value::String(s) => {
             let s_lower = s.to_lowercase();
-            list.iter().any(|cv| cv.to_lowercase() == s_lower)
-        }),
-        ContextValue::IntList(list) => condition_val.as_i64().is_some_and(|i| list.contains(&i)),
-        ContextValue::FloatList(list) => condition_val.as_f64().is_some_and(|f| list.contains(&f)),
-        ContextValue::BoolList(list) => condition_val.as_bool().is_some_and(|b| list.contains(&b)),
+            ctx_arr
+                .iter()
+                .any(|v| v.as_str().is_some_and(|cv| cv.to_lowercase() == s_lower))
+        }
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                ctx_arr.iter().any(|v| v.as_i64().is_some_and(|cv| cv == i))
+            } else if let Some(f) = n.as_f64() {
+                ctx_arr.iter().any(|v| v.as_f64().is_some_and(|cv| cv == f))
+            } else {
+                false
+            }
+        }
+        Value::Bool(b) => ctx_arr
+            .iter()
+            .any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
         _ => false,
     }
 }
 
-fn eval_equals(ctx_val: &ContextValue, condition_val: &Value) -> bool {
-    match ctx_val {
-        ContextValue::String(s) => condition_val
-            .as_str()
-            .is_some_and(|cv| cv.to_lowercase() == s.to_lowercase()),
-        ContextValue::Int(i) => condition_val.as_i64().is_some_and(|cv| cv == *i),
-        ContextValue::Float(f) => condition_val.as_f64().is_some_and(|cv| cv == *f),
-        ContextValue::Bool(b) => condition_val.as_bool().is_some_and(|cv| cv == *b),
-        ContextValue::StringList(list) => condition_val.as_array().is_some_and(|arr| {
-            arr.len() == list.len()
-                && arr.iter().zip(list.iter()).all(|(cv, rv)| {
-                    cv.as_str()
-                        .is_some_and(|s| s.to_lowercase() == rv.to_lowercase())
-                })
-        }),
-        ContextValue::IntList(list) => condition_val.as_array().is_some_and(|arr| {
-            arr.len() == list.len()
-                && arr
-                    .iter()
-                    .zip(list.iter())
-                    .all(|(cv, rv)| cv.as_i64().is_some_and(|i| i == *rv))
-        }),
-        ContextValue::FloatList(list) => condition_val.as_array().is_some_and(|arr| {
-            arr.len() == list.len()
-                && arr
-                    .iter()
-                    .zip(list.iter())
-                    .all(|(cv, rv)| cv.as_f64().is_some_and(|f| f == *rv))
-        }),
-        ContextValue::BoolList(list) => condition_val.as_array().is_some_and(|arr| {
-            arr.len() == list.len()
-                && arr
-                    .iter()
-                    .zip(list.iter())
-                    .all(|(cv, rv)| cv.as_bool().is_some_and(|b| b == *rv))
-        }),
+/// Check if a context value equals a condition value.
+/// Scalars are compared directly (strings case-insensitively).
+/// Arrays are compared element-wise with matching length.
+fn eval_equals(ctx_val: &Value, condition_val: &Value) -> bool {
+    match (ctx_val, condition_val) {
+        (Value::String(a), Value::String(b)) => a.to_lowercase() == b.to_lowercase(),
+        (Value::Number(a), Value::Number(b)) => {
+            // Compare as i64 first, fall back to f64
+            if let (Some(ai), Some(bi)) = (a.as_i64(), b.as_i64()) {
+                ai == bi
+            } else if let (Some(af), Some(bf)) = (a.as_f64(), b.as_f64()) {
+                af == bf
+            } else {
+                false
+            }
+        }
+        (Value::Bool(a), Value::Bool(b)) => a == b,
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(av, bv)| eval_equals(av, bv))
+        }
+        _ => false,
     }
 }
 
@@ -523,6 +459,7 @@ pub fn features(namespace: &str) -> FeatureChecker {
 mod tests {
     use super::*;
     use crate::Options;
+    use serde_json::json;
     use std::fs;
     use std::path::Path;
     use tempfile::TempDir;
@@ -597,21 +534,21 @@ mod tests {
     #[test]
     fn test_feature_context_insert_and_get() {
         let mut ctx = FeatureContext::new();
-        ctx.insert("org_id", 123.into());
-        ctx.insert("name", "sentry".into());
-        ctx.insert("active", true.into());
+        ctx.insert("org_id", json!(123));
+        ctx.insert("name", json!("sentry"));
+        ctx.insert("active", json!(true));
 
         assert!(ctx.has("org_id"));
         assert!(!ctx.has("missing"));
-        assert!(matches!(ctx.get("org_id"), Some(ContextValue::Int(123))));
-        assert!(matches!(ctx.get("name"), Some(ContextValue::String(s)) if s == "sentry"));
+        assert_eq!(ctx.get("org_id"), Some(&json!(123)));
+        assert_eq!(ctx.get("name"), Some(&json!("sentry")));
     }
 
     #[test]
     fn test_feature_context_id_is_cached() {
         let mut ctx = FeatureContext::new();
         ctx.identity_fields(vec!["user_id"]);
-        ctx.insert("user_id", 42.into());
+        ctx.insert("user_id", json!(42));
 
         let id1 = ctx.id();
         let id2 = ctx.id();
@@ -621,8 +558,8 @@ mod tests {
     #[test]
     fn test_feature_context_id_resets_on_identity_change() {
         let mut ctx = FeatureContext::new();
-        ctx.insert("user_id", 1.into());
-        ctx.insert("org_id", 2.into());
+        ctx.insert("user_id", json!(1));
+        ctx.insert("org_id", json!(2));
 
         ctx.identity_fields(vec!["user_id"]);
         let id_user = ctx.id();
@@ -641,8 +578,8 @@ mod tests {
         let make_ctx = || {
             let mut ctx = FeatureContext::new();
             ctx.identity_fields(vec!["user_id", "org_id"]);
-            ctx.insert("user_id", 456.into());
-            ctx.insert("org_id", 123.into());
+            ctx.insert("user_id", json!(456));
+            ctx.insert("org_id", json!(123));
             ctx
         };
 
@@ -650,8 +587,8 @@ mod tests {
 
         let mut other_ctx = FeatureContext::new();
         other_ctx.identity_fields(vec!["user_id", "org_id"]);
-        other_ctx.insert("user_id", 789.into());
-        other_ctx.insert("org_id", 123.into());
+        other_ctx.insert("user_id", json!(789));
+        other_ctx.insert("org_id", json!(123));
 
         assert_ne!(make_ctx().id(), other_ctx.id());
     }
@@ -665,27 +602,27 @@ mod tests {
         assert_eq!(ctx.id() % 100, 5, "should match with python implementation");
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", "bar".into());
-        ctx.insert("baz", "barfoo".into());
+        ctx.insert("foo", json!("bar"));
+        ctx.insert("baz", json!("barfoo"));
         ctx.identity_fields(vec!["foo"]);
         assert_eq!(ctx.id() % 100, 62);
 
         // Undefined fields should not contribute to the id.
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", "bar".into());
-        ctx.insert("baz", "barfoo".into());
+        ctx.insert("foo", json!("bar"));
+        ctx.insert("baz", json!("barfoo"));
         ctx.identity_fields(vec!["foo", "whoops"]);
         assert_eq!(ctx.id() % 100, 62);
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", "bar".into());
-        ctx.insert("baz", "barfoo".into());
+        ctx.insert("foo", json!("bar"));
+        ctx.insert("baz", json!("barfoo"));
         ctx.identity_fields(vec!["foo", "baz"]);
         assert_eq!(ctx.id() % 100, 1);
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", "bar".into());
-        ctx.insert("baz", "barfoo".into());
+        ctx.insert("foo", json!("bar"));
+        ctx.insert("baz", json!("barfoo"));
         // When there is no overlap with identity fields and data,
         // all fields should be used
         ctx.identity_fields(vec!["whoops", "nope"]);
@@ -698,7 +635,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, &cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("organization_id", json!(123));
 
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
@@ -727,7 +664,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, &cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("organization_id", json!(123));
 
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
@@ -738,7 +675,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, &cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 999.into());
+        ctx.insert("organization_id", json!(999));
 
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
@@ -749,7 +686,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(false, 100, &cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("organization_id", json!(123));
 
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
@@ -760,7 +697,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 0, &cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("organization_id", json!(123));
 
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
@@ -771,7 +708,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, &cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("organization_id", json!(123));
 
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
@@ -780,8 +717,8 @@ mod tests {
     fn test_rollout_is_deterministic() {
         let mut ctx = FeatureContext::new();
         ctx.identity_fields(vec!["user_id"]);
-        ctx.insert("user_id", 42.into());
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("user_id", json!(42));
+        ctx.insert("organization_id", json!(123));
 
         // Add 1 to get around fence post with < vs <=
         let id_mod = (ctx.id() % 100) + 1;
@@ -797,7 +734,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("slug", "sentry".into());
+        ctx.insert("slug", json!("sentry"));
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
 
@@ -807,11 +744,11 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("organization_id", 123.into());
+        ctx.insert("organization_id", json!(123));
         assert!(check(&opts, "organizations:test-feature", &ctx));
 
         let mut ctx2 = FeatureContext::new();
-        ctx2.insert("organization_id", 999.into());
+        ctx2.insert("organization_id", json!(999));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
     }
 
@@ -821,14 +758,11 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert(
-            "tags",
-            ContextValue::StringList(vec!["alpha".into(), "beta".into()]),
-        );
+        ctx.insert("tags", json!(["alpha", "beta"]));
         assert!(check(&opts, "organizations:test-feature", &ctx));
 
         let mut ctx2 = FeatureContext::new();
-        ctx2.insert("tags", ContextValue::StringList(vec!["alpha".into()]));
+        ctx2.insert("tags", json!(["alpha"]));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
     }
 
@@ -838,11 +772,11 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("plan", "Enterprise".into());
+        ctx.insert("plan", json!("Enterprise"));
         assert!(check(&opts, "organizations:test-feature", &ctx));
 
         let mut ctx2 = FeatureContext::new();
-        ctx2.insert("plan", "free".into());
+        ctx2.insert("plan", json!("free"));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
     }
 
@@ -852,11 +786,11 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("is_free", true.into());
+        ctx.insert("is_free", json!(true));
         assert!(check(&opts, "organizations:test-feature", &ctx));
 
         let mut ctx2 = FeatureContext::new();
-        ctx2.insert("is_free", false.into());
+        ctx2.insert("is_free", json!(false));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
     }
 
@@ -913,15 +847,15 @@ mod tests {
         let (opts, _t) = setup_feature_options(feature);
 
         let mut ctx1 = FeatureContext::new();
-        ctx1.insert("org_id", 1.into());
+        ctx1.insert("org_id", json!(1));
         assert!(check(&opts, "organizations:test-feature", &ctx1));
 
         let mut ctx2 = FeatureContext::new();
-        ctx2.insert("org_id", 2.into());
+        ctx2.insert("org_id", json!(2));
         assert!(check(&opts, "organizations:test-feature", &ctx2));
 
         let mut ctx3 = FeatureContext::new();
-        ctx3.insert("org_id", 3.into());
+        ctx3.insert("org_id", json!(3));
         assert!(!check(&opts, "organizations:test-feature", &ctx3));
     }
 
@@ -934,13 +868,13 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, conds));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("org_id", 123.into());
-        ctx.insert("user_email", "admin@example.com".into());
+        ctx.insert("org_id", json!(123));
+        ctx.insert("user_email", json!("admin@example.com"));
         assert!(check(&opts, "organizations:test-feature", &ctx));
 
         let mut ctx2 = FeatureContext::new();
-        ctx2.insert("org_id", 123.into());
-        ctx2.insert("user_email", "other@example.com".into());
+        ctx2.insert("org_id", json!(123));
+        ctx2.insert("user_email", json!("other@example.com"));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
     }
 
@@ -950,7 +884,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("org_id", 123.into());
+        ctx.insert("org_id", json!(123));
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
 
@@ -960,7 +894,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("slug", "123".into());
+        ctx.insert("slug", json!("123"));
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
 
@@ -970,7 +904,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("active", true.into());
+        ctx.insert("active", json!(true));
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
 
@@ -980,7 +914,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("score", 0.5.into());
+        ctx.insert("score", json!(0.5));
         assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
 
@@ -991,7 +925,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("org_id", 123.into());
+        ctx.insert("org_id", json!(123));
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
 
@@ -1002,7 +936,7 @@ mod tests {
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
         let mut ctx = FeatureContext::new();
-        ctx.insert("slug", "123".into());
+        ctx.insert("slug", json!("123"));
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
 }
