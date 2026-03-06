@@ -4,7 +4,6 @@
     "properties": {
       "name": {
         "type": "string",
-        "minLength": 1,
         "description": "The feature name."
       },
       "owner": {
@@ -31,7 +30,7 @@
         "description": "Human-readable description of the feature."
       }
     },
-    "required": ["name", "owner", "segments", "created_at"],
+    "required": ["owner", "segments", "created_at"],
     "additionalProperties": false
   },
   "Owner": {

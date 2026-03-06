@@ -1451,7 +1451,6 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "segments": [],
                         "created_at": "2024-01-01"
@@ -1472,7 +1471,6 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "segments": [],
                         "created_at": "2024-01-01"
                     }
@@ -1492,7 +1490,6 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "owner": {"email": "test@example.com"},
                         "segments": [],
                         "created_at": "2024-01-01"
@@ -1512,7 +1509,6 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "enabled": true,
                         "created_at": "2024-01-01T00:00:00",
@@ -1545,7 +1541,6 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "created_at": "2024-01-01",
                         "segments": [
@@ -1577,7 +1572,6 @@ Error: \"version\" is a required property"
                 "test",
                 &json!({
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "created_at": "2024-01-01",
                         "segments": [
@@ -1642,7 +1636,6 @@ Error: \"version\" is a required property"
                 &json!({
                     "my-option": "world",
                     "feature.organizations:fury-mode": {
-                        "name": "organizations:fury-mode",
                         "owner": {"team": "hybrid-cloud"},
                         "segments": [],
                         "created_at": "2024-01-01"
