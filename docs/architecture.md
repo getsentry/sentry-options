@@ -96,10 +96,80 @@ JSON schemas define available options with types and defaults:
 | Float | `"type": "number"` | `3.14` |
 | Boolean | `"type": "boolean"` | `true` |
 | Array | `"type": "array"` | `[1,2,3]` |
+| Object | `"type": "object"` | `{"host": "localhost", "port": 8080}` |
 
-> Array types of string, integer, float, and boolean are accepted.
+> Array items can be primitives (`string`, `integer`, `number`, `boolean`) or `object`.
 
-**Future:** TypedDicts for structured options, and nested arrays.
+#### Object Type
+
+Objects require a `properties` field that defines the shape. Each field in `properties`
+must have a `type` (one of: `string`, `integer`, `number`, `boolean`). By default all
+fields are required — partial objects are not allowed unless fields are marked optional.
+
+```json
+{
+  "my-config": {
+    "type": "object",
+    "properties": {
+      "host": { "type": "string" },
+      "port": { "type": "integer" }
+    },
+    "default": { "host": "localhost", "port": 8080 },
+    "description": "Service configuration"
+  }
+}
+```
+
+#### Optional Fields
+
+Individual fields within an object (or array-of-objects item) can be marked as optional
+by adding `"optional": true`. Optional fields may be omitted from defaults and values.
+When omitted, no default is auto-populated — callers must handle the absence.
+
+```json
+{
+  "my-config": {
+    "type": "object",
+    "properties": {
+      "host": { "type": "string" },
+      "port": { "type": "integer" },
+      "label": { "type": "string", "optional": true }
+    },
+    "default": { "host": "localhost", "port": 8080 },
+    "description": "Service configuration with optional label"
+  }
+}
+```
+
+In this example, `host` and `port` are required, while `label` can be omitted.
+If provided, `label` must still be a `string` — type validation still applies.
+
+Schema evolution treats any change to the `properties` shape (including adding or
+removing `"optional"`) as a breaking change (`ShapeChanged`).
+
+#### Array of Objects
+
+Arrays of objects define the item shape in `items.properties`. All items must
+follow the same shape (homogeneous).
+
+```json
+{
+  "endpoints": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "weight": { "type": "integer" }
+      }
+    },
+    "default": [],
+    "description": "Weighted endpoints"
+  }
+}
+```
+
+Nested objects (objects within objects) are not supported — object fields must be primitives.
 
 ### Schema Requirements
 
@@ -111,14 +181,13 @@ Each schema file must have:
 
 Each property must have:
 
-- `type` - One of: `string`, `integer`, `number`, `boolean`, or `array`
+- `type` - One of: `string`, `integer`, `number`, `boolean`, `array`, or `object`
 - `default` - Default value (must match declared type)
 - `description` - Human-readable description
-- `items` - If the `type` is `array`. This should be an object of the following form:
+- `items` - Required when `type` is `array`. An object with `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, `boolean`, or `object`. When items type is `object`, a `properties` field defining the item shape is also required.
+- `properties` - Required when `type` is `object`. An object mapping field names to `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`. Fields may include `"optional": true` to allow omission.
 
-`{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`.
-
-`additionalProperties: false` is auto-injected to reject unknown options.
+`additionalProperties: false` is auto-injected to reject unknown options and unknown object fields.
 
 ## Values Format
 
@@ -180,34 +249,86 @@ Output format:
 ### Python
 
 ```python
-from sentry_options import option_group
+from sentry_options import init, options
 
-opts = option_group('getsentry')
+init()
+opts = options('getsentry')
 url: str = opts.get('system.url-prefix')
 rate: float = opts.get('traces.sample-rate')
+```
 
-# Testing
+#### Testing (Python)
+
+Use the `override_options` context manager to temporarily replace option values in tests.
+Overrides are validated against the schema (unknown keys and type mismatches raise errors).
+Requires `init()` to have been called first — use a `conftest.py` fixture:
+
+```python
+# conftest.py
+import pytest
+from sentry_options import init
+
+@pytest.fixture(scope='session', autouse=True)
+def _init_options() -> None:
+    init()
+```
+
+```python
+from sentry_options import options
 from sentry_options.testing import override_options
 
 def test_feature():
-    with override_options(getsentry={'feature.enabled': True}):
-        assert my_feature_works()
+    with override_options('getsentry', {'feature.enabled': True}):
+        assert options('getsentry').get('feature.enabled') is True
+
+# Nesting is supported — inner overrides restore to outer values
+def test_nested():
+    with override_options('getsentry', {'rate': 0.5}):
+        with override_options('getsentry', {'rate': 1.0}):
+            assert options('getsentry').get('rate') == 1.0
+        assert options('getsentry').get('rate') == 0.5
 ```
 
 ### Rust
 
 ```rust
-use sentry_options::Options;
+use sentry_options::{init, options};
 
-fn main() -> anyhow::Result<()> {
-    let options = Options::new(schemas_dir, values_dir)?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
 
-    let url = options.get("getsentry", "system.url-prefix")?;
-    let rate = options.get("getsentry", "traces.sample-rate")?;
-
+    let opts = options("getsentry");
+    let url = opts.get("system.url-prefix")?;
+    let rate = opts.get("traces.sample-rate")?;
     Ok(())
 }
 ```
+
+#### Testing (Rust)
+
+Use `ensure_initialized()` for idempotent init in tests (safe to call from parallel threads).
+Use `override_options()` which returns a guard that restores values when dropped.
+Overrides are validated against the schema.
+
+```rust
+use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::options;
+use serde_json::json;
+
+#[test]
+fn test_feature() {
+    ensure_initialized().unwrap();
+    let _guard = override_options(&[
+        ("getsentry", "feature.enabled", json!(true)),
+    ]).unwrap();
+
+    let opts = options("getsentry");
+    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
+    // guard dropped here — value restored
+}
+```
+
+Overrides are thread-local and won't apply to spawned threads.
 
 ### Write Tool
 

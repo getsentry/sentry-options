@@ -2,10 +2,10 @@
 
 use std::sync::OnceLock;
 
-use ::sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
+use sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use serde_json::Value;
 
 // Global options instance
@@ -66,7 +66,45 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
             }
             Ok(list.into_any().unbind())
         }
-        Value::Object(_) => Err(PyValueError::new_err("Objects not yet supported")),
+        Value::Object(map) => {
+            let dict = PyDict::new(py);
+            for (k, v) in map {
+                let py_val = json_to_py(py, v)?;
+                dict.set_item(k, py_val)?;
+            }
+            Ok(dict.into_any().unbind())
+        }
+    }
+}
+
+/// Convert Python object to serde_json::Value.
+fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
+    if obj.is_none() {
+        Ok(Value::Null)
+    } else if let Ok(b) = obj.extract::<bool>() {
+        Ok(Value::Bool(b))
+    } else if let Ok(i) = obj.extract::<i64>() {
+        Ok(Value::Number(i.into()))
+    } else if let Ok(f) = obj.extract::<f64>() {
+        Ok(Value::Number(serde_json::Number::from_f64(f).ok_or_else(
+            || PyValueError::new_err("Cannot convert NaN or Infinity to JSON"),
+        )?))
+    } else if let Ok(s) = obj.extract::<String>() {
+        Ok(Value::String(s))
+    } else if let Ok(list) = obj.cast::<PyList>() {
+        let items: Result<Vec<Value>, _> = list.iter().map(|item| py_to_json(&item)).collect();
+        Ok(Value::Array(items?))
+    } else if let Ok(dict) = obj.cast::<PyDict>() {
+        let mut map = serde_json::Map::new();
+        for (k, v) in dict.iter() {
+            let key: String = k
+                .extract()
+                .map_err(|_| PyValueError::new_err("Dict keys must be strings"))?;
+            map.insert(key, py_to_json(&v)?);
+        }
+        Ok(Value::Object(map))
+    } else {
+        Err(PyValueError::new_err("Unsupported type for override"))
     }
 }
 
@@ -141,9 +179,46 @@ impl NamespaceOptions {
     }
 }
 
+// Testing utilities - override storage and validation
+
+/// Set a thread-local override. Returns the previous value (as a Python object) or None.
+#[pyfunction]
+fn _set_override(
+    py: Python<'_>,
+    namespace: String,
+    key: String,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let json_value = py_to_json(value)?;
+    let previous = ::sentry_options::testing::get_override(&namespace, &key);
+    ::sentry_options::testing::set_override(&namespace, &key, json_value);
+    match previous {
+        Some(v) => json_to_py(py, &v),
+        None => Ok(py.None()),
+    }
+}
+
+/// Clear a thread-local override.
+#[pyfunction]
+fn _clear_override(namespace: String, key: String) {
+    ::sentry_options::testing::clear_override(&namespace, &key);
+}
+
+/// Validate an option value against the schema (used by testing.py).
+#[pyfunction]
+fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    let json_value = py_to_json(value)?;
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    opts.validate_override(&namespace, &key, &json_value)
+        .map_err(options_err)?;
+    Ok(())
+}
+
 /// Python module definition.
 #[pymodule]
-fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
@@ -164,5 +239,9 @@ fn sentry_options(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InitializationError",
         m.py().get_type::<InitializationError>(),
     )?;
+    // Testing utilities (only called by testing.py)
+    m.add_function(wrap_pyfunction!(_set_override, m)?)?;
+    m.add_function(wrap_pyfunction!(_clear_override, m)?)?;
+    m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
     Ok(())
 }
