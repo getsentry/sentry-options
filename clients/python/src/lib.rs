@@ -10,7 +10,6 @@ use ::sentry_options::{
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
-use sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use serde_json::Value;
 
 // Global options instance

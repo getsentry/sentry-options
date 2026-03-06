@@ -110,6 +110,23 @@ def test_rollout_100_always_returns_true() -> None:
         assert checker.has('organizations:enabled-feature', ctx) is True
 
 
+def test_rollout_partial_returns_result() -> None:
+    # Both these context objects meet the condition,
+    # but they are in different rollout buckets.
+    ctx = make_context(
+        {'user_id': 123, 'is_trial': True},
+        identity_fields=['user_id'],
+    )
+    checker = features(NAMESPACE)
+    assert checker.has('organizations:rollout-mid', ctx) is True
+
+    ctx = make_context(
+        {'user_id': 456, 'is_trial': True},
+        identity_fields=['user_id'],
+    )
+    assert checker.has('organizations:rollout-mid', ctx) is False
+
+
 def test_has_is_deterministic() -> None:
     # Same context produces same result on repeated calls
     ctx = make_context(
