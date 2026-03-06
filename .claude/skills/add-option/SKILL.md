@@ -131,6 +131,20 @@ After updating the schema, tell the user:
 >
 > The new option will use its schema default until you add explicit values in the automator.
 
+**Usage example for the new option:**
+
+#### Python
+```python
+opts = options('{namespace}')
+new_value = opts.get('{new_option_name}')  # returns str | int | float | bool
+```
+
+#### Rust
+```rust
+let opts = options("{namespace}");
+let new_value = opts.get("{new_option_name}")?.as_bool().unwrap();  // or as_i64(), as_f64(), as_str()
+```
+
 ---
 
 ## Optional: Add Values
@@ -156,5 +170,9 @@ options:
 **Values location:** `option-values/{namespace}/default/values.yaml` (in sentry-options-automator)
 
 **Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+
+**Return types:**
+- Python: `opts.get('key')` returns `str | int | float | bool`
+- Rust: `opts.get("key")?` returns `serde_json::Value` (use `.as_bool()`, `.as_i64()`, `.as_f64()`, `.as_str()`)
 
 **Hot-reload:** Changes propagate in ~1-2 minutes without pod restart
