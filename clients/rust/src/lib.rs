@@ -2,7 +2,7 @@
 
 pub mod features;
 
-pub use features::{ContextValue, FeatureChecker, FeatureContext, features};
+pub use features::{FeatureChecker, FeatureContext, features};
 
 use std::collections::HashMap;
 use std::path::Path;
