@@ -339,10 +339,7 @@ fn eval_equals(ctx_val: &Value, condition_val: &Value) -> bool {
         }
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Array(a), Value::Array(b)) => {
-            a.len() == b.len()
-                && a.iter()
-                    .zip(b.iter())
-                    .all(|(av, bv)| eval_equals(av, bv))
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(av, bv)| eval_equals(av, bv))
         }
         _ => false,
     }

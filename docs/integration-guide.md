@@ -123,6 +123,7 @@ ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 
 #### 3. Add Dependency
 
+**Python:**
 ```toml
 # pyproject.toml
 dependencies = [
@@ -130,8 +131,16 @@ dependencies = [
 ]
 ```
 
+**Rust:**
+```toml
+# Cargo.toml
+[dependencies]
+sentry-options = "0.0.14"
+```
+
 #### 4. Initialize and Use
 
+**Python:**
 ```python
 from sentry_options import init, options
 
@@ -146,9 +155,81 @@ if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
 ```
 
-#### 5. Test Locally
+**Rust:**
+```rust
+use sentry_options::{init, options};
 
-Before deploying, test your integration locally. The library automatically looks for a `sentry-options/` directory in your working directory.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
+
+    let opts = options("seer");
+    if opts.get("feature.enabled")? == serde_json::json!(true) {
+        let rate = opts.get("feature.rate_limit")?;
+    }
+    Ok(())
+}
+```
+
+#### 5. Override Options in Tests
+
+Use `override_options` to temporarily replace option values in tests. Overrides are validated against the schema — unknown keys and type mismatches raise errors. Overrides are thread-local and won't apply to spawned threads.
+
+**Python:**
+
+Add a `conftest.py` to initialize options once per test session:
+
+```python
+# conftest.py
+import pytest
+from sentry_options import init
+
+@pytest.fixture(scope='session', autouse=True)
+def _init_options() -> None:
+    init()
+```
+
+```python
+from sentry_options import options
+from sentry_options.testing import override_options
+
+def test_feature_enabled():
+    with override_options('seer', {'feature.enabled': True}):
+        assert options('seer').get('feature.enabled') is True
+
+# Nesting works — inner overrides restore to outer values on exit
+def test_nested_overrides():
+    with override_options('seer', {'feature.rate_limit': 50}):
+        with override_options('seer', {'feature.rate_limit': 100}):
+            assert options('seer').get('feature.rate_limit') == 100
+        assert options('seer').get('feature.rate_limit') == 50
+```
+
+**Rust:**
+
+Use `ensure_initialized()` for idempotent init (safe to call from parallel test threads). `override_options()` returns a guard that restores values when dropped.
+
+```rust
+use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::options;
+use serde_json::json;
+
+#[test]
+fn test_feature_enabled() {
+    ensure_initialized().unwrap();
+    let _guard = override_options(&[
+        ("seer", "feature.enabled", json!(true)),
+    ]).unwrap();
+
+    let opts = options("seer");
+    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
+    // guard dropped here — value restored
+}
+```
+
+#### 6. Test Locally
+
+Before deploying, test your integration locally.
+ The library automatically looks for a `sentry-options/` directory in your working directory.
 
 **Remember:** Namespace directories must be prefixed with your repo name (e.g., `seer`, `seer-autofix`).
 
@@ -183,7 +264,7 @@ sentry-options/
 
 To test hot-reload, modify `values.json` while your service is running - changes should be picked up within 5 seconds.
 
-#### 6. Add Schema Validation CI
+#### 7. Add Schema Validation CI
 
 `.github/workflows/validate-sentry-options.yml`:
 ```yaml
@@ -273,29 +354,29 @@ PR: Update schema.json    →    PR: Update repos.json SHA
 
 ### Phase 3: ops Repo Changes
 
-Can happen anytime - use `optional: true` so pods start without ConfigMap.
+Can happen anytime — pods start normally without the ConfigMap, falling back to schema defaults.
 
-The ops repo uses Jinja2 templating. Add volume and volumeMount to your deployment.yaml:
+Add pod annotations to your deployment so the sentry-options injector automatically mounts the ConfigMap:
 
 ```yaml
 # deployment.yaml
-      containers:
-        - name: {{ values.service }}
-          # ... existing config ...
-          volumeMounts:
-          # ... existing mounts ...
-          - name: sentry-options-values
-            mountPath: /etc/sentry-options/values/{namespace}
-            readOnly: true
-      volumes:
-      # ... existing volumes ...
-      - name: sentry-options-values
-        configMap:
-          name: sentry-options-{namespace}
-          optional: true  # Pod starts with defaults if ConfigMap missing
+spec:
+  template:
+    metadata:
+      annotations:
+        options.sentry.io/inject: 'true'
+        options.sentry.io/namespace: {namespace}
 ```
 
-Replace `{namespace}` with your actual namespace (e.g., `seer`). The ConfigMap name is simply `sentry-options-{namespace}` (e.g., `sentry-options-seer`), with the appropriate target's values deployed to each region's cluster.
+The injector automatically adds the necessary volumes and volume mounts based on these annotations. No manual volume configuration is needed.
+
+For multiple namespaces, use a comma-separated list:
+
+```yaml
+options.sentry.io/namespace: seer-code-review,seer
+```
+
+Replace `{namespace}` with your actual namespace (e.g., `seer`). The appropriate target's values are deployed to each region's cluster.
 
 ## ConfigMap Generation
 
