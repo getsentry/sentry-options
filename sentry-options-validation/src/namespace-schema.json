@@ -14,7 +14,18 @@
     "properties": {
       "type": "object",
       "patternProperties": {
-        ".*": {
+        "^feature\\.": {
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/Feature"
+            }
+          },
+          "required": ["$ref"],
+          "additionalProperties": false
+        },
+        "^(?!feature\\.)": {
           "type": "object",
           "properties": {
             "type": {
