@@ -1,3 +1,9 @@
+"""sentry-options: a configuration library, not a service.
+
+Provides file-based runtime configuration via volume-mounted ConfigMaps.
+It is a client library consumed by services — it has no API, no endpoints,
+no running processes of its own.
+"""
 from __future__ import annotations
 
 from sentry_options._core import init
