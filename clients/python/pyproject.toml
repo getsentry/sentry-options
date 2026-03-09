@@ -25,6 +25,6 @@ dev = ["maturin", "pytest"]
 Homepage = "https://github.com/getsentry/sentry-options"
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "pyo3/abi3-py311"]
 module-name = "sentry_options._core"
 python-source = "python"
