@@ -111,17 +111,13 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0  # Required for comparing base and head commits
-      - uses: getsentry/sentry-options/.github/actions/validate-schema@0.0.11
-        with:
-          schemas-path: sentry-options/schemas
+    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0.0.15
+    secrets: inherit
+    with:
+      schemas-path: sentry-options/schemas
 ```
 
-**Note:** The action version `0.0.11` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
+**Note:** The workflow version `0.0.15` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
 
 ### 1.3 Show Dockerfile Changes
 

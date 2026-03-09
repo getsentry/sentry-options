@@ -22,12 +22,13 @@ To make ingesting options as simple as possible, `sentry-options` comes with cli
 
 ### validate-schema
 
-A composite GitHub action that ensures
+A reusable GitHub workflow that ensures
 
 - Your schema definition is valid
 - Any changes you make to the schema follow the [schema evolution rules](./docs/integration-guide.md#schema-evolution-rules)
+- Any deleted options are no longer in use in sentry-options-automator
 
-Import this into your repo to ensure your schema is valid before it fails in CI much later on (when you start changing values)
+Call this from your repo to ensure your schema is valid before it fails in CI much later on (when you start changing values)
 
 ## New repo setup
 
