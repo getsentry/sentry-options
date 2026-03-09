@@ -51,7 +51,6 @@ jobs:
 
   build-python:
     name: Build Python (${{ matrix.target }})
-    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -73,7 +72,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist -m clients/python/Cargo.toml
+          args: --release --out dist -m clients/python/Cargo.toml --find-interpreter
           before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
