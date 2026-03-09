@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "context-engine-kill-switch": {
+      "type": "boolean",
+      "default": false,
+      "description": "Kill switch for the context engine"
+    }
+  }
+}
