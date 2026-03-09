@@ -1,8 +1,9 @@
-"""sentry-options: a configuration library, not a service.
+"""sentry-options: file-based runtime configuration for Sentry services.
 
-Provides file-based runtime configuration via volume-mounted ConfigMaps.
-It is a client library consumed by services — it has no API, no endpoints,
-no running processes of its own.
+A client library that reads configuration values from volume-mounted
+ConfigMaps. Schemas (JSON) define available options with types and defaults;
+values are managed in sentry-options-automator and deployed as JSON files.
+The library watches for file changes and refreshes values automatically.
 """
 from __future__ import annotations
 
