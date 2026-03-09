@@ -51,6 +51,7 @@ jobs:
 
   build-python:
     name: Build Python (${{ matrix.target }})
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
