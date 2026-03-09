@@ -27,8 +27,5 @@ Homepage = "https://github.com/getsentry/sentry-options"
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "sentry_options._core"
+# py.typed and _core.pyi are auto-included in wheels via python-source
 python-source = "python"
-include = [
-    { path = "python/sentry_options/py.typed", format = "sdist" },
-    { path = "python/sentry_options/_core.pyi", format = "sdist" },
-]
