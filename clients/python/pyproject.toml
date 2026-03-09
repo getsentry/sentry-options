@@ -27,4 +27,5 @@ Homepage = "https://github.com/getsentry/sentry-options"
 [tool.maturin]
 features = ["pyo3/extension-module", "pyo3/abi3-py311"]
 module-name = "sentry_options._core"
+# py.typed and _core.pyi are auto-included in wheels via python-source
 python-source = "python"

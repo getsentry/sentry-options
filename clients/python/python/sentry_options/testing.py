@@ -13,11 +13,10 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Generator
 
+from sentry_options import OptionValue
 from sentry_options._core import _clear_override
 from sentry_options._core import _set_override
 from sentry_options._core import _validate_option
-
-OptionValue = str | int | float | bool | list[str | int | float | bool]
 
 
 @contextlib.contextmanager
@@ -46,7 +45,7 @@ def override_options(
     for key, value in overrides.items():
         _validate_option(namespace, key, value)
 
-    previous: dict[str, object] = {}
+    previous: dict[str, OptionValue | None] = {}
     for key, value in overrides.items():
         previous[key] = _set_override(namespace, key, value)
 
