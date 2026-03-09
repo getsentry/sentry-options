@@ -89,9 +89,49 @@ All these changes can be deployed together - the library uses schema defaults wh
 }
 ```
 
-**Supported types:** `string`, `integer`, `number`, `boolean`, `array` (nested arrays and objects coming soon)
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`, `object`
 
-> An option of type `array` requires the `"items"` object as seen in the example schema. All types are supported except `array` (for now).
+**Example array option:**
+```json
+"feature.allowed_ids": {
+  "type": "array",
+  "items": {"type": "integer"},
+  "default": [],
+  "description": "List of allowed IDs"
+}
+```
+
+**Example object option:**
+```json
+"feature.config": {
+  "type": "object",
+  "properties": {
+    "host": {"type": "string"},
+    "port": {"type": "integer"},
+    "label": {"type": "string", "optional": true}
+  },
+  "default": {"host": "localhost", "port": 8080},
+  "description": "Service configuration"
+}
+```
+
+Object fields must be primitives (`string`, `integer`, `number`, `boolean`). Fields are required by default; add `"optional": true` to allow omission. Nested objects are not supported.
+
+**Example array-of-objects option:**
+```json
+"feature.endpoints": {
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "url": {"type": "string"},
+      "weight": {"type": "integer"}
+    }
+  },
+  "default": [],
+  "description": "Weighted endpoints"
+}
+```
 
 **Namespace naming:** The namespace directory must be either `{repo}` (exact match) or `{repo}-*` (prefixed). For example, in the `seer` repo: `seer`, `seer-autofix`, `seer-grouping` are valid; `autofix` alone is not.
 
@@ -103,7 +143,7 @@ The CI enforces these rules when you modify schemas:
 |--------|---------|
 | Add new options | ✅ |
 | Add new namespaces | ✅ |
-| Remove options | ❌ (coming soon) |
+| Remove options | ✅ (CI blocks if still in use in automator) |
 | Remove namespaces | ❌ |
 | Change option types | ❌ |
 | Change default values | ❌ |
