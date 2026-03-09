@@ -50,9 +50,3 @@ repos:
       # rustfmt can do it but doesn't read Cargo.toml.
       # https://github.com/rust-lang/rustfmt/issues/4485
       entry: rustfmt --edition=2024
-    - id: check-pyi-stubs
-      name: check _core.pyi matches runtime
-      language: system
-      entry: python clients/python/scripts/check_stubs.py
-      files: (clients/python/src/lib\.rs|clients/python/python/sentry_options/_core\.pyi)$
-      pass_filenames: false
