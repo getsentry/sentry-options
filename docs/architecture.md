@@ -257,6 +257,30 @@ url: str = opts.get('system.url-prefix')
 rate: float = opts.get('traces.sample-rate')
 ```
 
+#### Typing
+
+The package ships with a `py.typed` marker and type stubs, so mypy, pyright,
+and ruff work out of the box — no `# type: ignore` needed.
+
+`OptionValue` is exported for annotating your own code:
+
+```python
+from sentry_options import OptionValue
+
+def process(value: OptionValue) -> None: ...
+```
+
+`OptionValue` is the union of all types an option can return:
+
+| Schema type | Python type |
+|-------------|-------------|
+| `string` | `str` |
+| `integer` | `int` |
+| `number` | `float` |
+| `boolean` | `bool` |
+| `object` | `dict[str, str \| int \| float \| bool]` |
+| `array` | `list[str \| int \| float \| bool \| dict[...]]` |
+
 #### Testing (Python)
 
 Use the `override_options` context manager to temporarily replace option values in tests.

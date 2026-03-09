@@ -158,6 +158,14 @@ if opts.get('feature.enabled'):
     rate = opts.get('feature.rate_limit')
 ```
 
+**Typing:** The package ships with `py.typed` and type stubs — mypy/pyright/ruff work out of the box. `OptionValue` is exported for type annotations:
+
+```python
+from sentry_options import OptionValue
+
+def process(value: OptionValue) -> None: ...
+```
+
 ### 1.6 Local Testing
 
 Before deploying, test the integration locally. The library automatically looks for a `sentry-options/` directory in the working directory.
