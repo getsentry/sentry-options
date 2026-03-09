@@ -277,14 +277,10 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0  # Required for comparing base and head commits
-      - uses: getsentry/sentry-options/.github/actions/validate-schema@sha
-        with:
-          schemas-path: sentry-options/schemas
+    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0.0.15
+    secrets: inherit
+    with:
+      schemas-path: sentry-options/schemas
 ```
 
 ### Phase 2: sentry-options-automator Changes
@@ -442,7 +438,7 @@ sentry-options-automator/
     └── new-sentry-options.yaml    # New system pipeline
 ```
 
-**Note:** The composite action for schema validation (`validate-schema`) is in the `sentry-options` repo, not sentry-options-automator.
+**Note:** The reusable workflow for schema validation (`validate-schema`) is in the `sentry-options` repo, not sentry-options-automator.
 
 ## Directory Structure (Runtime)
 
