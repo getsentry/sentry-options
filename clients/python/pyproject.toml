@@ -28,3 +28,7 @@ Homepage = "https://github.com/getsentry/sentry-options"
 features = ["pyo3/extension-module"]
 module-name = "sentry_options._core"
 python-source = "python"
+include = [
+    { path = "python/sentry_options/py.typed", format = "sdist" },
+    { path = "python/sentry_options/_core.pyi", format = "sdist" },
+]
