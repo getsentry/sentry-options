@@ -1,4 +1,25 @@
 # Changelog
+## 1.0.0
+
+### New Features ✨
+
+- Add type stubs for pythong client library by @hubertdeng123 in [#102](https://github.com/getsentry/sentry-options/pull/102)
+
+### Bug Fixes 🐛
+
+- (ci) Build for python 3.11 manylinux by @hubertdeng123 in [#103](https://github.com/getsentry/sentry-options/pull/103)
+- (python) Correct abi3 wheel tagging to cp311 by @hubertdeng123 in [#101](https://github.com/getsentry/sentry-options/pull/101)
+
+### Documentation 📚
+
+- Add module-level docstring to Python client by @hubertdeng123 in [#100](https://github.com/getsentry/sentry-options/pull/100)
+
+### Internal Changes 🔧
+
+- (ci) Delete old composite action by @kenzoengineer in [#97](https://github.com/getsentry/sentry-options/pull/97)
+- (docs) Update docs to match 0.0.15 features by @kenzoengineer in [#98](https://github.com/getsentry/sentry-options/pull/98)
+- (release) Also bump reusable workflow version by @kenzoengineer in [#96](https://github.com/getsentry/sentry-options/pull/96)
+
 ## 0.0.15
 
 ### New Features ✨
