@@ -165,25 +165,32 @@ pub fn fetch_shas(shas: &[&str]) -> Result<()> {
 pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> Result<()> {
     fs::create_dir_all(out_dir)?;
 
+    // Check whether the path exists in the tree at this SHA before archiving.
+    // Using `git cat-file -e` is more reliable than parsing error messages.
+    let path_exists = Command::new("git")
+        .args(["cat-file", "-e", &format!("{}:{}", sha, schemas_path)])
+        .status()?
+        .success();
+
+    if !path_exists {
+        // The schemas directory didn't exist at this SHA (e.g. the repo is
+        // onboarding sentry-options for the first time). Create the expected
+        // subdirectory so callers see an empty schema set.
+        fs::create_dir_all(out_dir.join(schemas_path))?;
+        return Ok(());
+    }
+
     // git archive will output a tarball of the specified directory
     let archive_output = Command::new("git")
         .args(["archive", sha, schemas_path])
         .output()?;
 
     if !archive_output.status.success() {
-        let stderr = String::from_utf8_lossy(&archive_output.stderr);
-        // If the path didn't exist at this SHA, treat it as empty
-        if stderr.contains("did not match any files") {
-            // Create the expected subdirectory so callers see an empty schema
-            // set rather than a missing-path error.
-            fs::create_dir_all(out_dir.join(schemas_path))?;
-            return Ok(());
-        }
         return Err(AppError::Git(format!(
             "Failed to archive {} at {}: {}",
             schemas_path,
             sha,
-            stderr.trim()
+            String::from_utf8_lossy(&archive_output.stderr).trim()
         )));
     }
 
