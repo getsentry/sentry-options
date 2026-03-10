@@ -19,15 +19,40 @@ def schemas_dir(tmp_path: Path) -> Path:
     """A minimal controlled schema directory for testing."""
     schemas = {
         'my-service': {
-            'str-key': 'string',
-            'int-key': 'integer',
-            'float-key': 'number',
-            'bool-key': 'boolean',
-            'array-key': 'array',
-            'object-key': 'object',
+            'str-key': {'type': 'string'},
+            'int-key': {'type': 'integer'},
+            'float-key': {'type': 'number'},
+            'bool-key': {'type': 'boolean'},
+            # untyped array/object fall back to broad types
+            'array-key': {'type': 'array'},
+            'object-key': {'type': 'object'},
+            # typed array with primitive items
+            'int-list-key': {
+                'type': 'array',
+                'items': {'type': 'integer'},
+            },
+            # array of objects with properties
+            'obj-list-key': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'url': {'type': 'string'},
+                        'weight': {'type': 'integer'},
+                    },
+                },
+            },
+            # object with properties
+            'typed-obj-key': {
+                'type': 'object',
+                'properties': {
+                    'host': {'type': 'string'},
+                    'port': {'type': 'integer'},
+                },
+            },
         },
         'other-service': {
-            'flag': 'boolean',
+            'flag': {'type': 'boolean'},
         },
     }
     for namespace, keys in schemas.items():
@@ -38,8 +63,8 @@ def schemas_dir(tmp_path: Path) -> Path:
                 'version': '1.0',
                 'type': 'object',
                 'properties': {
-                    key: {'type': typ, 'default': None}
-                    for key, typ in keys.items()
+                    key: {**prop, 'default': None}
+                    for key, prop in keys.items()
                 },
             }),
         )
@@ -65,6 +90,11 @@ def test_generate_imports(schemas_dir: Path) -> None:
     )
 
 
+def test_generate_typed_dict_import(schemas_dir: Path) -> None:
+    output = generate(schemas_dir)
+    assert 'TypedDict' in output
+
+
 def test_generate_options_overloads(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     assert (
@@ -86,18 +116,55 @@ def test_generate_namespace_subclasses(schemas_dir: Path) -> None:
     assert 'class NamespaceOptions_other_service(NamespaceOptions):' in output
 
 
-def test_generate_typed_get_overloads(schemas_dir: Path) -> None:
+def test_generate_primitive_overloads(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     assert 'def get(self, key: Literal["str-key"]) -> str' in output
     assert 'def get(self, key: Literal["int-key"]) -> int' in output
     assert 'def get(self, key: Literal["float-key"]) -> float' in output
     assert 'def get(self, key: Literal["bool-key"]) -> bool' in output
-    assert 'def get(self, key: Literal["array-key"]) -> list[object]' in output
+    assert 'def get(self, key: str) -> OptionValue' in output
+
+
+def test_generate_untyped_array_and_object(schemas_dir: Path) -> None:
+    output = generate(schemas_dir)
+    assert (
+        'def get(self, key: Literal["array-key"]) -> list[object]'
+        in output
+    )
     assert (
         'def get(self, key: Literal["object-key"]) -> dict[str, object]'
         in output
     )
-    assert 'def get(self, key: str) -> OptionValue' in output
+
+
+def test_generate_typed_array(schemas_dir: Path) -> None:
+    output = generate(schemas_dir)
+    assert (
+        'def get(self, key: Literal["int-list-key"]) -> list[int]'
+        in output
+    )
+
+
+def test_generate_array_of_objects(schemas_dir: Path) -> None:
+    output = generate(schemas_dir)
+    # TypedDict item class should be generated
+    td = '_NamespaceOptions_my_service_obj_list_key_Item'
+    assert f'class {td}(TypedDict):' in output
+    assert '    url: str' in output
+    assert '    weight: int' in output
+    assert (
+        f'def get(self, key: Literal["obj-list-key"]) -> list[{td}]'
+        in output
+    )
+
+
+def test_generate_typed_object(schemas_dir: Path) -> None:
+    output = generate(schemas_dir)
+    td = '_NamespaceOptions_my_service_typed_obj_key_Dict'
+    assert f'class {td}(TypedDict):' in output
+    assert '    host: str' in output
+    assert '    port: int' in output
+    assert f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
 
 
 def test_generate_is_deterministic(schemas_dir: Path) -> None:
