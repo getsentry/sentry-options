@@ -61,8 +61,8 @@ jobs:
           set -euo pipefail
 
           DELETIONS=$(sentry-options-cli validate-schema-changes \
-            --base-sha "03e5fbd9e319035d01e62ee8aef40e428492244a" \
-            --head-sha "164341c3ed3aa1f8cc31a275083c12c73d1ef380" \
+            --base-sha "${{ github.event.pull_request.base.sha }}" \
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
             --repo "${{ github.event.repository.name }}" \
             --report-deletions)
 
