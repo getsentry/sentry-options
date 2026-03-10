@@ -147,7 +147,16 @@ def generate(schemas_dir: Path) -> str:
         '',
         'from typing import Literal, NotRequired, TypedDict, overload',
         '',
-        'from sentry_options._core import NamespaceOptions, OptionValue',
+        'from sentry_options._core import ('
+        '\n    InitializationError,'
+        '\n    NamespaceOptions,'
+        '\n    OptionsError,'
+        '\n    OptionValue,'
+        '\n    SchemaError,'
+        '\n    UnknownNamespaceError,'
+        '\n    UnknownOptionError,'
+        '\n    init,'
+        '\n)',
         '',
     ]
 

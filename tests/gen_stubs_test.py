@@ -77,10 +77,18 @@ def test_namespace_to_class() -> None:
 def test_generate_imports(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     assert 'from sentry_options._core import *' not in output
-    assert (
-        'from sentry_options._core import NamespaceOptions, OptionValue'
-        in output
-    )
+    assert 'from sentry_options._core import (' in output
+    for symbol in (
+        'InitializationError',
+        'NamespaceOptions',
+        'OptionsError',
+        'OptionValue',
+        'SchemaError',
+        'UnknownNamespaceError',
+        'UnknownOptionError',
+        'init',
+    ):
+        assert symbol in output
     assert 'from typing import Literal, NotRequired, TypedDict, overload' in output
 
 
