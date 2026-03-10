@@ -1,0 +1,6 @@
+- id: sentry-options-gen-stubs
+  name: Generate sentry_options mypy stubs
+  entry: sentry-options-gen-stubs
+  language: system
+  files: ^sentry-options/schemas/
+  pass_filenames: false
