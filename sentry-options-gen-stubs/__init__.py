@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-_PRIMITIVE = {
+_SCHEMA_TO_PYTHON = {
     'string': 'str',
     'integer': 'int',
     'number': 'float',
@@ -31,12 +31,12 @@ _PRIMITIVE = {
 }
 
 
-def namespace_to_class(namespace: str) -> str:
-    return 'NamespaceOptions_' + re.sub(r'[^a-zA-Z0-9]', '_', namespace)
-
-
 def _ident(s: str) -> str:
     return re.sub(r'[^a-zA-Z0-9]', '_', s)
+
+
+def namespace_to_class(namespace: str) -> str:
+    return 'NamespaceOptions_' + _ident(namespace)
 
 
 def _prop_to_type(
@@ -53,19 +53,22 @@ def _prop_to_type(
     collected into typed_dicts, keyed by their generated class name.
     """
     t = prop.get('type', '')
-    if t in _PRIMITIVE:
-        return _PRIMITIVE[t]
+    if t in _SCHEMA_TO_PYTHON:
+        return _SCHEMA_TO_PYTHON[t]
     if t == 'array':
         items = prop.get('items', {})
         item_t = items.get('type', '')
-        if item_t in _PRIMITIVE:
-            return f'list[{_PRIMITIVE[item_t]}]'
+        if item_t in _SCHEMA_TO_PYTHON:
+            return f'list[{_SCHEMA_TO_PYTHON[item_t]}]'
         if item_t == 'object':
             item_props = items.get('properties', {})
             if item_props:
                 td = f'_{class_name}_{_ident(key)}_Item'
                 typed_dicts[td] = [
-                    (_ident(k), _PRIMITIVE.get(v.get('type', ''), 'object'))
+                    (
+                        _ident(k),
+                        _SCHEMA_TO_PYTHON.get(v.get('type', ''), 'object'),
+                    )
                     for k, v in item_props.items()
                 ]
                 return f'list[{td}]'
@@ -75,7 +78,7 @@ def _prop_to_type(
         if obj_props:
             td = f'_{class_name}_{_ident(key)}_Dict'
             typed_dicts[td] = [
-                (_ident(k), _PRIMITIVE.get(v.get('type', ''), 'object'))
+                (_ident(k), _SCHEMA_TO_PYTHON.get(v.get('type', ''), 'object'))
                 for k, v in obj_props.items()
             ]
             return td
