@@ -85,9 +85,6 @@ def _prop_to_type(
 
 def generate(schemas_dir: Path) -> str:
     schema_dirs = sorted(p for p in schemas_dir.iterdir() if p.is_dir())
-    if not schema_dirs:
-        print(f"No schemas found under {schemas_dir}", file=sys.stderr)
-        sys.exit(1)
 
     raw_namespaces: list[tuple[str, str, dict]] = []
     for schema_dir in schema_dirs:
@@ -100,6 +97,10 @@ def generate(schemas_dir: Path) -> str:
         raw_namespaces.append(
             (namespace, class_name, schema.get('properties', {})),
         )
+
+    if not raw_namespaces:
+        print(f"No schemas found under {schemas_dir}", file=sys.stderr)
+        sys.exit(1)
 
     typed_dicts: dict[str, list[tuple[str, str]]] = {}
     namespaces: list[tuple[str, str, dict[str, str]]] = []
