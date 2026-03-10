@@ -39,6 +39,16 @@ def namespace_to_class(namespace: str) -> str:
     return 'NamespaceOptions_' + _ident(namespace)
 
 
+def _field_type(parent_key: str, field: str, prop: dict) -> str:
+    """Resolve a primitive field type inside an object/array-of-objects."""
+    t = prop.get('type', '')
+    if t not in _SCHEMA_TO_PYTHON:
+        raise ValueError(
+            f'{parent_key!r}: field {field!r} has unknown type {t!r}',
+        )
+    return _SCHEMA_TO_PYTHON[t]
+
+
 def _prop_to_type(
     prop: dict,
     class_name: str,
@@ -62,28 +72,28 @@ def _prop_to_type(
             return f'list[{_SCHEMA_TO_PYTHON[item_t]}]'
         if item_t == 'object':
             item_props = items.get('properties', {})
-            if item_props:
-                td = f'_{class_name}_{_ident(key)}_Item'
-                typed_dicts[td] = [
-                    (
-                        _ident(k),
-                        _SCHEMA_TO_PYTHON.get(v.get('type', ''), 'object'),
-                    )
-                    for k, v in item_props.items()
-                ]
-                return f'list[{td}]'
-        return 'list[object]'
+            if not item_props:
+                raise ValueError(
+                    f'{key!r}: array[object] items has no properties',
+                )
+            td = f'_{class_name}_{_ident(key)}_Item'
+            typed_dicts[td] = [
+                (_ident(k), _field_type(key, k, v))
+                for k, v in item_props.items()
+            ]
+            return f'list[{td}]'
+        raise ValueError(f'{key!r}: unknown array item type {item_t!r}')
     if t == 'object':
         obj_props = prop.get('properties', {})
-        if obj_props:
-            td = f'_{class_name}_{_ident(key)}_Dict'
-            typed_dicts[td] = [
-                (_ident(k), _SCHEMA_TO_PYTHON.get(v.get('type', ''), 'object'))
-                for k, v in obj_props.items()
-            ]
-            return td
-        return 'dict[str, object]'
-    return 'object'
+        if not obj_props:
+            raise ValueError(f'{key!r}: object has no properties')
+        td = f'_{class_name}_{_ident(key)}_Dict'
+        typed_dicts[td] = [
+            (_ident(k), _field_type(key, k, v))
+            for k, v in obj_props.items()
+        ]
+        return td
+    raise ValueError(f'{key!r}: unknown type {t!r}')
 
 
 def generate(schemas_dir: Path) -> str:
@@ -114,10 +124,14 @@ def generate(schemas_dir: Path) -> str:
     typed_dicts: dict[str, list[tuple[str, str]]] = {}
     namespaces: list[tuple[str, str, dict[str, str]]] = []
     for namespace, class_name, props in raw_namespaces:
-        key_types = {
-            key: _prop_to_type(prop, class_name, key, typed_dicts)
-            for key, prop in props.items()
-        }
+        try:
+            key_types = {
+                key: _prop_to_type(prop, class_name, key, typed_dicts)
+                for key, prop in props.items()
+            }
+        except ValueError as e:
+            print(f"error: {namespace}: {e}", file=sys.stderr)
+            sys.exit(1)
         namespaces.append((namespace, class_name, key_types))
 
     lines = [
