@@ -1,17 +1,12 @@
-"""Tests for sentry_options.gen_stubs."""
+"""Tests for sentry_options_gen_stubs."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pytest
-from sentry_options.gen_stubs import generate
-from sentry_options.gen_stubs import namespace_to_class
-
-
-@pytest.fixture(scope='session', autouse=True)
-def _init_options() -> None:  # type: ignore[override]
-    """No-op: gen_stubs tests don't need sentry_options initialized."""
+from sentry_options_gen_stubs import generate
+from sentry_options_gen_stubs import namespace_to_class
 
 
 @pytest.fixture
@@ -113,7 +108,9 @@ def test_generate_options_overloads(schemas_dir: Path) -> None:
 def test_generate_namespace_subclasses(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     assert 'class NamespaceOptions_my_service(NamespaceOptions):' in output
-    assert 'class NamespaceOptions_other_service(NamespaceOptions):' in output
+    assert (
+        'class NamespaceOptions_other_service(NamespaceOptions):' in output
+    )
 
 
 def test_generate_primitive_overloads(schemas_dir: Path) -> None:
@@ -147,7 +144,6 @@ def test_generate_typed_array(schemas_dir: Path) -> None:
 
 def test_generate_array_of_objects(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
-    # TypedDict item class should be generated
     td = '_NamespaceOptions_my_service_obj_list_key_Item'
     assert f'class {td}(TypedDict):' in output
     assert '    url: str' in output
@@ -164,7 +160,9 @@ def test_generate_typed_object(schemas_dir: Path) -> None:
     assert f'class {td}(TypedDict):' in output
     assert '    host: str' in output
     assert '    port: int' in output
-    assert f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
+    assert (
+        f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
+    )
 
 
 def test_generate_is_deterministic(schemas_dir: Path) -> None:

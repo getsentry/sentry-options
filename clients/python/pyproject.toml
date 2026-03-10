@@ -18,9 +18,6 @@ classifiers = [
     "Programming Language :: Rust",
 ]
 
-[project.scripts]
-sentry-options-gen-stubs = "sentry_options.gen_stubs:main"
-
 [project.optional-dependencies]
 dev = ["maturin", "pytest"]
 
