@@ -292,6 +292,14 @@ pub fn detect_changes(
     for namespace in new_namespace_names {
         if !old_schemas.contains_key(namespace) {
             changelog.push(SchemaChangeAction::NamespaceAdded(namespace.to_string()));
+            let mut option_names: Vec<_> = new_schemas[namespace].options.keys().collect();
+            option_names.sort();
+            for name in option_names {
+                changelog.push(SchemaChangeAction::OptionAdded {
+                    namespace: namespace.to_string(),
+                    name: name.to_string(),
+                });
+            }
         }
     }
 
