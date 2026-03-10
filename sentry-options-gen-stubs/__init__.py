@@ -84,6 +84,12 @@ def _prop_to_type(
 
 
 def generate(schemas_dir: Path) -> str:
+    if not schemas_dir.is_dir():
+        print(
+            f"error: schemas directory not found: {schemas_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     schema_dirs = sorted(p for p in schemas_dir.iterdir() if p.is_dir())
 
     raw_namespaces: list[tuple[str, str, dict]] = []
