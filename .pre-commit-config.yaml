@@ -41,6 +41,13 @@ repos:
     -   id: flake8
 -   repo: local
     hooks:
+    - id: sentry-options-gen-stubs
+      name: Generate sentry_options mypy stubs
+      entry: sentry-options-gen-stubs
+      language: python
+      files: ^sentry-options/schemas/|^stubs/sentry_options/
+      pass_filenames: false
+      additional_dependencies: ["."]
     - id: rustfmt
       name: format rust code
       language: system

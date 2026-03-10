@@ -157,6 +157,8 @@ def generate(schemas_dir: Path) -> str:
         )
         lines.append('')
 
+    while lines and lines[-1] == '':
+        lines.pop()
     return '\n'.join(lines) + '\n'
 
 
