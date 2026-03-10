@@ -2,10 +2,18 @@
 # Run `sentry-options-gen-stubs` to regenerate.
 from __future__ import annotations
 
-from typing import Literal, TypedDict, overload
+from typing import Literal, NotRequired, TypedDict, overload
 
-from sentry_options._core import *  # noqa: F401, F403
-from sentry_options._core import NamespaceOptions, OptionValue
+from sentry_options._core import (
+    InitializationError,
+    NamespaceOptions,
+    OptionsError,
+    OptionValue,
+    SchemaError,
+    UnknownNamespaceError,
+    UnknownOptionError,
+    init,
+)
 
 class _NamespaceOptions_sentry_options_testing_object_option_Dict(TypedDict):
     host: str
