@@ -168,8 +168,7 @@ pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> 
     // Use `git ls-tree` to check path existence in a single command.
     // Unlike cat-file, it exits non-zero for an invalid/unreachable SHA and
     // exits 0 with empty stdout when the SHA is valid but the path isn't in
-    // the tree. This avoids a TOCTOU race between separate validity and
-    // existence checks.
+    // the tree.
     let ls_tree = Command::new("git")
         .args(["ls-tree", sha, schemas_path])
         .output()?;
