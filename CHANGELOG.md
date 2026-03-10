@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.1
+
+### Bug Fixes 🐛
+
+- (git) Assume non-matching pathspec is an empty directory by @kenzoengineer in [#105](https://github.com/getsentry/sentry-options/pull/105)
+
 ## 1.0.0
 
 ### New Features ✨
