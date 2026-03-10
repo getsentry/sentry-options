@@ -167,8 +167,10 @@ pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> 
 
     // Check whether the path exists in the tree at this SHA before archiving.
     // Using `git cat-file -e` is more reliable than parsing error messages.
+    // Stderr is suppressed — git prints a diagnostic when the path is missing.
     let path_exists = Command::new("git")
         .args(["cat-file", "-e", &format!("{}:{}", sha, schemas_path)])
+        .stderr(Stdio::null())
         .status()?
         .success();
 
