@@ -174,6 +174,9 @@ pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> 
         let stderr = String::from_utf8_lossy(&archive_output.stderr);
         // If the path didn't exist at this SHA, treat it as empty
         if stderr.contains("did not match any files") {
+            // Create the expected subdirectory so callers see an empty schema
+            // set rather than a missing-path error.
+            fs::create_dir_all(out_dir.join(schemas_path))?;
             return Ok(());
         }
         return Err(AppError::Git(format!(
