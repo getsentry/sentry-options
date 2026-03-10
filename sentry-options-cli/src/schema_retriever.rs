@@ -171,11 +171,16 @@ pub fn extract_schemas_at_sha(sha: &str, schemas_path: &str, out_dir: &Path) -> 
         .output()?;
 
     if !archive_output.status.success() {
+        let stderr = String::from_utf8_lossy(&archive_output.stderr);
+        // If the path didn't exist at this SHA, treat it as empty
+        if stderr.contains("did not match any files") {
+            return Ok(());
+        }
         return Err(AppError::Git(format!(
             "Failed to archive {} at {}: {}",
             schemas_path,
             sha,
-            String::from_utf8_lossy(&archive_output.stderr).trim()
+            stderr.trim()
         )));
     }
 
