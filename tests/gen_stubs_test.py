@@ -18,9 +18,6 @@ def schemas_dir(tmp_path: Path) -> Path:
             'int-key': {'type': 'integer'},
             'float-key': {'type': 'number'},
             'bool-key': {'type': 'boolean'},
-            # untyped array/object fall back to broad types
-            'array-key': {'type': 'array'},
-            'object-key': {'type': 'object'},
             # typed array with primitive items
             'int-list-key': {
                 'type': 'array',
@@ -37,12 +34,13 @@ def schemas_dir(tmp_path: Path) -> Path:
                     },
                 },
             },
-            # object with properties
+            # object with required and optional fields
             'typed-obj-key': {
                 'type': 'object',
                 'properties': {
                     'host': {'type': 'string'},
                     'port': {'type': 'integer'},
+                    'label': {'type': 'string', 'optional': True},
                 },
             },
         },
@@ -78,16 +76,60 @@ def test_namespace_to_class() -> None:
 
 def test_generate_imports(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
-    assert 'from sentry_options._core import *' in output
+    assert 'from sentry_options._core import *' not in output
     assert (
         'from sentry_options._core import NamespaceOptions, OptionValue'
         in output
     )
+    assert 'from typing import Literal, NotRequired, TypedDict, overload' in output
 
 
-def test_generate_typed_dict_import(schemas_dir: Path) -> None:
-    output = generate(schemas_dir)
-    assert 'TypedDict' in output
+def test_unknown_type_raises(tmp_path: Path) -> None:
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {
+                'bad-key': {'type': 'unknown-type', 'default': None},
+            },
+        }),
+    )
+    with pytest.raises(SystemExit):
+        generate(tmp_path)
+
+
+def test_array_without_items_raises(tmp_path: Path) -> None:
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {
+                'arr': {'type': 'array', 'default': []},
+            },
+        }),
+    )
+    with pytest.raises(SystemExit):
+        generate(tmp_path)
+
+
+def test_object_without_properties_raises(tmp_path: Path) -> None:
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {
+                'obj': {'type': 'object', 'default': {}},
+            },
+        }),
+    )
+    with pytest.raises(SystemExit):
+        generate(tmp_path)
 
 
 def test_generate_options_overloads(schemas_dir: Path) -> None:
@@ -122,18 +164,6 @@ def test_generate_primitive_overloads(schemas_dir: Path) -> None:
     assert 'def get(self, key: str) -> OptionValue' in output
 
 
-def test_generate_untyped_array_and_object(schemas_dir: Path) -> None:
-    output = generate(schemas_dir)
-    assert (
-        'def get(self, key: Literal["array-key"]) -> list[object]'
-        in output
-    )
-    assert (
-        'def get(self, key: Literal["object-key"]) -> dict[str, object]'
-        in output
-    )
-
-
 def test_generate_typed_array(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     assert (
@@ -154,12 +184,43 @@ def test_generate_array_of_objects(schemas_dir: Path) -> None:
     )
 
 
+def test_generate_optional_field_in_array_of_objects(tmp_path: Path) -> None:
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {
+                'endpoints': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'url': {'type': 'string'},
+                            'label': {'type': 'string', 'optional': True},
+                        },
+                    },
+                    'default': [],
+                },
+            },
+        }),
+    )
+    output = generate(tmp_path)
+    td = '_NamespaceOptions_svc_endpoints_Item'
+    assert f'class {td}(TypedDict):' in output
+    assert '    url: str' in output
+    assert '    label: NotRequired[str]' in output
+
+
 def test_generate_typed_object(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     td = '_NamespaceOptions_my_service_typed_obj_key_Dict'
     assert f'class {td}(TypedDict):' in output
     assert '    host: str' in output
     assert '    port: int' in output
+    # optional field uses NotRequired
+    assert '    label: NotRequired[str]' in output
     assert (
         f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
     )

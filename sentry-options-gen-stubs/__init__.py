@@ -40,13 +40,19 @@ def namespace_to_class(namespace: str) -> str:
 
 
 def _field_type(parent_key: str, field: str, prop: dict) -> str:
-    """Resolve a primitive field type inside an object/array-of-objects."""
+    """Resolve a primitive field type inside an object/array-of-objects.
+
+    If the field has "optional": true, wraps the type in NotRequired[...].
+    """
     t = prop.get('type', '')
     if t not in _SCHEMA_TO_PYTHON:
         raise ValueError(
             f'{parent_key!r}: field {field!r} has unknown type {t!r}',
         )
-    return _SCHEMA_TO_PYTHON[t]
+    py_type = _SCHEMA_TO_PYTHON[t]
+    if prop.get('optional'):
+        return f'NotRequired[{py_type}]'
+    return py_type
 
 
 def _prop_to_type(
@@ -139,7 +145,7 @@ def generate(schemas_dir: Path) -> str:
         '# Run `sentry-options-gen-stubs` to regenerate.',
         'from __future__ import annotations',
         '',
-        'from typing import Literal, TypedDict, overload',
+        'from typing import Literal, NotRequired, TypedDict, overload',
         '',
         'from sentry_options._core import NamespaceOptions, OptionValue',
         '',
