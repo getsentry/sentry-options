@@ -65,7 +65,7 @@ def _prop_to_type(
             if item_props:
                 td = f'_{class_name}_{_ident(key)}_Item'
                 typed_dicts[td] = [
-                    (k, _PRIMITIVE.get(v.get('type', ''), 'object'))
+                    (_ident(k), _PRIMITIVE.get(v.get('type', ''), 'object'))
                     for k, v in item_props.items()
                 ]
                 return f'list[{td}]'
@@ -75,7 +75,7 @@ def _prop_to_type(
         if obj_props:
             td = f'_{class_name}_{_ident(key)}_Dict'
             typed_dicts[td] = [
-                (k, _PRIMITIVE.get(v.get('type', ''), 'object'))
+                (_ident(k), _PRIMITIVE.get(v.get('type', ''), 'object'))
                 for k, v in obj_props.items()
             ]
             return td

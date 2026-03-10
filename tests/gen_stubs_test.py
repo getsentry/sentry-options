@@ -165,5 +165,35 @@ def test_generate_typed_object(schemas_dir: Path) -> None:
     )
 
 
+def test_typed_dict_field_names_sanitized(tmp_path: Path) -> None:
+    """Nested object keys with hyphens are sanitized
+    to valid Python identifiers."""
+
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {
+                'nested': {
+                    'type': 'object',
+                    'properties': {
+                        'host-name': {'type': 'string'},
+                        'port-number': {'type': 'integer'},
+                    },
+                },
+            },
+        }),
+    )
+    output = generate(tmp_path)
+    # Must not produce invalid Python (hyphen in attribute name)
+    assert 'host-name:' not in output
+    assert 'port-number:' not in output
+    # Must produce sanitized TypedDict fields
+    assert '    host_name: str' in output
+    assert '    port_number: int' in output
+
+
 def test_generate_is_deterministic(schemas_dir: Path) -> None:
     assert generate(schemas_dir) == generate(schemas_dir)
