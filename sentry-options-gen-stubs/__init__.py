@@ -18,7 +18,6 @@ CLI usage:
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import re
 import sys
@@ -202,13 +201,6 @@ def generate(schemas_dir: Path) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def _default_output() -> Path:
-    spec = importlib.util.find_spec('sentry_options')
-    if spec and spec.origin:
-        return Path(spec.origin).parent / '__init__.pyi'
-    return Path('stubs/sentry_options/__init__.pyi')
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description='Generate sentry_options mypy stubs from schemas.',
@@ -225,11 +217,8 @@ def main() -> None:
     parser.add_argument(
         '--output',
         type=Path,
-        default=_default_output(),
-        help=(
-            'Output path'
-            ' (default: __init__.pyi next to the installed sentry_options package)'
-        ),
+        default=Path('sentry_options/__init__.pyi'),
+        help='Output path (default: sentry_options/__init__.pyi)',
     )
     parser.add_argument(
         '--check',
