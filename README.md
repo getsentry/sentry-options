@@ -113,3 +113,48 @@ In a new file in the same directory as your schemas, e.g. `sentry-options/values
 ```
 
 Your client libraries will automatically pick up the new values.
+
+
+### Feature Flags
+
+sentry-options supports rich feature flags, that enable features to be enabled for subsets of your
+application's traffic to be exposed to features based on arbitrary logic defined as segments and conditions.
+See the [flagpole documentation](https://develop.sentry.dev/backend/application-domains/feature-flags/flagpole/) for
+more information.
+
+To check feature flags from python:
+
+```python
+from sentry_options import init, features, FeatureContext
+
+init()
+
+context = FeatureContext(
+    {"org_id": 123, "user_id": 456, "user_email": "sal@example.org"},
+    identity_fields=["user_id"]
+)
+
+feature_checker = features("getsentry")
+if feature_checker.has("organizations:red-bar", context):
+    # User has the feature
+```
+
+and from rust:
+
+```rust
+use sentry_options::{init, features, FeatureContext};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
+    let mut context = FeatureChecker::new();
+    context.insert("user_id", 123);
+    context.insert("org_id", 456);
+    context.insert("user_email", "sal@example.org");
+    context.identity_fields(vec!["user_id"]);
+
+    let feature_checker = features("getsentry");
+    if feature_checker.has("organizations:red-bar", context) {
+        // User has feature.
+    }
+}
+```
