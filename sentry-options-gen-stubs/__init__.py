@@ -140,6 +140,7 @@ def generate(schemas_dir: Path) -> str:
             key_types = {
                 key: _prop_to_type(prop, class_name, key, typed_dicts, counter)
                 for key, prop in props.items()
+                if '$ref' not in prop
             }
         except ValueError as e:
             print(f"error: {namespace}: {e}", file=sys.stderr)
