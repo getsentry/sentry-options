@@ -217,8 +217,8 @@ def main() -> None:
     parser.add_argument(
         '--output',
         type=Path,
-        default=Path('sentry_options/__init__.pyi'),
-        help='Output path (default: sentry_options/__init__.pyi)',
+        default=Path('sentry-options/sentry_options/__init__.pyi'),
+        help='Output path (default: sentry-options/sentry_options/__init__.pyi)',
     )
     parser.add_argument(
         '--check',
