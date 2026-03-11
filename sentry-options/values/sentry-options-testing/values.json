@@ -3,6 +3,78 @@
     "example-option": "wow",
     "float-option": 1.2,
     "int-option": 123,
-    "bool-option": false
+    "bool-option": false,
+    "feature.organizations:enabled-feature": {
+      "enabled": true,
+      "owner": {"team": "test-team"},
+      "created_at": "2024-01-01",
+      "segments": [
+        {
+          "name": "org-segment",
+          "rollout": 100,
+          "conditions": [
+            {
+              "property": "organization_id",
+              "operator": "in",
+              "value": [123, 456]
+            }
+          ]
+        }
+      ]
+    },
+    "feature.organizations:disabled-feature": {
+      "enabled": false,
+      "owner": {"team": "test-team"},
+      "created_at": "2024-01-01",
+      "segments": [
+        {
+          "name": "org-segment",
+          "rollout": 100,
+          "conditions": [
+            {
+              "property": "organization_id",
+              "operator": "in",
+              "value": [123]
+            }
+          ]
+        }
+      ]
+    },
+    "feature.organizations:rollout-zero": {
+      "enabled": true,
+      "owner": {"team": "test-team"},
+      "created_at": "2024-01-01",
+      "segments": [
+        {
+          "name": "org-segment",
+          "rollout": 0,
+          "conditions": [
+            {
+              "property": "organization_id",
+              "operator": "in",
+              "value": [123]
+            }
+          ]
+        }
+      ]
+    },
+    "feature.organizations:rollout-mid": {
+      "enabled": true,
+      "owner": {"team": "test-team"},
+      "created_at": "2024-01-01",
+      "segments": [
+        {
+          "name": "is_trial",
+          "rollout": 50,
+          "conditions": [
+            {
+              "property": "is_trial",
+              "operator": "equals",
+              "value": true
+            }
+          ]
+        }
+      ]
+    }
   }
 }

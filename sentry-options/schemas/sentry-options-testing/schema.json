@@ -58,6 +58,18 @@
       "default": [1, 2, 3],
       "items": {"type": "integer"},
       "description": "An example array option"
+    },
+    "feature.organizations:enabled-feature": {
+        "$ref": "#/definitions/Feature"
+    },
+    "feature.organizations:disabled-feature": {
+        "$ref": "#/definitions/Feature"
+    },
+    "feature.organizations:rollout-zero": {
+        "$ref": "#/definitions/Feature"
+    },
+    "feature.organizations:rollout-mid": {
+        "$ref": "#/definitions/Feature"
     }
   }
 }

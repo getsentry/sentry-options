@@ -1,11 +1,15 @@
 //! Python bindings for sentry-options using PyO3.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use ::sentry_options::{
+    FeatureChecker as RustFeatureChecker, FeatureContext as RustFeatureContext,
+    Options as RustOptions, OptionsError as RustOptionsError,
+};
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
-use sentry_options::{Options as RustOptions, OptionsError as RustOptionsError};
 use serde_json::Value;
 
 // Global options instance
@@ -124,6 +128,62 @@ fn options_err(err: RustOptionsError) -> PyErr {
     }
 }
 
+/// Feature evaluation context holding arbitrary key-value data.
+///
+/// Pass a dict of context data and optional identity_fields to control
+/// rollout bucketing. Identity fields are sorted and hashed to produce
+/// a stable identifier used for percentage rollouts.
+#[pyclass(name = "FeatureContext", unsendable)]
+struct PyFeatureContext {
+    inner: RustFeatureContext,
+}
+
+#[pymethods]
+impl PyFeatureContext {
+    #[new]
+    #[pyo3(signature = (data, *, identity_fields=None))]
+    fn new(
+        data: HashMap<String, Py<PyAny>>,
+        identity_fields: Option<Vec<String>>,
+        py: Python<'_>,
+    ) -> PyResult<Self> {
+        let mut ctx = RustFeatureContext::new();
+        for (key, val) in &data {
+            let json_val = py_to_json(val.bind(py))?;
+            ctx.insert(key, json_val);
+        }
+        if let Some(fields) = identity_fields {
+            let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
+            ctx.identity_fields(field_refs);
+        }
+        Ok(PyFeatureContext { inner: ctx })
+    }
+
+    fn __repr__(&self) -> String {
+        "FeatureContext(...)".to_string()
+    }
+}
+
+/// Handle for evaluating feature flags within a specific namespace.
+#[pyclass(name = "FeatureChecker")]
+struct PyFeatureChecker {
+    inner: RustFeatureChecker,
+}
+
+#[pymethods]
+impl PyFeatureChecker {
+    /// Check whether a feature flag is enabled for a given context.
+    ///
+    /// Returns false if the feature is not defined, not enabled, or conditions don't match.
+    fn has(&self, feature_name: &str, context: PyRef<'_, PyFeatureContext>) -> bool {
+        self.inner.has(feature_name, &context.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        "FeatureChecker(...)".to_string()
+    }
+}
+
 /// Initialize global options using fallback chain: SENTRY_OPTIONS_DIR env var,
 /// then /etc/sentry-options if it exists, otherwise sentry-options/.
 #[pyfunction]
@@ -146,6 +206,19 @@ fn options(namespace: String) -> PyResult<NamespaceOptions> {
     Ok(NamespaceOptions {
         namespace,
         options: opts,
+    })
+}
+
+/// Get a feature checker for a namespace.
+///
+/// Raises RuntimeError if init() has not been called.
+#[pyfunction]
+fn features(namespace: String) -> PyResult<PyFeatureChecker> {
+    let opts = GLOBAL_OPTIONS
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    Ok(PyFeatureChecker {
+        inner: RustFeatureChecker::new(namespace, opts),
     })
 }
 
@@ -222,8 +295,11 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Functions
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
+    m.add_function(wrap_pyfunction!(features, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
+    m.add_class::<PyFeatureContext>()?;
+    m.add_class::<PyFeatureChecker>()?;
     // Exceptions
     m.add("OptionsError", m.py().get_type::<OptionsError>())?;
     m.add("SchemaError", m.py().get_type::<SchemaError>())?;
