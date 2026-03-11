@@ -260,5 +260,17 @@ def test_typed_dict_field_names_preserved(tmp_path: Path) -> None:
     assert "    'port-number': int," in output
 
 
+def test_generate_empty_namespace_no_overload(tmp_path: Path) -> None:
+    """Empty namespace emits a plain get() without @overload (single overload is invalid)."""
+    ns_dir = tmp_path / 'empty-svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({'version': '1.0', 'type': 'object', 'properties': {}}),
+    )
+    output = generate(tmp_path)
+    assert '    def get(self, key: str) -> OptionValue: ...' in output
+    assert '@overload\n    def get' not in output
+
+
 def test_generate_is_deterministic(schemas_dir: Path) -> None:
     assert generate(schemas_dir) == generate(schemas_dir)

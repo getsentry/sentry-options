@@ -191,9 +191,12 @@ def generate(schemas_dir: Path) -> str:
                 f'    @overload\n'
                 f'    def get(self, key: Literal["{key}"]) -> {py_type}: ...',
             )
-        lines.append(
-            '    @overload\n    def get(self, key: str) -> OptionValue: ...',
-        )
+        if key_types:
+            lines.append(
+                '    @overload\n    def get(self, key: str) -> OptionValue: ...',
+            )
+        else:
+            lines.append('    def get(self, key: str) -> OptionValue: ...')
         lines.append('')
 
     while lines and lines[-1] == '':
