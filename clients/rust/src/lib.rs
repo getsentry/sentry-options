@@ -1,5 +1,9 @@
 //! Options client for reading validated configuration values.
 
+pub mod features;
+
+pub use features::{FeatureChecker, FeatureContext, features};
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock, RwLock};
