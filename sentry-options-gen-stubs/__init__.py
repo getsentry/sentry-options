@@ -18,6 +18,7 @@ CLI usage:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 import sys
@@ -60,6 +61,7 @@ def _prop_to_type(
     class_name: str,
     key: str,
     typed_dicts: dict[str, list[tuple[str, str]]],
+    counter: list[int],
 ) -> str:
     """
     Resolve a schema property to a Python type string.
@@ -67,6 +69,8 @@ def _prop_to_type(
     Typed arrays (items.type) resolve to list[T].
     Objects and array-of-objects with properties generate TypedDicts
     collected into typed_dicts, keyed by their generated class name.
+    TypedDicts use index-based names to avoid collisions, and the
+    functional form to preserve original key names (e.g. hyphens).
     """
     t = prop.get('type', '')
     if t in _SCHEMA_TO_PYTHON:
@@ -82,9 +86,10 @@ def _prop_to_type(
                 raise ValueError(
                     f'{key!r}: array[object] items has no properties',
                 )
-            td = f'_{class_name}_{_ident(key)}_Item'
+            td = f'_{class_name}_{counter[0]}_Item'
+            counter[0] += 1
             typed_dicts[td] = [
-                (_ident(k), _field_type(key, k, v))
+                (k, _field_type(key, k, v))
                 for k, v in item_props.items()
             ]
             return f'list[{td}]'
@@ -93,9 +98,10 @@ def _prop_to_type(
         obj_props = prop.get('properties', {})
         if not obj_props:
             raise ValueError(f'{key!r}: object has no properties')
-        td = f'_{class_name}_{_ident(key)}_Dict'
+        td = f'_{class_name}_{counter[0]}_Dict'
+        counter[0] += 1
         typed_dicts[td] = [
-            (_ident(k), _field_type(key, k, v))
+            (k, _field_type(key, k, v))
             for k, v in obj_props.items()
         ]
         return td
@@ -131,8 +137,9 @@ def generate(schemas_dir: Path) -> str:
     namespaces: list[tuple[str, str, dict[str, str]]] = []
     for namespace, class_name, props in raw_namespaces:
         try:
+            counter = [0]
             key_types = {
-                key: _prop_to_type(prop, class_name, key, typed_dicts)
+                key: _prop_to_type(prop, class_name, key, typed_dicts, counter)
                 for key, prop in props.items()
             }
         except ValueError as e:
@@ -161,9 +168,10 @@ def generate(schemas_dir: Path) -> str:
     ]
 
     for td_name, fields in typed_dicts.items():
-        lines.append(f'class {td_name}(TypedDict):')
+        lines.append(f"{td_name} = TypedDict('{td_name}', {{")
         for field_name, field_type in fields:
-            lines.append(f'    {field_name}: {field_type}')
+            lines.append(f"    '{field_name}': {field_type},")
+        lines.append('})')
         lines.append('')
 
     for namespace, class_name, _ in namespaces:
@@ -194,6 +202,13 @@ def generate(schemas_dir: Path) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def _default_output() -> Path:
+    spec = importlib.util.find_spec('sentry_options')
+    if spec and spec.origin:
+        return Path(spec.origin).parent / '__init__.pyi'
+    return Path('stubs/sentry_options/__init__.pyi')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description='Generate sentry_options mypy stubs from schemas.',
@@ -210,8 +225,11 @@ def main() -> None:
     parser.add_argument(
         '--output',
         type=Path,
-        default=Path('stubs/sentry_options/__init__.pyi'),
-        help='Output path (default: stubs/sentry_options/__init__.pyi)',
+        default=_default_output(),
+        help=(
+            'Output path'
+            ' (default: __init__.pyi next to the installed sentry_options package)'
+        ),
     )
     parser.add_argument(
         '--check',

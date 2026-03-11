@@ -15,13 +15,15 @@ from sentry_options._core import (
     init,
 )
 
-class _NamespaceOptions_sentry_options_testing_object_option_Dict(TypedDict):
-    host: str
-    port: int
+_NamespaceOptions_sentry_options_testing_0_Dict = TypedDict('_NamespaceOptions_sentry_options_testing_0_Dict', {
+    'host': str,
+    'port': int,
+})
 
-class _NamespaceOptions_sentry_options_testing_endpoints_option_Item(TypedDict):
-    url: str
-    weight: int
+_NamespaceOptions_sentry_options_testing_1_Item = TypedDict('_NamespaceOptions_sentry_options_testing_1_Item', {
+    'url': str,
+    'weight': int,
+})
 
 @overload
 def options(namespace: Literal["sentry-options-testing"]) -> NamespaceOptions_sentry_options_testing: ...
@@ -42,9 +44,9 @@ class NamespaceOptions_sentry_options_testing(NamespaceOptions):
     @overload
     def get(self, key: Literal["demo-option"]) -> str: ...
     @overload
-    def get(self, key: Literal["object-option"]) -> _NamespaceOptions_sentry_options_testing_object_option_Dict: ...
+    def get(self, key: Literal["object-option"]) -> _NamespaceOptions_sentry_options_testing_0_Dict: ...
     @overload
-    def get(self, key: Literal["endpoints-option"]) -> list[_NamespaceOptions_sentry_options_testing_endpoints_option_Item]: ...
+    def get(self, key: Literal["endpoints-option"]) -> list[_NamespaceOptions_sentry_options_testing_1_Item]: ...
     @overload
     def get(self, key: Literal["array-option"]) -> list[int]: ...
     @overload

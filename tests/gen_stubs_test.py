@@ -182,10 +182,10 @@ def test_generate_typed_array(schemas_dir: Path) -> None:
 
 def test_generate_array_of_objects(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
-    td = '_NamespaceOptions_my_service_obj_list_key_Item'
-    assert f'class {td}(TypedDict):' in output
-    assert '    url: str' in output
-    assert '    weight: int' in output
+    td = '_NamespaceOptions_my_service_0_Item'
+    assert f"{td} = TypedDict('{td}'" in output
+    assert "    'url': str," in output
+    assert "    'weight': int," in output
     assert (
         f'def get(self, key: Literal["obj-list-key"]) -> list[{td}]'
         in output
@@ -215,28 +215,28 @@ def test_generate_optional_field_in_array_of_objects(tmp_path: Path) -> None:
         }),
     )
     output = generate(tmp_path)
-    td = '_NamespaceOptions_svc_endpoints_Item'
-    assert f'class {td}(TypedDict):' in output
-    assert '    url: str' in output
-    assert '    label: NotRequired[str]' in output
+    td = '_NamespaceOptions_svc_0_Item'
+    assert f"{td} = TypedDict('{td}'" in output
+    assert "    'url': str," in output
+    assert "    'label': NotRequired[str]," in output
 
 
 def test_generate_typed_object(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
-    td = '_NamespaceOptions_my_service_typed_obj_key_Dict'
-    assert f'class {td}(TypedDict):' in output
-    assert '    host: str' in output
-    assert '    port: int' in output
+    td = '_NamespaceOptions_my_service_1_Dict'
+    assert f"{td} = TypedDict('{td}'" in output
+    assert "    'host': str," in output
+    assert "    'port': int," in output
     # optional field uses NotRequired
-    assert '    label: NotRequired[str]' in output
+    assert "    'label': NotRequired[str]," in output
     assert (
         f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
     )
 
 
-def test_typed_dict_field_names_sanitized(tmp_path: Path) -> None:
-    """Nested object keys with hyphens are sanitized
-    to valid Python identifiers."""
+def test_typed_dict_field_names_preserved(tmp_path: Path) -> None:
+    """Nested object keys with hyphens are preserved as-is via functional
+    TypedDict form, so runtime dict keys match the type stub exactly."""
 
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
@@ -256,12 +256,8 @@ def test_typed_dict_field_names_sanitized(tmp_path: Path) -> None:
         }),
     )
     output = generate(tmp_path)
-    # Must not produce invalid Python (hyphen in attribute name)
-    assert 'host-name:' not in output
-    assert 'port-number:' not in output
-    # Must produce sanitized TypedDict fields
-    assert '    host_name: str' in output
-    assert '    port_number: int' in output
+    assert "    'host-name': str," in output
+    assert "    'port-number': int," in output
 
 
 def test_generate_is_deterministic(schemas_dir: Path) -> None:
