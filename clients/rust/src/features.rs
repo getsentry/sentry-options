@@ -825,8 +825,10 @@ mod tests {
         }"#;
         let (opts, _t) = setup_feature_options(feature);
 
-        let ctx = FeatureContext::new();
-        assert!(!check(&opts, "organizations:test-feature", &ctx));
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", 1);
+        ctx.identity_fields(vec!["org_id"]);
+        assert!(check(&opts, "organizations:test-feature", &ctx));
     }
 
     #[test]
