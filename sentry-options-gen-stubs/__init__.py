@@ -12,7 +12,7 @@ re-exported from sentry_options._core via explicit imports.
 CLI usage:
     sentry-options-gen-stubs
     sentry-options-gen-stubs --schemas-dir path/to/schemas \
-        --output stubs/sentry_options/__init__.pyi
+        --output sentry-options/sentry_options/__init__.pyi
     sentry-options-gen-stubs --check
 """
 from __future__ import annotations

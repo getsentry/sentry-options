@@ -45,7 +45,7 @@ repos:
       name: Generate sentry_options mypy stubs
       entry: sentry-options-gen-stubs
       language: python
-      files: ^sentry-options/schemas/|^stubs/sentry_options/
+      files: ^sentry-options/schemas/|^sentry-options/sentry_options/
       pass_filenames: false
       additional_dependencies: ["."]
     - id: rustfmt
