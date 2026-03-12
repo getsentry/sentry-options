@@ -165,6 +165,18 @@ def generate(schemas_dir: Path) -> str:
         '\n    init,'
         '\n)',
         '',
+        '__all__ = [',
+        '    "init",',
+        '    "options",',
+        '    "InitializationError",',
+        '    "NamespaceOptions",',
+        '    "OptionsError",',
+        '    "OptionValue",',
+        '    "SchemaError",',
+        '    "UnknownNamespaceError",',
+        '    "UnknownOptionError",',
+        ']',
+        '',
     ]
 
     for td_name, fields in typed_dicts.items():
