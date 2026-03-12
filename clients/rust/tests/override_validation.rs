@@ -6,13 +6,14 @@
 //! Requires SENTRY_OPTIONS_DIR to be set to an absolute path
 //! (e.g., in .envrc or CI config).
 
-use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::init;
+use sentry_options::testing::override_options;
 use sentry_options::{OptionsError, options};
 use serde_json::json;
 
 #[test]
 fn test_override_options_validates_and_intercepts_get() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let _guard = override_options(&[("sentry-options-testing", "int-option", json!(999))]).unwrap();
 
     let opts = options("sentry-options-testing");
@@ -21,7 +22,7 @@ fn test_override_options_validates_and_intercepts_get() {
 
 #[test]
 fn test_override_options_restores_on_drop() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let opts = options("sentry-options-testing");
 
     // Value from values.json
@@ -39,7 +40,7 @@ fn test_override_options_restores_on_drop() {
 
 #[test]
 fn test_override_options_rejects_unknown_namespace() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let result = override_options(&[("unknown_namespace", "key", json!(true))]);
 
     assert!(matches!(result, Err(OptionsError::UnknownNamespace(_))));
@@ -47,7 +48,7 @@ fn test_override_options_rejects_unknown_namespace() {
 
 #[test]
 fn test_override_options_rejects_unknown_key() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let result = override_options(&[("sentry-options-testing", "nonexistent-key", json!(true))]);
 
     assert!(matches!(result, Err(OptionsError::Schema(_))));
@@ -55,7 +56,7 @@ fn test_override_options_rejects_unknown_key() {
 
 #[test]
 fn test_override_options_rejects_wrong_type_bool() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     // bool-option is boolean, passing string should fail
     let result =
         override_options(&[("sentry-options-testing", "bool-option", json!("not a bool"))]);
@@ -65,7 +66,7 @@ fn test_override_options_rejects_wrong_type_bool() {
 
 #[test]
 fn test_override_options_rejects_wrong_type_int() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     // int-option is integer, passing string should fail
     let result = override_options(&[("sentry-options-testing", "int-option", json!("not an int"))]);
     assert!(matches!(result, Err(OptionsError::Schema(_))));
@@ -77,7 +78,7 @@ fn test_override_options_rejects_wrong_type_int() {
 
 #[test]
 fn test_override_options_accepts_valid_values() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     // Valid boolean
     let result = override_options(&[("sentry-options-testing", "bool-option", json!(true))]);
     assert!(result.is_ok());
@@ -101,7 +102,7 @@ fn test_override_options_accepts_valid_values() {
 
 #[test]
 fn test_override_options_multiple_overrides() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let opts = options("sentry-options-testing");
 
     {
@@ -125,7 +126,7 @@ fn test_override_options_multiple_overrides() {
 
 #[test]
 fn test_override_options_fails_atomically() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     // Try to set multiple overrides where one is invalid
     let result = override_options(&[
         ("sentry-options-testing", "bool-option", json!(true)), // valid
@@ -142,7 +143,7 @@ fn test_override_options_fails_atomically() {
 
 #[test]
 fn test_override_options_nested_guards() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     {
         let _outer =
             override_options(&[("sentry-options-testing", "int-option", json!(200))]).unwrap();

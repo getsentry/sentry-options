@@ -28,9 +28,6 @@ pub enum OptionsError {
 
     #[error("Schema error: {0}")]
     Schema(#[from] ValidationError),
-
-    #[error("Options already initialized")]
-    AlreadyInitialized,
 }
 
 pub type Result<T> = std::result::Result<T, OptionsError>;
@@ -149,10 +146,11 @@ impl Options {
 /// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
 /// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 pub fn init() -> Result<()> {
+    if GLOBAL_OPTIONS.get().is_some() {
+        return Ok(());
+    }
     let opts = Options::new()?;
-    GLOBAL_OPTIONS
-        .set(opts)
-        .map_err(|_| OptionsError::AlreadyInitialized)?;
+    let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }
 

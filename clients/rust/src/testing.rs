@@ -21,36 +21,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::{GLOBAL_OPTIONS, OptionsError, Result};
-
-/// Initialize options, ignoring "already initialized" errors.
-///
-/// This is useful in tests where multiple test functions may call this,
-/// but only the first one actually initializes.
-///
-/// # Errors
-///
-/// Returns an error if initialization fails for reasons other than
-/// already being initialized (e.g., schema loading errors).
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use sentry_options::testing::ensure_initialized;
-///
-/// #[test]
-/// fn test_something() {
-///     ensure_initialized().unwrap();
-///     // ... test code
-/// }
-/// ```
-pub fn ensure_initialized() -> Result<()> {
-    match crate::init() {
-        Ok(()) => Ok(()),
-        Err(OptionsError::AlreadyInitialized) => Ok(()),
-        Err(e) => Err(e),
-    }
-}
+use crate::{GLOBAL_OPTIONS, Result};
 
 thread_local! {
     static OVERRIDES: RefCell<HashMap<String, HashMap<String, Value>>> = RefCell::new(HashMap::new());
@@ -111,7 +82,7 @@ impl Drop for OverrideGuard {
 
 /// Set overrides for the lifetime of the returned guard.
 ///
-/// Requires that options have been initialized via `init()` or `ensure_initialized()`.
+/// Requires that options have been initialized via `init()`.
 /// Validates that each key exists in the schema and the value matches the expected type.
 /// When the guard is dropped (goes out of scope), the overrides are restored
 /// to their previous values.
@@ -134,10 +105,11 @@ impl Drop for OverrideGuard {
 /// # Example
 ///
 /// ```rust,ignore
-/// use sentry_options::testing::{ensure_initialized, override_options};
+/// use sentry_options::testing::override_options;
+/// use sentry_options::init;
 /// use serde_json::json;
 ///
-/// ensure_initialized().unwrap();
+/// crate::init().unwrap();
 /// let _guard = override_options(&[
 ///     ("namespace", "key1", json!(true)),
 ///     ("namespace", "key2", json!(42)),
@@ -149,7 +121,7 @@ pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGua
     // Validate all overrides before applying any
     let opts = GLOBAL_OPTIONS
         .get()
-        .expect("options not initialized - call init() or ensure_initialized() first");
+        .expect("options not initialized - call init() first");
     for (ns, key, value) in overrides {
         opts.validate_override(ns, key, value)?;
     }
@@ -185,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_override_guard_restores() {
-        ensure_initialized().unwrap();
+        crate::init().unwrap();
         set_override("sentry-options-testing", "int-option", json!(1));
 
         {
@@ -206,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_override_guard_clears_new_key() {
-        ensure_initialized().unwrap();
+        crate::init().unwrap();
         assert_eq!(get_override("sentry-options-testing", "bool-option"), None);
 
         {
@@ -224,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_nested_overrides() {
-        ensure_initialized().unwrap();
+        crate::init().unwrap();
         {
             let _outer =
                 override_options(&[("sentry-options-testing", "int-option", json!(100))]).unwrap();
