@@ -66,8 +66,8 @@ def test_unknown_option() -> None:
 
 
 def test_double_init() -> None:
-    with pytest.raises(InitializationError, match='already initialized'):
-        init()
+    # init() should be idempotent — no error on second call
+    init()
 
 
 def test_exceptions_inherit_from_options_error() -> None:

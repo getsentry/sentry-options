@@ -122,9 +122,6 @@ fn options_err(err: RustOptionsError) -> PyErr {
             key, namespace
         )),
         RustOptionsError::Schema(e) => SchemaError::new_err(e.to_string()),
-        RustOptionsError::AlreadyInitialized => {
-            InitializationError::new_err("Options already initialized")
-        }
     }
 }
 
@@ -188,10 +185,11 @@ impl PyFeatureChecker {
 /// then /etc/sentry-options if it exists, otherwise sentry-options/.
 #[pyfunction]
 fn init() -> PyResult<()> {
+    if GLOBAL_OPTIONS.get().is_some() {
+        return Ok(());
+    }
     let opts = RustOptions::new().map_err(options_err)?;
-    GLOBAL_OPTIONS
-        .set(opts)
-        .map_err(|_| InitializationError::new_err("Options already initialized"))?;
+    let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }
 

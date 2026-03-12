@@ -330,18 +330,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #### Testing (Rust)
 
-Use `ensure_initialized()` for idempotent init in tests (safe to call from parallel threads).
 Use `override_options()` which returns a guard that restores values when dropped.
 Overrides are validated against the schema.
 
 ```rust
-use sentry_options::testing::{ensure_initialized, override_options};
-use sentry_options::options;
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
 fn test_feature() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let _guard = override_options(&[
         ("getsentry", "feature.enabled", json!(true)),
     ]).unwrap();
