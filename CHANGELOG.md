@@ -1,4 +1,17 @@
 # Changelog
+## 1.0.2
+
+### New Features ✨
+
+- (clients) Include stub generation script and pre-commit hook by @kenzoengineer in [#104](https://github.com/getsentry/sentry-options/pull/104)
+- (init) Allow options to be initialized more than once by @hubertdeng123 in [#107](https://github.com/getsentry/sentry-options/pull/107)
+- Add feature flag checking for rust and python by @markstory in [#92](https://github.com/getsentry/sentry-options/pull/92)
+- Add feature flag support to option schema by @markstory in [#91](https://github.com/getsentry/sentry-options/pull/91)
+
+### Bug Fixes 🐛
+
+- (stubs) Include \__all__ to explicitly re-export everything by @kenzoengineer in [#108](https://github.com/getsentry/sentry-options/pull/108)
+
 ## 1.0.1
 
 ### Bug Fixes 🐛
