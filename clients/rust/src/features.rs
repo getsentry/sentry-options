@@ -175,11 +175,11 @@ struct Feature {
 
 impl Feature {
     fn from_json(value: &Value) -> Option<Self> {
-        // Default to false per spec: "If undefined, enabled defaults to false"
+        // Default to true to align with flagpole behavior.
         let enabled = value
             .get("enabled")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(true);
         let segments = value
             .get("segments")?
             .as_array()?
@@ -204,7 +204,7 @@ impl Feature {
 
 impl Segment {
     fn from_json(value: &Value) -> Option<Self> {
-        let rollout = value.get("rollout").and_then(|v| v.as_u64()).unwrap_or(0);
+        let rollout = value.get("rollout").and_then(|v| v.as_u64()).unwrap_or(100);
         let conditions = value
             .get("conditions")
             .and_then(|v| v.as_array())
@@ -806,6 +806,28 @@ mod tests {
         let (opts, _t) = setup_feature_options(feature);
 
         let ctx = FeatureContext::new();
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_feature_enabled_and_rollout_default_values() {
+        // This feature doesn't define .enabled or .segments[0].rollout
+        let feature = r#"{
+            "name": "test-feature",
+            "owner": {"team": "test-team"},
+            "created_at": "2024-01-01",
+            "segments": [
+                {
+                    "name": "first",
+                    "conditions": [{"property": "org_id", "operator": "in", "value":[1]}]
+                }
+            ]
+        }"#;
+        let (opts, _t) = setup_feature_options(feature);
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", 1);
+        ctx.identity_fields(vec!["org_id"]);
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
 
