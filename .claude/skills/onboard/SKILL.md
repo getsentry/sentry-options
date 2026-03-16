@@ -43,7 +43,7 @@ Before generating files, ask the user for:
 1. **Repository name** - e.g., `seer`, `relay`
 2. **Namespace** - Usually same as repo, or `{repo}-{subproject}` (e.g., `seer-autofix`)
 3. **Options to configure** - For each option:
-   - Name (e.g., `feature.enabled`)
+   - Name (e.g., `inference.timeout`)
    - Type: `string`, `integer`, `number`, `boolean`, `array`, or `object`
    - Default value
    - Description
@@ -76,7 +76,7 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
 
 **Template variables:**
 - `{namespace}` - The namespace provided by user
-- `{option_name}` - Option key (e.g., `feature.enabled`)
+- `{option_name}` - Option key (e.g., `inference.timeout`)
 - `{option_type}` - One of: `string`, `integer`, `number`, `boolean`, `array`, `object`
 - `{option_default}` - Default value (must match type, strings need quotes)
 - `{option_description}` - Human-readable description
@@ -89,11 +89,11 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
 
 **Example array option:**
 ```json
-"feature.allowed_ids": {
+"inference.allowed_model_ids": {
   "type": "array",
   "items": {"type": "integer"},
   "default": [1, 2, 3],
-  "description": "List of allowed IDs"
+  "description": "List of allowed model IDs"
 }
 ```
 
@@ -186,6 +186,8 @@ sentry-options = "1.0.2"
 
 ### 1.5 Show Usage Example
 
+Examples below use a namespace called `seer` — replace with the user's actual namespace.
+
 #### Python
 
 ```python
@@ -195,18 +197,18 @@ from sentry_options import init, options
 init()
 
 # Get options namespace
-opts = options('{namespace}')
+opts = options('seer')
 
 # Primitives (returns str | int | float | bool)
-if opts.get('feature.enabled'):
-    rate = opts.get('feature.rate_limit')
+timeout = opts.get('inference.timeout')
+enabled = opts.get('processing.enabled')
 
 # Arrays (returns list)
-ids = opts.get('feature.allowed_ids')  # e.g., [1, 2, 3]
+allowed_models = opts.get('inference.allowed_models')  # e.g., ["gpt-4", "claude-4.5-sonnet"]
 
 # Objects (returns dict[str, str | int | float | bool])
-config = opts.get('database.config')
-host = config['host']
+db_config = opts.get('database.config')
+host = db_config['host']
 ```
 
 **Typing:** The package ships with `py.typed` and type stubs — mypy/pyright/ruff work out of the box. `OptionValue` is exported for type annotations:
@@ -227,17 +229,17 @@ fn main() -> anyhow::Result<()> {
     init()?;
 
     // Get namespace handle — .get() returns serde_json::Value
-    let opts = options("{namespace}");
+    let opts = options("seer");
 
     // Primitives
-    let enabled = opts.get("feature.enabled")?;
-    let rate = opts.get("feature.rate_limit")?;
+    let timeout = opts.get("inference.timeout")?;
+    let enabled = opts.get("processing.enabled")?;
 
     // Arrays
-    let ids = opts.get("feature.allowed_ids")?;
+    let allowed_models = opts.get("inference.allowed_models")?;
 
     // Objects
-    let config = opts.get("database.config")?;
+    let db_config = opts.get("database.config")?;
 
     Ok(())
 }
@@ -270,16 +272,16 @@ def _init_options() -> None:
 from sentry_options import options
 from sentry_options.testing import override_options
 
-def test_feature():
-    with override_options('{namespace}', {'feature.enabled': True}):
-        assert options('{namespace}').get('feature.enabled') is True
+def test_timeout():
+    with override_options('seer', {'inference.timeout': 30}):
+        assert options('seer').get('inference.timeout') == 30
 
 # Nesting is supported — inner overrides restore to outer values
 def test_nested():
-    with override_options('{namespace}', {'rate': 0.5}):
-        with override_options('{namespace}', {'rate': 1.0}):
-            assert options('{namespace}').get('rate') == 1.0
-        assert options('{namespace}').get('rate') == 0.5
+    with override_options('seer', {'inference.timeout': 10}):
+        with override_options('seer', {'inference.timeout': 60}):
+            assert options('seer').get('inference.timeout') == 60
+        assert options('seer').get('inference.timeout') == 10
 ```
 
 #### Rust Testing
@@ -292,14 +294,14 @@ use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
-fn test_feature() {
+fn test_timeout() {
     init().unwrap();
     let _guard = override_options(&[
-        ("{namespace}", "feature.enabled", json!(true)),
+        ("seer", "inference.timeout", json!(30)),
     ]).unwrap();
 
-    let opts = options("{namespace}");
-    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
+    let opts = options("seer");
+    assert_eq!(opts.get("inference.timeout").unwrap(), json!(30));
     // guard dropped here — value restored
 }
 ```
@@ -317,8 +319,8 @@ mkdir -p sentry-options/values/{namespace}
 cat > sentry-options/values/{namespace}/values.json << 'EOF'
 {
   "options": {
-    "feature.enabled": true,
-    "feature.rate_limit": 200
+    "inference.timeout": 30,
+    "processing.enabled": true
   }
 }
 EOF
@@ -337,8 +339,8 @@ sentry-options/
 python -c "
 from sentry_options import init, options
 init()
-opts = options('{namespace}')
-print('feature.enabled:', opts.get('feature.enabled'))
+opts = options('seer')
+print('inference.timeout:', opts.get('inference.timeout'))
 "
 ```
 
@@ -349,9 +351,9 @@ use sentry_options::{init, options};
 
 fn main() -> anyhow::Result<()> {
     init()?;
-    let opts = options("{namespace}");
-    let enabled = opts.get("feature.enabled")?;
-    println!("feature.enabled: {}", enabled);
+    let opts = options("seer");
+    let timeout = opts.get("inference.timeout")?;
+    println!("inference.timeout: {}", timeout);
     Ok(())
 }
 ```

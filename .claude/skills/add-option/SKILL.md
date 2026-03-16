@@ -21,7 +21,7 @@ Ask the user for:
 
 1. **Repository/namespace** - Which schema to update (e.g., `seer`, `seer-autofix`)
 2. **New option details:**
-   - Name (e.g., `feature.new_thing.enabled`)
+   - Name (e.g., `inference.timeout`)
    - Type: `string`, `integer`, `number`, `boolean`, `array`, or `object`
    - Default value
    - Description
@@ -90,11 +90,11 @@ After:
 
 **Example - adding an array option:**
 ```json
-"feature.allowed_ids": {
+"inference.allowed_model_ids": {
   "type": "array",
   "items": {"type": "integer"},
   "default": [1, 2, 3],
-  "description": "List of allowed IDs"
+  "description": "List of allowed model IDs"
 }
 ```
 
@@ -166,34 +166,36 @@ After updating the schema, tell the user:
 
 **Usage example for the new option:**
 
+Assuming a namespace `seer` with an option called `inference.timeout`:
+
 #### Python
 ```python
 # Assumes init() was called at startup
-opts = options('{namespace}')
+opts = options('seer')
 
 # Primitives: returns str | int | float | bool
-new_value = opts.get('{new_option_name}')
+timeout = opts.get('inference.timeout')
 
 # Arrays: returns list
-ids = opts.get('feature.allowed_ids')  # e.g., [1, 2, 3]
+allowed_models = opts.get('inference.allowed_models')  # e.g., ["gpt-4", "claude-4.5-sonnet"]
 
 # Objects: returns dict[str, str | int | float | bool]
-config = opts.get('database.config')  # e.g., {"host": "localhost", "port": 8080}
+db_config = opts.get('database.config')  # e.g., {"host": "localhost", "port": 5432}
 ```
 
 #### Rust
 ```rust
 // Assumes init() was called at startup
-let opts = options("{namespace}");
+let opts = options("seer");
 
 // .get() returns serde_json::Value
-let new_value = opts.get("{new_option_name}")?;
+let timeout = opts.get("inference.timeout")?;
 
 // Arrays
-let ids = opts.get("feature.allowed_ids")?;
+let allowed_models = opts.get("inference.allowed_models")?;
 
 // Objects
-let config = opts.get("database.config")?;
+let db_config = opts.get("database.config")?;
 ```
 
 #### Testing with Overrides
@@ -201,9 +203,9 @@ let config = opts.get("database.config")?;
 ```python
 from sentry_options.testing import override_options
 
-def test_new_option():
-    with override_options('{namespace}', {'{new_option_name}': {new_value}}):
-        assert options('{namespace}').get('{new_option_name}') == {new_value}
+def test_timeout():
+    with override_options('seer', {'inference.timeout': 30}):
+        assert options('seer').get('inference.timeout') == 30
 ```
 
 ```rust
@@ -212,12 +214,12 @@ use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
-fn test_new_option() {
+fn test_timeout() {
     init().unwrap();
     let _guard = override_options(&[
-        ("{namespace}", "{new_option_name}", json!({new_value})),
+        ("seer", "inference.timeout", json!(30)),
     ]).unwrap();
-    assert_eq!(options("{namespace}").get("{new_option_name}").unwrap(), json!({new_value}));
+    assert_eq!(options("seer").get("inference.timeout").unwrap(), json!(30));
 }
 ```
 
