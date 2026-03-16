@@ -168,6 +168,7 @@ After updating the schema, tell the user:
 
 #### Python
 ```python
+# Assumes init() was called at startup
 opts = options('{namespace}')
 
 # Primitives: returns str | int | float | bool
@@ -182,6 +183,7 @@ config = opts.get('database.config')  # e.g., {"host": "localhost", "port": 8080
 
 #### Rust
 ```rust
+// Assumes init() was called at startup
 let opts = options("{namespace}");
 
 // .get() returns serde_json::Value
@@ -200,8 +202,8 @@ let config = opts.get("database.config")?;
 from sentry_options.testing import override_options
 
 def test_new_option():
-    with override_options('{namespace}', {'{new_option_name}': new_value}):
-        assert options('{namespace}').get('{new_option_name}') == new_value
+    with override_options('{namespace}', {'{new_option_name}': {new_value}}):
+        assert options('{namespace}').get('{new_option_name}') == {new_value}
 ```
 
 ```rust
@@ -213,9 +215,9 @@ use serde_json::json;
 fn test_new_option() {
     init().unwrap();
     let _guard = override_options(&[
-        ("{namespace}", "{new_option_name}", json!(new_value)),
+        ("{namespace}", "{new_option_name}", json!({new_value})),
     ]).unwrap();
-    assert_eq!(options("{namespace}").get("{new_option_name}").unwrap(), json!(new_value));
+    assert_eq!(options("{namespace}").get("{new_option_name}").unwrap(), json!({new_value}));
 }
 ```
 
