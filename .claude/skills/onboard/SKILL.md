@@ -172,7 +172,7 @@ Tell the user to add to `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "sentry_options>=1.0.2",
+    "sentry-options>=1.0.2",
 ]
 ```
 
