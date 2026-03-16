@@ -184,15 +184,14 @@ config = opts.get('database.config')  # e.g., {"host": "localhost", "port": 8080
 ```rust
 let opts = options("{namespace}");
 
-// Primitives: use .as_bool(), .as_i64(), .as_f64(), .as_str()
-let new_value = opts.get("{new_option_name}")?.as_bool().unwrap();
+// .get() returns serde_json::Value
+let new_value = opts.get("{new_option_name}")?;
 
-// Arrays: Value::Array(...)
+// Arrays
 let ids = opts.get("feature.allowed_ids")?;
 
-// Objects: Value::Object(...)
+// Objects
 let config = opts.get("database.config")?;
-let host = config["host"].as_str().unwrap();
 ```
 
 #### Testing with Overrides
@@ -206,12 +205,13 @@ def test_new_option():
 ```
 
 ```rust
-use sentry_options::testing::{ensure_initialized, override_options};
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
 fn test_new_option() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let _guard = override_options(&[
         ("{namespace}", "{new_option_name}", json!(new_value)),
     ]).unwrap();

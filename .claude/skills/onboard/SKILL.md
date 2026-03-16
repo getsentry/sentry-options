@@ -226,19 +226,18 @@ fn main() -> anyhow::Result<()> {
     // Initialize once at startup
     init()?;
 
-    // Get namespace handle
+    // Get namespace handle — .get() returns serde_json::Value
     let opts = options("{namespace}");
 
-    // Primitives (returns serde_json::Value)
-    let enabled = opts.get("feature.enabled")?.as_bool().unwrap();
-    let rate = opts.get("feature.rate_limit")?.as_i64().unwrap();
+    // Primitives
+    let enabled = opts.get("feature.enabled")?;
+    let rate = opts.get("feature.rate_limit")?;
 
     // Arrays
-    let ids = opts.get("feature.allowed_ids")?;  // Value::Array(...)
+    let ids = opts.get("feature.allowed_ids")?;
 
     // Objects
-    let config = opts.get("database.config")?;  // Value::Object(...)
-    let host = config["host"].as_str().unwrap();
+    let config = opts.get("database.config")?;
 
     Ok(())
 }
@@ -248,7 +247,6 @@ fn main() -> anyhow::Result<()> {
 - `OptionsError::UnknownNamespace` - Namespace not found in schemas
 - `OptionsError::UnknownOption` - Option key not in schema
 - `OptionsError::Schema` - Schema parsing/validation error
-- `OptionsError::AlreadyInitialized` - `init()` called more than once
 
 ### 1.6 Testing with Overrides
 
@@ -286,16 +284,16 @@ def test_nested():
 
 #### Rust Testing
 
-Use `ensure_initialized()` for idempotent init in tests (safe to call from parallel threads). `override_options()` returns a guard that restores values when dropped.
+`init()` is idempotent and safe to call from parallel threads. `override_options()` returns a guard that restores values when dropped.
 
 ```rust
-use sentry_options::testing::{ensure_initialized, override_options};
-use sentry_options::options;
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
 fn test_feature() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let _guard = override_options(&[
         ("{namespace}", "feature.enabled", json!(true)),
     ]).unwrap();
@@ -346,15 +344,16 @@ print('feature.enabled:', opts.get('feature.enabled'))
 
 #### Rust Testing
 
-For Rust, use `Options::from_directory()` for local testing:
-
 ```rust
-use sentry_options::Options;
-use std::path::Path;
+use sentry_options::{init, options};
 
-let opts = Options::from_directory(Path::new("./sentry-options"))?;
-let enabled = opts.get("{namespace}", "feature.enabled")?.as_bool().unwrap();
-println!("feature.enabled: {}", enabled);
+fn main() -> anyhow::Result<()> {
+    init()?;
+    let opts = options("{namespace}");
+    let enabled = opts.get("feature.enabled")?;
+    println!("feature.enabled: {}", enabled);
+    Ok(())
+}
 ```
 
 To test hot-reload, modify `values.json` while the service is running - changes are picked up within 5 seconds.
