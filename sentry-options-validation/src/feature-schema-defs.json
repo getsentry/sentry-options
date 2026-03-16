@@ -17,7 +17,7 @@
       },
       "enabled": {
         "type": "boolean",
-        "default": false,
+        "default": true,
         "description": "Whether the feature is enabled."
       },
       "created_at": {
@@ -75,7 +75,7 @@
         "type": "integer",
         "minimum": 0,
         "maximum": 100,
-        "default": 0,
+        "default": 100,
         "description": "Percentage of matching contexts granted the feature (0-100)."
       }
     },

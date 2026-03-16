@@ -1,0 +1,267 @@
+"""
+Generate typed mypy stubs for sentry_options based on local schemas.
+
+Reads <schemas-dir>/<namespace>/schema.json and produces
+stubs/sentry_options/__init__.pyi with per-namespace NamespaceOptions
+subclasses and overloaded options() signatures, so opts.get("key")
+returns the correct type without needing cast().
+
+Everything else (init, exceptions, NamespaceOptions base, etc.) is
+re-exported from sentry_options._core via explicit imports.
+
+CLI usage:
+    sentry-options-gen-stubs
+    sentry-options-gen-stubs --schemas-dir path/to/schemas \
+        --output sentry-options/sentry_options/__init__.pyi
+    sentry-options-gen-stubs --check
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+_SCHEMA_TO_PYTHON = {
+    'string': 'str',
+    'integer': 'int',
+    'number': 'float',
+    'boolean': 'bool',
+}
+
+
+def _ident(s: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9]', '_', s)
+
+
+def namespace_to_class(namespace: str) -> str:
+    return 'NamespaceOptions_' + _ident(namespace)
+
+
+def _field_type(parent_key: str, field: str, prop: dict) -> str:
+    """Resolve a primitive field type inside an object/array-of-objects.
+
+    If the field has "optional": true, wraps the type in NotRequired[...].
+    """
+    t = prop.get('type', '')
+    if t not in _SCHEMA_TO_PYTHON:
+        raise ValueError(
+            f'{parent_key!r}: field {field!r} has unknown type {t!r}',
+        )
+    py_type = _SCHEMA_TO_PYTHON[t]
+    if prop.get('optional'):
+        return f'NotRequired[{py_type}]'
+    return py_type
+
+
+def _prop_to_type(
+    prop: dict,
+    class_name: str,
+    key: str,
+    typed_dicts: dict[str, list[tuple[str, str]]],
+    counter: list[int],
+) -> str:
+    """
+    Resolve a schema property to a Python type string.
+
+    Typed arrays (items.type) resolve to list[T].
+    Objects and array-of-objects with properties generate TypedDicts
+    collected into typed_dicts, keyed by their generated class name.
+    TypedDicts use index-based names to avoid collisions, and the
+    functional form to preserve original key names (e.g. hyphens).
+    """
+    t = prop.get('type', '')
+    if t in _SCHEMA_TO_PYTHON:
+        return _SCHEMA_TO_PYTHON[t]
+    if t == 'array':
+        items = prop.get('items', {})
+        item_t = items.get('type', '')
+        if item_t in _SCHEMA_TO_PYTHON:
+            return f'list[{_SCHEMA_TO_PYTHON[item_t]}]'
+        if item_t == 'object':
+            item_props = items.get('properties', {})
+            if not item_props:
+                raise ValueError(
+                    f'{key!r}: array[object] items has no properties',
+                )
+            td = f'_{class_name}_{counter[0]}_Item'
+            counter[0] += 1
+            typed_dicts[td] = [
+                (k, _field_type(key, k, v))
+                for k, v in item_props.items()
+            ]
+            return f'list[{td}]'
+        raise ValueError(f'{key!r}: unknown array item type {item_t!r}')
+    if t == 'object':
+        obj_props = prop.get('properties', {})
+        if not obj_props:
+            raise ValueError(f'{key!r}: object has no properties')
+        td = f'_{class_name}_{counter[0]}_Dict'
+        counter[0] += 1
+        typed_dicts[td] = [
+            (k, _field_type(key, k, v))
+            for k, v in obj_props.items()
+        ]
+        return td
+    raise ValueError(f'{key!r}: unknown type {t!r}')
+
+
+def generate(schemas_dir: Path) -> str:
+    if not schemas_dir.is_dir():
+        print(
+            f"error: schemas directory not found: {schemas_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    schema_dirs = sorted(p for p in schemas_dir.iterdir() if p.is_dir())
+
+    raw_namespaces: list[tuple[str, str, dict]] = []
+    for schema_dir in schema_dirs:
+        schema_file = schema_dir / 'schema.json'
+        if not schema_file.exists():
+            continue
+        schema = json.loads(schema_file.read_text())
+        namespace = schema_dir.name
+        class_name = namespace_to_class(namespace)
+        raw_namespaces.append(
+            (namespace, class_name, schema.get('properties', {})),
+        )
+
+    if not raw_namespaces:
+        print(f"No schemas found under {schemas_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    typed_dicts: dict[str, list[tuple[str, str]]] = {}
+    namespaces: list[tuple[str, str, dict[str, str]]] = []
+    for namespace, class_name, props in raw_namespaces:
+        try:
+            counter = [0]
+            key_types = {
+                key: _prop_to_type(prop, class_name, key, typed_dicts, counter)
+                for key, prop in props.items()
+                if '$ref' not in prop
+            }
+        except ValueError as e:
+            print(f"error: {namespace}: {e}", file=sys.stderr)
+            sys.exit(1)
+        namespaces.append((namespace, class_name, key_types))
+
+    lines = [
+        '# AUTO-GENERATED by sentry-options-gen-stubs — do not edit manually.',
+        '# Run `sentry-options-gen-stubs` to regenerate.',
+        'from __future__ import annotations',
+        '',
+        'from typing import Literal, NotRequired, TypedDict, overload',
+        '',
+        'from sentry_options._core import ('
+        '\n    InitializationError,'
+        '\n    NamespaceOptions,'
+        '\n    OptionsError,'
+        '\n    OptionValue,'
+        '\n    SchemaError,'
+        '\n    UnknownNamespaceError,'
+        '\n    UnknownOptionError,'
+        '\n    init,'
+        '\n)',
+        '',
+        '__all__ = [',
+        '    "init",',
+        '    "options",',
+        '    "InitializationError",',
+        '    "NamespaceOptions",',
+        '    "OptionsError",',
+        '    "OptionValue",',
+        '    "SchemaError",',
+        '    "UnknownNamespaceError",',
+        '    "UnknownOptionError",',
+        ']',
+        '',
+    ]
+
+    for td_name, fields in typed_dicts.items():
+        lines.append(f"{td_name} = TypedDict('{td_name}', {{")
+        for field_name, field_type in fields:
+            lines.append(f"    '{field_name}': {field_type},")
+        lines.append('})')
+        lines.append('')
+
+    for namespace, class_name, _ in namespaces:
+        lines.append(
+            f'@overload\n'
+            f'def options(namespace: Literal["{namespace}"])'
+            f' -> {class_name}: ...',
+        )
+    lines.append(
+        '@overload\ndef options(namespace: str) -> NamespaceOptions: ...',
+    )
+    lines.append('')
+
+    for namespace, class_name, key_types in namespaces:
+        lines.append(f'class {class_name}(NamespaceOptions):')
+        for key, py_type in key_types.items():
+            lines.append(
+                f'    @overload\n'
+                f'    def get(self, key: Literal["{key}"]) -> {py_type}: ...',
+            )
+        if key_types:
+            lines.append(
+                '    @overload\n    def get(self, key: str) -> OptionValue: ...',
+            )
+        else:
+            lines.append('    def get(self, key: str) -> OptionValue: ...')
+        lines.append('')
+
+    while lines and lines[-1] == '':
+        lines.pop()
+    return '\n'.join(lines) + '\n'
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Generate sentry_options mypy stubs from schemas.',
+    )
+    parser.add_argument(
+        '--schemas-dir',
+        type=Path,
+        default=Path('sentry-options/schemas'),
+        help=(
+            'Directory containing <namespace>/schema.json files'
+            ' (default: sentry-options/schemas)'
+        ),
+    )
+    parser.add_argument(
+        '--output',
+        type=Path,
+        default=Path('sentry-options/sentry_options/__init__.pyi'),
+        help='Output path (default: sentry-options/sentry_options/__init__.pyi)',
+    )
+    parser.add_argument(
+        '--check',
+        action='store_true',
+        help=(
+            'Exit with code 1 if the output would change'
+            ' (for CI/pre-commit).'
+        ),
+    )
+    args = parser.parse_args()
+
+    content = generate(args.schemas_dir)
+
+    if args.check:
+        if not args.output.exists() or args.output.read_text() != content:
+            print(
+                f"error: {args.output} is out of date."
+                ' Run `sentry-options-gen-stubs`.',
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(content)
+    print(f"Written to {args.output}")
+
+
+if __name__ == '__main__':
+    main()

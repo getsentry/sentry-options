@@ -246,16 +246,16 @@ def test_nested_overrides():
 
 **Rust:**
 
-Use `ensure_initialized()` for idempotent init (safe to call from parallel test threads). `override_options()` returns a guard that restores values when dropped.
+`init()` is idempotent (safe to call from parallel test threads). `override_options()` returns a guard that restores values when dropped.
 
 ```rust
-use sentry_options::testing::{ensure_initialized, override_options};
-use sentry_options::options;
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
 fn test_feature_enabled() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let _guard = override_options(&[
         ("seer", "feature.enabled", json!(true)),
     ]).unwrap();

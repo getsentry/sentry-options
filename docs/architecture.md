@@ -49,9 +49,11 @@ sentry-options/
 │   │       └── src/lib.rs
 │   │
 │   └── python/
-│       └── sentry_options/
-│           ├── __init__.py
-│           └── api.py
+│       ├── sentry_options/
+│       │   ├── __init__.py
+│       │   └── testing.py
+│       ├── src/                     # Pyo3 extension
+│       └── tests/                   # tests for the python client
 │
 ├── sentry-options-cli/              # CLI tool
 │   ├── Cargo.toml
@@ -89,14 +91,15 @@ JSON schemas define available options with types and defaults:
 
 ### Supported Types
 
-| Type | JSON Schema | Example |
-|------|-------------|---------|
-| String | `"type": "string"` | `"hello"` |
-| Integer | `"type": "integer"` | `42` |
-| Float | `"type": "number"` | `3.14` |
-| Boolean | `"type": "boolean"` | `true` |
-| Array | `"type": "array"` | `[1,2,3]` |
-| Object | `"type": "object"` | `{"host": "localhost", "port": 8080}` |
+| Type    | JSON Schema                       | Example                               |
+|---------|-----------------------------------|---------------------------------------|
+| String  | `"type": "string"`                | `"hello"`                             |
+| Integer | `"type": "integer"`               | `42`                                  |
+| Float   | `"type": "number"`                | `3.14`                                |
+| Boolean | `"type": "boolean"`               | `true`                                |
+| Array   | `"type": "array"`                 | `[1,2,3]`                             |
+| Object  | `"type": "object"`                | `{"host": "localhost", "port": 8080}` |
+| Feature | `"$ref": "#/definitions/Feature"` |                                       |
 
 > Array items can be primitives (`string`, `integer`, `number`, `boolean`) or `object`.
 
@@ -181,13 +184,31 @@ Each schema file must have:
 
 Each property must have:
 
-- `type` - One of: `string`, `integer`, `number`, `boolean`, `array`, or `object`
+- `type` - One of: `string`, `integer`, `number`, `boolean`, `array`, `object`,
+  or is a feature flag.
 - `default` - Default value (must match declared type)
 - `description` - Human-readable description
 - `items` - Required when `type` is `array`. An object with `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, `boolean`, or `object`. When items type is `object`, a `properties` field defining the item shape is also required.
 - `properties` - Required when `type` is `object`. An object mapping field names to `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`. Fields may include `"optional": true` to allow omission.
 
 `additionalProperties: false` is auto-injected to reject unknown options and unknown object fields.
+
+In schema files, feature flags should have their option names begin with `feature.` and point to an object reference:
+
+```json
+{
+  "version": "0.1",
+  "type": "object",
+  "properties": {
+    "feature.organizations:red-bar": {
+        "$ref": "#/definitions/Feature"
+    }
+  }
+}
+```
+
+The `Feature` definition is spliced into the namespace schema during `init()`. The schema
+for features can be found in `sentry-options-validation/src/feature-schema-defs.json`.
 
 ## Values Format
 
@@ -214,7 +235,19 @@ Each YAML file has a single `options` key:
 options:
   system.url-prefix: "https://custom.sentry.io"
   traces.sample-rate: 0.5
-  feature.enabled: true
+  webhook.delivery-enabled: true
+  feature.organizations:red-bar:
+      enabled: true
+      owner:
+        - team: "test-team"
+      created_at: "2024-01-01"
+      segments:
+        - name: "org-segment"
+          rollout: 100
+          conditions:
+            - property: "organization_id"
+              operator: "in"
+              value: [123, 456]
 ```
 
 ### Target Override System
@@ -281,6 +314,23 @@ def process(value: OptionValue) -> None: ...
 | `object` | `dict[str, str \| int \| float \| bool]` |
 | `array` | `list[str \| int \| float \| bool \| dict[...]]` |
 
+#### Feature flags
+
+```python
+from sentry_options import init, features, FeatureContext
+
+init()
+
+context = FeatureContext(
+    {"org_id": 123, "user_id": 456, "user_email": "sal@example.org"},
+    identity_fields=["user_id"]
+)
+
+feature_checker = features("getsentry")
+if feature_checker.has("organizations:red-bar", context):
+    # User has the feature
+```
+
 #### Testing (Python)
 
 Use the `override_options` context manager to temporarily replace option values in tests.
@@ -328,20 +378,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+#### Feature flags (Rust)
+
+```rust
+use sentry_options::{init, features, FeatureContext};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init()?;
+    let mut context = FeatureChecker::new();
+    context.insert("user_id", 123);
+    context.insert("org_id", 456);
+    context.insert("user_email", "sal@example.org");
+    context.identity_fields(vec!["user_id"]);
+
+    let feature_checker = features("getsentry");
+    if feature_checker.has("organizations:red-bar", context) {
+        // User has feature.
+    }
+}
+```
+
 #### Testing (Rust)
 
-Use `ensure_initialized()` for idempotent init in tests (safe to call from parallel threads).
 Use `override_options()` which returns a guard that restores values when dropped.
 Overrides are validated against the schema.
 
 ```rust
-use sentry_options::testing::{ensure_initialized, override_options};
-use sentry_options::options;
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
 use serde_json::json;
 
 #[test]
 fn test_feature() {
-    ensure_initialized().unwrap();
+    init().unwrap();
     let _guard = override_options(&[
         ("getsentry", "feature.enabled", json!(true)),
     ]).unwrap();

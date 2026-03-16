@@ -3,8 +3,25 @@ name = "sentry-options"
 version = "0.0.0"
 requires-python = ">=3.11"
 
+[project.scripts]
+sentry-options-gen-stubs = "sentry_options_gen_stubs:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["sentry_options_gen_stubs"]
+
+[tool.setuptools.package-dir]
+sentry_options_gen_stubs = "sentry-options-gen-stubs"
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.0",
+    "pytest>=8",
     "sentry-devenv>=1.25.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
