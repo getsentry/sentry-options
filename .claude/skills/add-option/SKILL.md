@@ -21,8 +21,8 @@ Ask the user for:
 
 1. **Repository/namespace** - Which schema to update (e.g., `seer`, `seer-autofix`)
 2. **New option details:**
-   - Name (e.g., `feature.new_thing.enabled`)
-   - Type: `string`, `integer`, `number`, or `boolean`
+   - Name (e.g., `inference.timeout`)
+   - Type: `string`, `integer`, `number`, `boolean`, `array`, or `object`
    - Default value
    - Description
 
@@ -49,6 +49,7 @@ Read the existing `sentry-options/schemas/{namespace}/schema.json` and add the n
 - `number` - Default can be integer or float (e.g., `3.14`)
 - `boolean` - Default must be `true` or `false`
 - `array` - Must include `items` property with element type (e.g., `{"type": "integer"}`). Default must be an array (e.g., `[1, 2, 3]`)
+- `object` - Must include `properties` field defining the shape. Default must be an object with all required fields
 
 **Example - adding to existing schema:**
 
@@ -89,11 +90,43 @@ After:
 
 **Example - adding an array option:**
 ```json
-"feature.allowed_ids": {
+"inference.allowed_model_ids": {
   "type": "array",
   "items": {"type": "integer"},
   "default": [1, 2, 3],
-  "description": "List of allowed IDs"
+  "description": "List of allowed model IDs"
+}
+```
+
+**Example - adding an object option:**
+```json
+"database.config": {
+  "type": "object",
+  "properties": {
+    "host": {"type": "string"},
+    "port": {"type": "integer"},
+    "label": {"type": "string", "optional": true}
+  },
+  "default": {"host": "localhost", "port": 8080},
+  "description": "Database configuration"
+}
+```
+
+Object fields are required by default. Add `"optional": true` to allow omission. Fields must be primitives (no nested objects).
+
+**Example - adding an array of objects:**
+```json
+"service.endpoints": {
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "url": {"type": "string"},
+      "weight": {"type": "integer"}
+    }
+  },
+  "default": [],
+  "description": "Weighted service endpoints"
 }
 ```
 
@@ -131,6 +164,65 @@ After updating the schema, tell the user:
 >
 > The new option will use its schema default until you add explicit values in the automator.
 
+**Usage example for the new option:**
+
+Assuming a namespace `seer` with an option called `inference.timeout`:
+
+#### Python
+```python
+# Assumes init() was called at startup
+opts = options('seer')
+
+# Primitives: returns str | int | float | bool
+timeout = opts.get('inference.timeout')
+
+# Arrays: returns list
+allowed_models = opts.get('inference.allowed_models')  # e.g., ["gpt-4", "claude-4.5-sonnet"]
+
+# Objects: returns dict[str, str | int | float | bool]
+db_config = opts.get('database.config')  # e.g., {"host": "localhost", "port": 5432}
+```
+
+#### Rust
+```rust
+// Assumes init() was called at startup
+let opts = options("seer");
+
+// .get() returns serde_json::Value
+let timeout = opts.get("inference.timeout")?;
+
+// Arrays
+let allowed_models = opts.get("inference.allowed_models")?;
+
+// Objects
+let db_config = opts.get("database.config")?;
+```
+
+#### Testing with Overrides
+
+```python
+from sentry_options.testing import override_options
+
+def test_timeout():
+    with override_options('seer', {'inference.timeout': 30}):
+        assert options('seer').get('inference.timeout') == 30
+```
+
+```rust
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
+use serde_json::json;
+
+#[test]
+fn test_timeout() {
+    init().unwrap();
+    let _guard = override_options(&[
+        ("seer", "inference.timeout", json!(30)),
+    ]).unwrap();
+    assert_eq!(options("seer").get("inference.timeout").unwrap(), json!(30));
+}
+```
+
 ---
 
 ## Optional: Add Values
@@ -155,6 +247,6 @@ options:
 
 **Values location:** `option-values/{namespace}/default/values.yaml` (in sentry-options-automator)
 
-**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`, `object`
 
 **Hot-reload:** Changes propagate in ~1-2 minutes without pod restart

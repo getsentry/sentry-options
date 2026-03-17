@@ -43,8 +43,8 @@ Before generating files, ask the user for:
 1. **Repository name** - e.g., `seer`, `relay`
 2. **Namespace** - Usually same as repo, or `{repo}-{subproject}` (e.g., `seer-autofix`)
 3. **Options to configure** - For each option:
-   - Name (e.g., `feature.enabled`)
-   - Type: `string`, `integer`, `number`, or `boolean`
+   - Name (e.g., `inference.timeout`)
+   - Type: `string`, `integer`, `number`, `boolean`, `array`, or `object`
    - Default value
    - Description
 
@@ -76,24 +76,59 @@ Generate `sentry-options/schemas/{namespace}/schema.json`:
 
 **Template variables:**
 - `{namespace}` - The namespace provided by user
-- `{option_name}` - Option key (e.g., `feature.enabled`)
-- `{option_type}` - One of: `string`, `integer`, `number`, `boolean`
+- `{option_name}` - Option key (e.g., `inference.timeout`)
+- `{option_type}` - One of: `string`, `integer`, `number`, `boolean`, `array`, `object`
 - `{option_default}` - Default value (must match type, strings need quotes)
 - `{option_description}` - Human-readable description
 
-**Supported types:** `string`, `integer`, `number`, `boolean`, `array`
+**Supported types:** `string`, `integer`, `number`, `boolean`, `array`, `object`
 
 **For array types:**
-- Include an `items` property specifying the element type: `{"type": "string"}`, `{"type": "integer"}`, `{"type": "number"}`, or `{"type": "boolean"}`
+- Include an `items` property specifying the element type: `{"type": "string"}`, `{"type": "integer"}`, `{"type": "number"}`, `{"type": "boolean"}`, or `{"type": "object", "properties": {...}}`
 - Default must be an array of the specified type (e.g., `[1, 2, 3]` for integer arrays)
 
 **Example array option:**
 ```json
-"feature.allowed_ids": {
+"inference.allowed_model_ids": {
   "type": "array",
   "items": {"type": "integer"},
   "default": [1, 2, 3],
-  "description": "List of allowed IDs"
+  "description": "List of allowed model IDs"
+}
+```
+
+**For object types:**
+- Include a `properties` field defining the shape. Each field has a `type` (primitives only: `string`, `integer`, `number`, `boolean`)
+- Fields are required by default. Add `"optional": true` to allow omission
+- Nested objects are not supported — field values must be primitives
+
+**Example object option:**
+```json
+"database.config": {
+  "type": "object",
+  "properties": {
+    "host": {"type": "string"},
+    "port": {"type": "integer"},
+    "label": {"type": "string", "optional": true}
+  },
+  "default": {"host": "localhost", "port": 8080},
+  "description": "Database configuration"
+}
+```
+
+**Example array of objects:**
+```json
+"service.endpoints": {
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "url": {"type": "string"},
+      "weight": {"type": "integer"}
+    }
+  },
+  "default": [],
+  "description": "Weighted service endpoints"
 }
 ```
 
@@ -111,13 +146,13 @@ on:
 
 jobs:
   validate:
-    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0.0.15
+    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@1.0.2
     secrets: inherit
     with:
       schemas-path: sentry-options/schemas
 ```
 
-**Note:** The workflow version `0.0.15` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
+**Note:** The workflow version `1.0.2` is current as of this writing. Instruct users to check https://github.com/getsentry/sentry-options/releases for the latest version.
 
 ### 1.3 Show Dockerfile Changes
 
@@ -130,19 +165,30 @@ COPY sentry-options/schemas /etc/sentry-options/schemas
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
 
-### 1.4 Show Dependency Addition
+### 1.4 Add Dependency
 
+#### Python
 Tell the user to add to `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "sentry_options>=0.0.11",
+    "sentry-options>=1.0.2",
 ]
+```
+
+#### Rust
+Tell the user to add to `Cargo.toml`:
+
+```toml
+[dependencies]
+sentry-options = "1.0.2"
 ```
 
 ### 1.5 Show Usage Example
 
-Provide this Python usage example:
+Examples below use a namespace called `seer` — replace with the user's actual namespace.
+
+#### Python
 
 ```python
 from sentry_options import init, options
@@ -151,11 +197,18 @@ from sentry_options import init, options
 init()
 
 # Get options namespace
-opts = options('{namespace}')
+opts = options('seer')
 
-# Read values (returns schema default if ConfigMap doesn't exist)
-if opts.get('feature.enabled'):
-    rate = opts.get('feature.rate_limit')
+# Primitives (returns str | int | float | bool)
+timeout = opts.get('inference.timeout')
+enabled = opts.get('processing.enabled')
+
+# Arrays (returns list)
+allowed_models = opts.get('inference.allowed_models')  # e.g., ["gpt-4", "claude-4.5-sonnet"]
+
+# Objects (returns dict[str, str | int | float | bool])
+db_config = opts.get('database.config')
+host = db_config['host']
 ```
 
 **Typing:** The package ships with `py.typed` and type stubs — mypy/pyright/ruff work out of the box. `OptionValue` is exported for type annotations:
@@ -166,7 +219,96 @@ from sentry_options import OptionValue
 def process(value: OptionValue) -> None: ...
 ```
 
-### 1.6 Local Testing
+#### Rust
+
+```rust
+use sentry_options::{init, options};
+
+fn main() -> anyhow::Result<()> {
+    // Initialize once at startup
+    init()?;
+
+    // Get namespace handle — .get() returns serde_json::Value
+    let opts = options("seer");
+
+    // Primitives
+    let timeout = opts.get("inference.timeout")?;
+    let enabled = opts.get("processing.enabled")?;
+
+    // Arrays
+    let allowed_models = opts.get("inference.allowed_models")?;
+
+    // Objects
+    let db_config = opts.get("database.config")?;
+
+    Ok(())
+}
+```
+
+**Rust error types:**
+- `OptionsError::UnknownNamespace` - Namespace not found in schemas
+- `OptionsError::UnknownOption` - Option key not in schema
+- `OptionsError::Schema` - Schema parsing/validation error
+
+### 1.6 Testing with Overrides
+
+Both clients provide an override mechanism for tests. Overrides are validated against the schema — unknown keys and type mismatches raise errors.
+
+#### Python Testing
+
+Use the `override_options` context manager. Requires `init()` to have been called first — use a `conftest.py` fixture:
+
+```python
+# conftest.py
+import pytest
+from sentry_options import init
+
+@pytest.fixture(scope='session', autouse=True)
+def _init_options() -> None:
+    init()
+```
+
+```python
+from sentry_options import options
+from sentry_options.testing import override_options
+
+def test_timeout():
+    with override_options('seer', {'inference.timeout': 30}):
+        assert options('seer').get('inference.timeout') == 30
+
+# Nesting is supported — inner overrides restore to outer values
+def test_nested():
+    with override_options('seer', {'inference.timeout': 10}):
+        with override_options('seer', {'inference.timeout': 60}):
+            assert options('seer').get('inference.timeout') == 60
+        assert options('seer').get('inference.timeout') == 10
+```
+
+#### Rust Testing
+
+`init()` is idempotent and safe to call from parallel threads. `override_options()` returns a guard that restores values when dropped.
+
+```rust
+use sentry_options::testing::override_options;
+use sentry_options::{init, options};
+use serde_json::json;
+
+#[test]
+fn test_timeout() {
+    init().unwrap();
+    let _guard = override_options(&[
+        ("seer", "inference.timeout", json!(30)),
+    ]).unwrap();
+
+    let opts = options("seer");
+    assert_eq!(opts.get("inference.timeout").unwrap(), json!(30));
+    // guard dropped here — value restored
+}
+```
+
+Overrides are thread-local and won't affect other threads.
+
+### 1.7 Local Testing
 
 Before deploying, test the integration locally. The library automatically looks for a `sentry-options/` directory in the working directory.
 
@@ -177,8 +319,8 @@ mkdir -p sentry-options/values/{namespace}
 cat > sentry-options/values/{namespace}/values.json << 'EOF'
 {
   "options": {
-    "feature.enabled": true,
-    "feature.rate_limit": 200
+    "inference.timeout": 30,
+    "processing.enabled": true
   }
 }
 EOF
@@ -191,19 +333,34 @@ sentry-options/
 └── values/{namespace}/values.json    # Test values (JSON format)
 ```
 
-Test with:
+#### Python Testing
+
 ```python
 python -c "
 from sentry_options import init, options
 init()
-opts = options('{namespace}')
-print('feature.enabled:', opts.get('feature.enabled'))
+opts = options('seer')
+print('inference.timeout:', opts.get('inference.timeout'))
 "
+```
+
+#### Rust Testing
+
+```rust
+use sentry_options::{init, options};
+
+fn main() -> anyhow::Result<()> {
+    init()?;
+    let opts = options("seer");
+    let timeout = opts.get("inference.timeout")?;
+    println!("inference.timeout: {}", timeout);
+    Ok(())
+}
 ```
 
 To test hot-reload, modify `values.json` while the service is running - changes are picked up within 5 seconds.
 
-### 1.7 Phase 1 Checkpoint
+### 1.8 Phase 1 Checkpoint
 
 After generating the files, tell the user:
 
