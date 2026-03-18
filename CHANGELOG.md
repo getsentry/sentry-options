@@ -1,4 +1,15 @@
 # Changelog
+## 1.0.3
+
+### New Features ✨
+
+- (cli) Adds retry logic to schema retriever by @kenzoengineer in [#109](https://github.com/getsentry/sentry-options/pull/109)
+- (docs) Update onboard/add-option skill to include rust examples by @hubertdeng123 in [#80](https://github.com/getsentry/sentry-options/pull/80)
+
+### Other
+
+- fix(feature) Expand readme and update defaults by @markstory in [#106](https://github.com/getsentry/sentry-options/pull/106)
+
 ## 1.0.2
 
 ### New Features ✨
