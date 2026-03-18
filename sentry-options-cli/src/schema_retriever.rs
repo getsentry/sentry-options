@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
+use std::time::Duration;
 
 use crate::repo_schema_config::{RepoSchemaConfig, RepoSchemaConfigs};
 use crate::{AppError, Result};
@@ -71,7 +72,37 @@ pub fn fetch_all_schemas(config: &RepoSchemaConfigs, out_dir: &Path, quiet: bool
     Ok(())
 }
 
+const MAX_RETRIES: u32 = 3;
+const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(3);
+
+/// fetches repo schema using exponential backoff
+/// waits a maximum of 3 + 6 + 12 = 21 seconds
+/// will only propagate the last error from the last retry
 fn fetch_repo_schemas(repo_name: &str, source: &RepoSchemaConfig, out_dir: &Path) -> Result<()> {
+    let mut delay = INITIAL_RETRY_DELAY;
+    let mut last_err = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            thread::sleep(delay);
+            delay *= 2;
+        }
+
+        match try_fetch_repo_schemas(repo_name, source, out_dir) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_err = Some(e),
+        }
+    }
+
+    Err(last_err.unwrap())
+}
+
+/// calls the github cli to sparse checkout a schema file from a repo
+fn try_fetch_repo_schemas(
+    repo_name: &str,
+    source: &RepoSchemaConfig,
+    out_dir: &Path,
+) -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let repo_path = temp_dir.path().join("repo");
     let repo_str = repo_path.to_str().ok_or_else(|| {
