@@ -403,21 +403,28 @@ fn debug_log_match(feature: &str, result: bool, context_id: u64) {
 /// A handle for checking feature flags within a specific namespace.
 pub struct FeatureChecker {
     namespace: String,
-    options: &'static crate::Options,
+    options: Option<&'static crate::Options>,
 }
 
 impl FeatureChecker {
     pub fn new(namespace: String, options: &'static crate::Options) -> Self {
-        Self { namespace, options }
+        Self {
+            namespace,
+            options: Some(options),
+        }
     }
 
     /// Check whether a feature flag is enabled for a given context.
     ///
-    /// Returns false if the feature is not defined, not enabled, or conditions don't match.
+    /// Returns false if the feature is not defined, not enabled, conditions don't match,
+    /// or options have not been initialized.
     pub fn has(&self, feature_name: &str, context: &FeatureContext) -> bool {
+        let Some(opts) = self.options else {
+            return false;
+        };
         let key = format!("feature.{feature_name}");
 
-        let feature_val = match self.options.get(&self.namespace, &key) {
+        let feature_val = match opts.get(&self.namespace, &key) {
             Ok(v) => v,
             Err(e) => {
                 debug_log_parse(&format!("Failed to get feature '{key}': {e}"));
@@ -444,14 +451,11 @@ impl FeatureChecker {
 
 /// Get a feature checker handle for a namespace.
 ///
-/// Panics if `init()` has not been called.
+/// Returns a handle that returns false for all checks if `init()` has not been called.
 pub fn features(namespace: &str) -> FeatureChecker {
-    let opts = crate::GLOBAL_OPTIONS
-        .get()
-        .expect("options not initialized - call init() first");
     FeatureChecker {
         namespace: namespace.to_string(),
-        options: opts,
+        options: crate::GLOBAL_OPTIONS.get(),
     }
 }
 

@@ -20,6 +20,9 @@ static GLOBAL_OPTIONS: OnceLock<Options> = OnceLock::new();
 
 #[derive(Debug, Error)]
 pub enum OptionsError {
+    #[error("Options not initialized - call init() first")]
+    NotInitialized,
+
     #[error("Unknown namespace: {0}")]
     UnknownNamespace(String),
 
@@ -156,32 +159,31 @@ pub fn init() -> Result<()> {
 
 /// Get a namespace handle for accessing options.
 ///
-/// Panics if `init()` has not been called.
+/// Returns a handle that returns errors if `init()` has not been called.
 pub fn options(namespace: &str) -> NamespaceOptions {
-    let opts = GLOBAL_OPTIONS
-        .get()
-        .expect("options not initialized - call init() first");
     NamespaceOptions {
         namespace: namespace.to_string(),
-        options: opts,
+        options: GLOBAL_OPTIONS.get(),
     }
 }
 
 /// Handle for accessing options within a specific namespace.
 pub struct NamespaceOptions {
     namespace: String,
-    options: &'static Options,
+    options: Option<&'static Options>,
 }
 
 impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
-        self.options.get(&self.namespace, key)
+        let opts = self.options.ok_or(OptionsError::NotInitialized)?;
+        opts.get(&self.namespace, key)
     }
 
     /// Check if an option has a key defined, or if the default is being used.
     pub fn isset(&self, key: &str) -> Result<bool> {
-        self.options.isset(&self.namespace, key)
+        let opts = self.options.ok_or(OptionsError::NotInitialized)?;
+        opts.isset(&self.namespace, key)
     }
 }
 
