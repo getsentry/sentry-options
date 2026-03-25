@@ -159,31 +159,30 @@ pub fn init() -> Result<()> {
 
 /// Get a namespace handle for accessing options.
 ///
-/// Returns a handle that returns errors if `init()` has not been called.
-pub fn options(namespace: &str) -> NamespaceOptions {
-    NamespaceOptions {
+/// Returns an error if `init()` has not been called.
+pub fn options(namespace: &str) -> Result<NamespaceOptions> {
+    let opts = GLOBAL_OPTIONS.get().ok_or(OptionsError::NotInitialized)?;
+    Ok(NamespaceOptions {
         namespace: namespace.to_string(),
-        options: GLOBAL_OPTIONS.get(),
-    }
+        options: opts,
+    })
 }
 
 /// Handle for accessing options within a specific namespace.
 pub struct NamespaceOptions {
     namespace: String,
-    options: Option<&'static Options>,
+    options: &'static Options,
 }
 
 impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
-        let opts = self.options.ok_or(OptionsError::NotInitialized)?;
-        opts.get(&self.namespace, key)
+        self.options.get(&self.namespace, key)
     }
 
     /// Check if an option has a key defined, or if the default is being used.
     pub fn isset(&self, key: &str) -> Result<bool> {
-        let opts = self.options.ok_or(OptionsError::NotInitialized)?;
-        opts.isset(&self.namespace, key)
+        self.options.isset(&self.namespace, key)
     }
 }
 
