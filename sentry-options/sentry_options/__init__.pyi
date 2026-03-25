@@ -15,6 +15,18 @@ from sentry_options._core import (
     init,
 )
 
+__all__ = [
+    "init",
+    "options",
+    "NotInitializedError",
+    "NamespaceOptions",
+    "OptionsError",
+    "OptionValue",
+    "SchemaError",
+    "UnknownNamespaceError",
+    "UnknownOptionError",
+]
+
 _NamespaceOptions_sentry_options_testing_0_Dict = TypedDict('_NamespaceOptions_sentry_options_testing_0_Dict', {
     'host': str,
     'port': int,
