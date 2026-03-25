@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal, NotRequired, TypedDict, overload
 
 from sentry_options._core import (
-    InitializationError,
+    NotInitializedError,
     NamespaceOptions,
     OptionsError,
     OptionValue,

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 from sentry_options import init
-from sentry_options import InitializationError
+from sentry_options import NotInitializedError
 from sentry_options import options
 from sentry_options import OptionsError
 from sentry_options import SchemaError
@@ -74,7 +74,7 @@ def test_exceptions_inherit_from_options_error() -> None:
     assert issubclass(SchemaError, OptionsError)
     assert issubclass(UnknownNamespaceError, OptionsError)
     assert issubclass(UnknownOptionError, OptionsError)
-    assert issubclass(InitializationError, OptionsError)
+    assert issubclass(NotInitializedError, OptionsError)
 
 
 def test_isset() -> None:

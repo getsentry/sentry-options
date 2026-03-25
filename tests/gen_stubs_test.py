@@ -79,7 +79,7 @@ def test_generate_imports(schemas_dir: Path) -> None:
     assert 'from sentry_options._core import *' not in output
     assert 'from sentry_options._core import (' in output
     for symbol in (
-        'InitializationError',
+        'NotInitializedError',
         'NamespaceOptions',
         'OptionsError',
         'OptionValue',
