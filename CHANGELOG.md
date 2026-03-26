@@ -1,4 +1,14 @@
 # Changelog
+## 1.0.4
+
+### Bug Fixes 🐛
+
+- (clients) Remove all panics from Rust client public API by @hubertdeng123 in [#111](https://github.com/getsentry/sentry-options/pull/111)
+
+### Internal Changes 🔧
+
+- Pin GitHub Actions to full-length commit SHAs by @joshuarli in [#110](https://github.com/getsentry/sentry-options/pull/110)
+
 ## 1.0.3
 
 ### New Features ✨
