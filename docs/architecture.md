@@ -392,10 +392,12 @@ init()?; // loads schemas and values from disk
 #### Feature flags (Rust)
 
 ```rust
-use sentry_options::{init, features, FeatureContext};
+use sentry_options::{init_with_schemas, features, FeatureContext};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init()?;
+    init_with_schemas(&[
+        ("getsentry", include_str!("sentry-options/schemas/getsentry/schema.json")),
+    ])?;
     let mut context = FeatureContext::new();
     context.insert("user_id", 123);
     context.insert("org_id", 456);

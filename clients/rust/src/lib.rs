@@ -426,4 +426,10 @@ mod tests {
         let (loaded_values, _) = registry.load_values_json(&values_dir).unwrap();
         assert_eq!(loaded_values["test"]["enabled"], json!(true));
     }
+
+    #[test]
+    fn test_from_schemas_invalid_json() {
+        let result = SchemaRegistry::from_schemas(&[("test", "not valid json")]);
+        assert!(result.is_err());
+    }
 }
