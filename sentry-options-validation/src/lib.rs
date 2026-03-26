@@ -264,6 +264,45 @@ impl SchemaRegistry {
         Ok(Self { schemas })
     }
 
+    /// Build a registry from in-memory schema JSON strings.
+    ///
+    /// Each entry is a `(namespace, json)` pair. Applies the same validation
+    /// pipeline as `from_directory` (meta-schema check, constraint injection,
+    /// validator compilation) without reading from the filesystem.
+    pub fn from_schemas(schemas: &[(&str, &str)]) -> ValidationResult<Self> {
+        let namespace_schema_value: Value =
+            serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {
+                ValidationError::InternalError(format!("Invalid namespace-schema JSON: {}", e))
+            })?;
+        let namespace_validator =
+            jsonschema::validator_for(&namespace_schema_value).map_err(|e| {
+                ValidationError::InternalError(format!("Failed to compile namespace-schema: {}", e))
+            })?;
+
+        let embedded_path = Path::new("<embedded>");
+        let mut loaded = HashMap::new();
+
+        for (namespace, json) in schemas {
+            validate_k8s_name_component(namespace, "namespace name")?;
+
+            let schema_data: Value =
+                serde_json::from_str(json).map_err(|e| ValidationError::SchemaError {
+                    file: embedded_path.to_path_buf(),
+                    message: format!("Invalid JSON for namespace '{}': {}", namespace, e),
+                })?;
+
+            Self::validate_with_namespace_schema(
+                &schema_data,
+                embedded_path,
+                &namespace_validator,
+            )?;
+            let schema = Self::parse_schema(schema_data, namespace, embedded_path)?;
+            loaded.insert(namespace.to_string(), schema);
+        }
+
+        Ok(Self { schemas: loaded })
+    }
+
     /// Validate an entire values object for a namespace
     ///
     /// # Arguments
