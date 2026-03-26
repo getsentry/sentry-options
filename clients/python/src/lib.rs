@@ -7,7 +7,7 @@ use ::sentry_options::{
     FeatureChecker as RustFeatureChecker, FeatureContext as RustFeatureContext,
     Options as RustOptions, OptionsError as RustOptionsError,
 };
-use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
@@ -42,9 +42,9 @@ pyo3::create_exception!(
 );
 pyo3::create_exception!(
     sentry_options,
-    InitializationError,
+    NotInitializedError,
     OptionsError,
-    "Raised when options are already initialized."
+    "Raised when options have not been initialized."
 );
 
 /// Convert serde_json::Value to Python object.
@@ -114,6 +114,9 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
 
 fn options_err(err: RustOptionsError) -> PyErr {
     match err {
+        RustOptionsError::NotInitialized => {
+            NotInitializedError::new_err("Options not initialized - call init() first")
+        }
         RustOptionsError::UnknownNamespace(ns) => {
             UnknownNamespaceError::new_err(format!("Unknown namespace: {}", ns))
         }
@@ -198,9 +201,9 @@ fn init() -> PyResult<()> {
 /// Raises RuntimeError if init() has not been called.
 #[pyfunction]
 fn options(namespace: String) -> PyResult<NamespaceOptions> {
-    let opts = GLOBAL_OPTIONS
-        .get()
-        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
     Ok(NamespaceOptions {
         namespace,
         options: opts,
@@ -212,9 +215,9 @@ fn options(namespace: String) -> PyResult<NamespaceOptions> {
 /// Raises RuntimeError if init() has not been called.
 #[pyfunction]
 fn features(namespace: String) -> PyResult<PyFeatureChecker> {
-    let opts = GLOBAL_OPTIONS
-        .get()
-        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
     Ok(PyFeatureChecker {
         inner: RustFeatureChecker::new(namespace, opts),
     })
@@ -279,9 +282,9 @@ fn _clear_override(namespace: String, key: String) {
 #[pyfunction]
 fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) -> PyResult<()> {
     let json_value = py_to_json(value)?;
-    let opts = GLOBAL_OPTIONS
-        .get()
-        .ok_or_else(|| PyRuntimeError::new_err("Options not initialized - call init() first"))?;
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
     opts.validate_override(&namespace, &key, &json_value)
         .map_err(options_err)?;
     Ok(())
@@ -310,8 +313,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<UnknownOptionError>(),
     )?;
     m.add(
-        "InitializationError",
-        m.py().get_type::<InitializationError>(),
+        "NotInitializedError",
+        m.py().get_type::<NotInitializedError>(),
     )?;
     // Testing utilities (only called by testing.py)
     m.add_function(wrap_pyfunction!(_set_override, m)?)?;

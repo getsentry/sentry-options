@@ -16,14 +16,14 @@ fn test_override_options_validates_and_intercepts_get() {
     init().unwrap();
     let _guard = override_options(&[("sentry-options-testing", "int-option", json!(999))]).unwrap();
 
-    let opts = options("sentry-options-testing");
+    let opts = options("sentry-options-testing").unwrap();
     assert_eq!(opts.get("int-option").unwrap(), json!(999));
 }
 
 #[test]
 fn test_override_options_restores_on_drop() {
     init().unwrap();
-    let opts = options("sentry-options-testing");
+    let opts = options("sentry-options-testing").unwrap();
 
     // Value from values.json
     assert_eq!(opts.get("int-option").unwrap(), json!(123));
@@ -103,7 +103,7 @@ fn test_override_options_accepts_valid_values() {
 #[test]
 fn test_override_options_multiple_overrides() {
     init().unwrap();
-    let opts = options("sentry-options-testing");
+    let opts = options("sentry-options-testing").unwrap();
 
     {
         let _guard = override_options(&[
@@ -137,7 +137,7 @@ fn test_override_options_fails_atomically() {
     assert!(result.is_err());
 
     // First override should NOT have been applied (atomic failure)
-    let opts = options("sentry-options-testing");
+    let opts = options("sentry-options-testing").unwrap();
     assert_eq!(opts.get("bool-option").unwrap(), json!(false));
 }
 
@@ -148,7 +148,7 @@ fn test_override_options_nested_guards() {
         let _outer =
             override_options(&[("sentry-options-testing", "int-option", json!(200))]).unwrap();
 
-        let opts = options("sentry-options-testing");
+        let opts = options("sentry-options-testing").unwrap();
         assert_eq!(opts.get("int-option").unwrap(), json!(200));
 
         {
@@ -162,6 +162,6 @@ fn test_override_options_nested_guards() {
     }
 
     // Outer guard dropped, back to original
-    let opts = options("sentry-options-testing");
+    let opts = options("sentry-options-testing").unwrap();
     assert_eq!(opts.get("int-option").unwrap(), json!(123));
 }

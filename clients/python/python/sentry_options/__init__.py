@@ -13,8 +13,8 @@ from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
 from sentry_options._core import features
 from sentry_options._core import init
-from sentry_options._core import InitializationError
 from sentry_options._core import NamespaceOptions
+from sentry_options._core import NotInitializedError
 from sentry_options._core import options
 from sentry_options._core import OptionsError
 from sentry_options._core import SchemaError
@@ -30,7 +30,7 @@ __all__ = [
     'features',
     'FeatureChecker',
     'FeatureContext',
-    'InitializationError',
+    'NotInitializedError',
     'NamespaceOptions',
     'options',
     'OptionValue',

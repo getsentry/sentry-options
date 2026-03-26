@@ -155,7 +155,7 @@ def generate(schemas_dir: Path) -> str:
         'from typing import Literal, NotRequired, TypedDict, overload',
         '',
         'from sentry_options._core import ('
-        '\n    InitializationError,'
+        '\n    NotInitializedError,'
         '\n    NamespaceOptions,'
         '\n    OptionsError,'
         '\n    OptionValue,'
@@ -168,7 +168,7 @@ def generate(schemas_dir: Path) -> str:
         '__all__ = [',
         '    "init",',
         '    "options",',
-        '    "InitializationError",',
+        '    "NotInitializedError",',
         '    "NamespaceOptions",',
         '    "OptionsError",',
         '    "OptionValue",',

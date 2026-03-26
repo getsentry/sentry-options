@@ -87,10 +87,6 @@ impl Drop for OverrideGuard {
 /// When the guard is dropped (goes out of scope), the overrides are restored
 /// to their previous values.
 ///
-/// # Panics
-///
-/// Panics if options have not been initialized.
-///
 /// # Note
 ///
 /// Overrides are thread-local. They won't apply to spawned threads.
@@ -121,7 +117,7 @@ pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGua
     // Validate all overrides before applying any
     let opts = GLOBAL_OPTIONS
         .get()
-        .expect("options not initialized - call init() first");
+        .ok_or(crate::OptionsError::NotInitialized)?;
     for (ns, key, value) in overrides {
         opts.validate_override(ns, key, value)?;
     }
