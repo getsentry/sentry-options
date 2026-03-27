@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.5
+
+### New Features ✨
+
+- (clients) Add init_with_schemas() for compile-time embedded schemas by @hubertdeng123 in [#113](https://github.com/getsentry/sentry-options/pull/113)
+
 ## 1.0.4
 
 ### Bug Fixes 🐛
