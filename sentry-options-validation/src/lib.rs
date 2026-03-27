@@ -260,42 +260,8 @@ impl SchemaRegistry {
     /// # Errors
     /// Returns error if directory doesn't exist or any schema is invalid
     pub fn from_directory(schemas_dir: &Path) -> ValidationResult<Self> {
-        let schemas = Self::load_all_schemas(schemas_dir)?;
-        Ok(Self { schemas })
-    }
-
-    /// Validate an entire values object for a namespace
-    ///
-    /// # Arguments
-    /// * `namespace` - Namespace name
-    /// * `values` - JSON object containing option key-value pairs
-    ///
-    /// # Errors
-    /// Returns error if namespace doesn't exist or values don't match schema
-    pub fn validate_values(&self, namespace: &str, values: &Value) -> ValidationResult<()> {
-        let schema = self
-            .schemas
-            .get(namespace)
-            .ok_or_else(|| ValidationError::UnknownNamespace(namespace.to_string()))?;
-
-        schema.validate_values(values)
-    }
-
-    /// Load all schemas from a directory
-    fn load_all_schemas(
-        schemas_dir: &Path,
-    ) -> ValidationResult<HashMap<String, Arc<NamespaceSchema>>> {
-        // Compile namespace-schema once for all schemas
-        let namespace_schema_value: Value =
-            serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {
-                ValidationError::InternalError(format!("Invalid namespace-schema JSON: {}", e))
-            })?;
-        let namespace_validator =
-            jsonschema::validator_for(&namespace_schema_value).map_err(|e| {
-                ValidationError::InternalError(format!("Failed to compile namespace-schema: {}", e))
-            })?;
-
-        let mut schemas = HashMap::new();
+        let namespace_validator = Self::compile_namespace_validator()?;
+        let mut schemas_map = HashMap::new();
 
         // TODO: Parallelize the loading of schemas for the performance gainz
         for entry in fs::read_dir(schemas_dir)? {
@@ -317,24 +283,66 @@ impl SchemaRegistry {
             validate_k8s_name_component(&namespace, "namespace name")?;
 
             let schema_file = entry.path().join(SCHEMA_FILE_NAME);
-            let schema = Self::load_schema(&schema_file, &namespace, &namespace_validator)?;
-            schemas.insert(namespace, schema);
+            let file = fs::File::open(&schema_file)?;
+            let schema_data: Value = serde_json::from_reader(file)?;
+
+            Self::validate_with_namespace_schema(&schema_data, &schema_file, &namespace_validator)?;
+            let schema = Self::parse_schema(schema_data, &namespace, &schema_file)?;
+            schemas_map.insert(namespace, schema);
         }
 
-        Ok(schemas)
+        Ok(Self {
+            schemas: schemas_map,
+        })
     }
 
-    /// Load a schema from a file
-    fn load_schema(
-        path: &Path,
-        namespace: &str,
-        namespace_validator: &jsonschema::Validator,
-    ) -> ValidationResult<Arc<NamespaceSchema>> {
-        let file = fs::File::open(path)?;
-        let schema_data: Value = serde_json::from_reader(file)?;
+    /// Build a registry from in-memory schema JSON strings.
+    ///
+    /// Each entry is a `(namespace, json)` pair. Applies the same validation
+    /// pipeline as `from_directory` (meta-schema check, constraint injection,
+    /// validator compilation) without reading from the filesystem.
+    pub fn from_schemas(schemas: &[(&str, &str)]) -> ValidationResult<Self> {
+        let namespace_validator = Self::compile_namespace_validator()?;
+        let schema_file = Path::new("<embedded>");
+        let mut schemas_map = HashMap::new();
 
-        Self::validate_with_namespace_schema(&schema_data, path, namespace_validator)?;
-        Self::parse_schema(schema_data, namespace, path)
+        for (namespace, json) in schemas {
+            validate_k8s_name_component(namespace, "namespace name")?;
+
+            let schema_data: Value =
+                serde_json::from_str(json).map_err(|e| ValidationError::SchemaError {
+                    file: schema_file.to_path_buf(),
+                    message: format!("Invalid JSON for namespace '{}': {}", namespace, e),
+                })?;
+
+            Self::validate_with_namespace_schema(&schema_data, schema_file, &namespace_validator)?;
+            let schema = Self::parse_schema(schema_data, namespace, schema_file)?;
+            schemas_map.insert(namespace.to_string(), schema);
+        }
+
+        Ok(Self {
+            schemas: schemas_map,
+        })
+    }
+
+    /// Validate an entire values object for a namespace
+    pub fn validate_values(&self, namespace: &str, values: &Value) -> ValidationResult<()> {
+        let schema = self
+            .schemas
+            .get(namespace)
+            .ok_or_else(|| ValidationError::UnknownNamespace(namespace.to_string()))?;
+
+        schema.validate_values(values)
+    }
+
+    fn compile_namespace_validator() -> ValidationResult<jsonschema::Validator> {
+        let namespace_schema_value: Value =
+            serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {
+                ValidationError::InternalError(format!("Invalid namespace-schema JSON: {}", e))
+            })?;
+        jsonschema::validator_for(&namespace_schema_value).map_err(|e| {
+            ValidationError::InternalError(format!("Failed to compile namespace-schema: {}", e))
+        })
     }
 
     /// Validate a schema against the namespace-schema

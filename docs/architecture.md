@@ -13,10 +13,10 @@ Multi-language configuration system for Sentry with JSON schemas as the source o
 │       └─→ Loaded at runtime by clients                      │
 │                                                             │
 │  Rust client library                                        │
-│       ├─→ Load schemas at startup                           │
+│       ├─→ Load schemas at startup (disk or embedded)        │
 │       ├─→ Validate values against schemas                   │
 │       ├─→ Background file watching + atomic refresh         │
-│       └─→ Simple API: options.get(namespace, key)           │
+│       └─→ Simple API: options(namespace)?.get(key)          │
 │                                                             │
 │  Python client library                                      │
 │       ├─→ Load schemas at startup                           │
@@ -365,36 +365,50 @@ def test_nested():
 
 ### Rust
 
+Use `init_with_schemas` to embed schemas in the binary at compile time via
+`include_str!`. Values still load from disk and hot-reload.
+
 ```rust
-use sentry_options::{init, options};
+use sentry_options::{init_with_schemas, options};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init()?;
+    init_with_schemas(&[
+        ("getsentry", include_str!("sentry-options/schemas/getsentry/schema.json")),
+    ])?;
 
-    let opts = options("getsentry");
+    let opts = options("getsentry")?;
     let url = opts.get("system.url-prefix")?;
     let rate = opts.get("traces.sample-rate")?;
     Ok(())
 }
 ```
 
+For local development where schemas are on disk, `init()` can be used instead:
+
+```rust
+init()?; // loads schemas and values from disk
+```
+
 #### Feature flags (Rust)
 
 ```rust
-use sentry_options::{init, features, FeatureContext};
+use sentry_options::{init_with_schemas, features, FeatureContext};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init()?;
-    let mut context = FeatureChecker::new();
+    init_with_schemas(&[
+        ("getsentry", include_str!("sentry-options/schemas/getsentry/schema.json")),
+    ])?;
+    let mut context = FeatureContext::new();
     context.insert("user_id", 123);
     context.insert("org_id", 456);
     context.insert("user_email", "sal@example.org");
     context.identity_fields(vec!["user_id"]);
 
     let feature_checker = features("getsentry");
-    if feature_checker.has("organizations:red-bar", context) {
+    if feature_checker.has("organizations:red-bar", &context) {
         // User has feature.
     }
+    Ok(())
 }
 ```
 
@@ -415,7 +429,7 @@ fn test_feature() {
         ("getsentry", "feature.enabled", json!(true)),
     ]).unwrap();
 
-    let opts = options("getsentry");
+    let opts = options("getsentry").unwrap();
     assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
     // guard dropped here — value restored
 }

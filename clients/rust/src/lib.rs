@@ -53,18 +53,22 @@ impl Options {
     /// Load options from a specific directory (useful for testing).
     /// Expects `{base_dir}/schemas/` and `{base_dir}/values/` subdirectories.
     pub fn from_directory(base_dir: &Path) -> Result<Self> {
-        let schemas_dir = base_dir.join("schemas");
-        let values_dir = base_dir.join("values");
+        let registry = SchemaRegistry::from_directory(&base_dir.join("schemas"))?;
+        Self::with_registry_and_values(registry, &base_dir.join("values"))
+    }
 
-        let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir)?);
-        let (loaded_values, _) = registry.load_values_json(&values_dir)?;
+    /// Load options with schemas provided as in-memory JSON strings.
+    /// Values are loaded from disk using the standard fallback chain.
+    pub fn from_schemas(schemas: &[(&str, &str)]) -> Result<Self> {
+        let registry = SchemaRegistry::from_schemas(schemas)?;
+        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"))
+    }
+
+    fn with_registry_and_values(registry: SchemaRegistry, values_dir: &Path) -> Result<Self> {
+        let registry = Arc::new(registry);
+        let (loaded_values, _) = registry.load_values_json(values_dir)?;
         let values = Arc::new(RwLock::new(loaded_values));
-
-        let watcher_registry = Arc::clone(&registry);
-        let watcher_values = Arc::clone(&values);
-        // will automatically stop thread when dropped out of scope
-        let watcher = ValuesWatcher::new(values_dir.as_path(), watcher_registry, watcher_values)?;
-
+        let watcher = ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values))?;
         Ok(Self {
             registry,
             values,
@@ -148,11 +152,34 @@ impl Options {
 
 /// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
 /// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
+///
+/// Idempotent: if already initialized, returns `Ok(())` without re-loading.
 pub fn init() -> Result<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
     let opts = Options::new()?;
+    let _ = GLOBAL_OPTIONS.set(opts);
+    Ok(())
+}
+
+/// Initialize global options with schemas provided as in-memory JSON strings.
+/// Values are loaded from disk using the standard fallback chain.
+///
+/// Idempotent: if already initialized (by `init()` or a prior `init_with_schemas()`),
+/// returns `Ok(())` without updating schemas.
+///
+/// Use this when schemas are embedded in the binary via `include_str!`:
+/// ```rust,ignore
+/// init_with_schemas(&[
+///     ("snuba", include_str!("sentry-options/schemas/snuba/schema.json")),
+/// ])?;
+/// ```
+pub fn init_with_schemas(schemas: &[(&str, &str)]) -> Result<()> {
+    if GLOBAL_OPTIONS.get().is_some() {
+        return Ok(());
+    }
+    let opts = Options::from_schemas(schemas)?;
     let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }
@@ -357,5 +384,57 @@ mod tests {
         assert!(options.isset("test", "not-defined").is_err());
         assert!(!options.isset("test", "defined-with-default").unwrap());
         assert!(options.isset("test", "has-value").unwrap());
+    }
+
+    #[test]
+    fn test_from_schemas_get_default() {
+        let schema = r#"{
+            "version": "1.0",
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable feature"
+                }
+            }
+        }"#;
+
+        let registry = SchemaRegistry::from_schemas(&[("test", schema)]).unwrap();
+        let default = registry
+            .get("test")
+            .unwrap()
+            .get_default("enabled")
+            .unwrap();
+        assert_eq!(*default, json!(false));
+    }
+
+    #[test]
+    fn test_from_schemas_with_values() {
+        let temp = TempDir::new().unwrap();
+        let values_dir = temp.path().join("values");
+        create_values(&values_dir, "test", r#"{"options": {"enabled": true}}"#);
+
+        let schema = r#"{
+            "version": "1.0",
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable feature"
+                }
+            }
+        }"#;
+
+        let registry = Arc::new(SchemaRegistry::from_schemas(&[("test", schema)]).unwrap());
+        let (loaded_values, _) = registry.load_values_json(&values_dir).unwrap();
+        assert_eq!(loaded_values["test"]["enabled"], json!(true));
+    }
+
+    #[test]
+    fn test_from_schemas_invalid_json() {
+        let result = SchemaRegistry::from_schemas(&[("test", "not valid json")]);
+        assert!(result.is_err());
     }
 }
