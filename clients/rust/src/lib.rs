@@ -152,6 +152,8 @@ impl Options {
 
 /// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
 /// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
+///
+/// Idempotent: if already initialized, returns `Ok(())` without re-loading.
 pub fn init() -> Result<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
@@ -163,6 +165,9 @@ pub fn init() -> Result<()> {
 
 /// Initialize global options with schemas provided as in-memory JSON strings.
 /// Values are loaded from disk using the standard fallback chain.
+///
+/// Idempotent: if already initialized (by `init()` or a prior `init_with_schemas()`),
+/// returns `Ok(())` without updating schemas.
 ///
 /// Use this when schemas are embedded in the binary via `include_str!`:
 /// ```rust,ignore
