@@ -67,9 +67,17 @@ fn bench_cached(c: &mut Criterion) {
     });
 }
 
+fn bench_isset(c: &mut Criterion) {
+    setup();
+
+    c.bench_function("options(ns).isset(key)", |b| {
+        b.iter(|| black_box(options("test").unwrap().isset("enabled").unwrap()))
+    });
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().measurement_time(Duration::from_secs(15));
-    targets = bench_direct, bench_cached
+    targets = bench_direct, bench_cached, bench_isset
 }
 criterion_main!(benches);
