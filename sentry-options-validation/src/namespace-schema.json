@@ -35,6 +35,16 @@
             "description": {
               "type": "string"
             },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": ["string", "integer", "number", "boolean"]
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": false
+            },
             "items": {
               "type": "object",
               "properties": {
@@ -43,6 +53,16 @@
                 },
                 "properties": {
                   "$ref": "#/$defs/shape"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "enum": ["string", "integer", "number", "boolean"]
+                    }
+                  },
+                  "required": ["type"],
+                  "additionalProperties": false
                 }
               },
               "required": ["type"],
@@ -54,6 +74,9 @@
                       "type": {
                         "const": "object"
                       }
+                    },
+                    "not": {
+                      "required": ["additionalProperties"]
                     }
                   },
                   "then": {
@@ -87,6 +110,9 @@
                   "type": {
                     "const": "object"
                   }
+                },
+                "not": {
+                  "required": ["additionalProperties"]
                 }
               },
               "then": {
@@ -109,10 +135,20 @@
           "type": "object",
           "properties": {
             "type": {
-              "enum": ["string", "integer", "number", "boolean"]
+              "enum": ["string", "integer", "number", "boolean", "object"]
             },
             "optional": {
               "type": "boolean"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": ["string", "integer", "number", "boolean"]
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": false
             }
           },
           "required": ["type"],
