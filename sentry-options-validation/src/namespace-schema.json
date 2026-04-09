@@ -141,7 +141,21 @@
             }
           },
           "required": ["type"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "object"
+                  }
+                }
+              },
+              "then": {
+                "required": ["additionalProperties"]
+              }
+            }
+          ]
         }
       },
       "additionalProperties": false
