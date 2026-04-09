@@ -1200,10 +1200,19 @@ Error: \"version\" is a required property"
 
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
-        assert!(registry.validate_values("test", &json!({"scopes": {}})).is_ok());
-        assert!(registry
-            .validate_values("test", &json!({"scopes": {"read": "true", "write": "false"}}))
-            .is_ok());
+        assert!(
+            registry
+                .validate_values("test", &json!({"scopes": {}}))
+                .is_ok()
+        );
+        assert!(
+            registry
+                .validate_values(
+                    "test",
+                    &json!({"scopes": {"read": "true", "write": "false"}})
+                )
+                .is_ok()
+        );
         assert!(matches!(
             registry.validate_values("test", &json!({"scopes": {"read": 42}})),
             Err(ValidationError::ValueError { .. })
