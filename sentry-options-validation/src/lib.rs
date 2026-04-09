@@ -389,12 +389,10 @@ impl SchemaRegistry {
         Ok(())
     }
 
-    /// Inject `required` (all field names) and `additionalProperties: false`
-    /// into an object-typed schema. This ensures all properties are required
-    /// and no new properties can be included.
-    ///
-    /// Skipped when the schema already declares `additionalProperties` explicitly,
-    /// which signals a dynamic map (e.g. `"additionalProperties": {"type": "string"}`).
+    /// Injects `required` (all non-optional field names) into an object-typed schema.
+    /// Also injects `additionalProperties: false` unless the schema already declares
+    /// `additionalProperties` explicitly — that signals a dynamic map where keys are
+    /// not known up front (e.g. `"additionalProperties": {"type": "string"}`).
     /// e.g.
     /// {
     ///     "type": "object",
@@ -409,11 +407,6 @@ impl SchemaRegistry {
     /// }
     fn inject_object_constraints(schema: &mut Value) {
         if let Some(obj) = schema.as_object_mut() {
-            // If additionalProperties is already declared, this is a dynamic map schema.
-            // Do not inject constraints — the schema author controls validation explicitly.
-            if obj.contains_key("additionalProperties") {
-                return;
-            }
             if let Some(props) = obj.get("properties").and_then(|p| p.as_object()) {
                 let required: Vec<Value> = props
                     .iter()
@@ -421,6 +414,8 @@ impl SchemaRegistry {
                     .map(|(k, _)| Value::String(k.clone()))
                     .collect();
                 obj.insert("required".to_string(), Value::Array(required));
+            }
+            if !obj.contains_key("additionalProperties") {
                 obj.insert("additionalProperties".to_string(), json!(false));
             }
         }
@@ -1184,32 +1179,7 @@ Error: \"version\" is a required property"
     }
 
     #[test]
-    fn test_object_with_additional_properties_schema_is_valid() {
-        // A property declared as a string→string map must pass schema-file validation.
-        let temp_dir = TempDir::new().unwrap();
-        create_test_schema(
-            &temp_dir,
-            "test",
-            r#"{
-                "version": "1.0",
-                "type": "object",
-                "properties": {
-                    "scopes": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
-                        "default": {},
-                        "description": "A dynamic string-to-string map"
-                    }
-                }
-            }"#,
-        );
-
-        assert!(SchemaRegistry::from_directory(temp_dir.path()).is_ok());
-    }
-
-    #[test]
-    fn test_object_with_additional_properties_accepts_valid_map() {
-        // Valid string→string map values must pass value validation.
+    fn test_object_with_additional_properties() {
         let temp_dir = TempDir::new().unwrap();
         create_test_schema(
             &temp_dir,
@@ -1230,44 +1200,14 @@ Error: \"version\" is a required property"
 
         let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
 
-        // Empty map is valid
-        let result = registry.validate_values("test", &json!({"scopes": {}}));
-        assert!(result.is_ok());
-
-        // Map with string values is valid
-        let result = registry.validate_values(
-            "test",
-            &json!({"scopes": {"read": "true", "write": "false"}}),
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_object_with_additional_properties_rejects_wrong_value_type() {
-        // Non-string values in a string map must fail value validation.
-        let temp_dir = TempDir::new().unwrap();
-        create_test_schema(
-            &temp_dir,
-            "test",
-            r#"{
-                "version": "1.0",
-                "type": "object",
-                "properties": {
-                    "scopes": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
-                        "default": {},
-                        "description": "A dynamic string-to-string map"
-                    }
-                }
-            }"#,
-        );
-
-        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
-
-        // Integer value where string is expected must fail
-        let result = registry.validate_values("test", &json!({"scopes": {"read": 42}}));
-        assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        assert!(registry.validate_values("test", &json!({"scopes": {}})).is_ok());
+        assert!(registry
+            .validate_values("test", &json!({"scopes": {"read": "true", "write": "false"}}))
+            .is_ok());
+        assert!(matches!(
+            registry.validate_values("test", &json!({"scopes": {"read": 42}})),
+            Err(ValidationError::ValueError { .. })
+        ));
     }
 
     #[test]
@@ -1305,6 +1245,43 @@ Error: \"version\" is a required property"
             "test",
             &json!({"config": {"host": "example.com", "unknown": "x"}}),
         );
+        assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+    }
+
+    #[test]
+    fn test_object_with_fixed_properties_and_additional_properties_enforces_required() {
+        // A schema that has both fixed properties and additionalProperties should still
+        // enforce required on the declared fields.
+        let temp_dir = TempDir::new().unwrap();
+        create_test_schema(
+            &temp_dir,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "config": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"}
+                        },
+                        "additionalProperties": {"type": "string"},
+                        "default": {"name": "default"},
+                        "description": "Config with fixed and dynamic keys"
+                    }
+                }
+            }"#,
+        );
+
+        let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+        // Fixed field present, extra dynamic keys allowed
+        let result =
+            registry.validate_values("test", &json!({"config": {"name": "x", "extra": "y"}}));
+        assert!(result.is_ok());
+
+        // Missing required fixed field must fail
+        let result = registry.validate_values("test", &json!({"config": {"extra": "y"}}));
         assert!(matches!(result, Err(ValidationError::ValueError { .. })));
     }
 
