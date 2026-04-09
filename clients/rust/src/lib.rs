@@ -3,6 +3,7 @@
 pub mod features;
 
 pub use features::{FeatureChecker, FeatureContext, features};
+pub use serde_json::Value;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,7 +12,6 @@ use std::sync::{Arc, OnceLock, RwLock};
 use sentry_options_validation::{
     SchemaRegistry, ValidationError, ValuesWatcher, resolve_options_dir,
 };
-use serde_json::Value;
 use thiserror::Error;
 
 pub mod testing;
@@ -57,11 +57,17 @@ impl Options {
         Self::with_registry_and_values(registry, &base_dir.join("values"))
     }
 
+    /// Load options with schemas provided as in-memory JSON strings and values from an explicit
+    /// directory path.
+    pub fn from_directory_and_schemas(base_dir: &Path, schemas: &[(&str, &str)]) -> Result<Self> {
+        let registry = SchemaRegistry::from_schemas(schemas)?;
+        Self::with_registry_and_values(registry, &base_dir.join("values"))
+    }
+
     /// Load options with schemas provided as in-memory JSON strings.
     /// Values are loaded from disk using the standard fallback chain.
     pub fn from_schemas(schemas: &[(&str, &str)]) -> Result<Self> {
-        let registry = SchemaRegistry::from_schemas(schemas)?;
-        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"))
+        Self::from_directory_and_schemas(&resolve_options_dir(), schemas)
     }
 
     fn with_registry_and_values(registry: SchemaRegistry, values_dir: &Path) -> Result<Self> {
