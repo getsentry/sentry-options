@@ -35,6 +35,9 @@
             "description": {
               "type": "string"
             },
+            "additionalProperties": {
+              "$ref": "#/$defs/map_value_type"
+            },
             "items": {
               "type": "object",
               "properties": {
@@ -43,6 +46,9 @@
                 },
                 "properties": {
                   "$ref": "#/$defs/shape"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/map_value_type"
                 }
               },
               "required": ["type"],
@@ -54,6 +60,9 @@
                       "type": {
                         "const": "object"
                       }
+                    },
+                    "not": {
+                      "required": ["additionalProperties"]
                     }
                   },
                   "then": {
@@ -87,6 +96,9 @@
                   "type": {
                     "const": "object"
                   }
+                },
+                "not": {
+                  "required": ["additionalProperties"]
                 }
               },
               "then": {
@@ -102,6 +114,16 @@
   "required": ["version", "type", "properties"],
   "additionalProperties": false,
   "$defs": {
+    "map_value_type": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": ["string", "integer", "number", "boolean"]
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
     "shape": {
       "type": "object",
       "patternProperties": {
@@ -109,14 +131,31 @@
           "type": "object",
           "properties": {
             "type": {
-              "enum": ["string", "integer", "number", "boolean"]
+              "enum": ["string", "integer", "number", "boolean", "object"]
             },
             "optional": {
               "type": "boolean"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/map_value_type"
             }
           },
           "required": ["type"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "object"
+                  }
+                }
+              },
+              "then": {
+                "required": ["additionalProperties"]
+              }
+            }
+          ]
         }
       },
       "additionalProperties": false
