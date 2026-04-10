@@ -6,7 +6,6 @@
 use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 use serde_json::Value;
 use sha1::{Digest, Sha1};
@@ -345,61 +344,6 @@ fn eval_equals(ctx_val: &Value, condition_val: &Value) -> bool {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum DebugLogLevel {
-    None,
-    Parse,
-    Match,
-    All,
-}
-
-static DEBUG_LOG_LEVEL: OnceLock<DebugLogLevel> = OnceLock::new();
-static DEBUG_MATCH_SAMPLE_RATE: OnceLock<u64> = OnceLock::new();
-
-fn debug_log_level() -> &'static DebugLogLevel {
-    DEBUG_LOG_LEVEL.get_or_init(|| {
-        match std::env::var("SENTRY_OPTIONS_FEATURE_DEBUG_LOG")
-            .as_deref()
-            .unwrap_or("")
-        {
-            "all" => DebugLogLevel::All,
-            "parse" => DebugLogLevel::Parse,
-            "match" => DebugLogLevel::Match,
-            _ => DebugLogLevel::None,
-        }
-    })
-}
-
-fn debug_match_sample_rate() -> u64 {
-    *DEBUG_MATCH_SAMPLE_RATE.get_or_init(|| {
-        std::env::var("SENTRY_OPTIONS_FEATURE_DEBUG_LOG_SAMPLE_RATE")
-            .ok()
-            .and_then(|v| v.parse::<f64>().ok())
-            .map(|r| (r.clamp(0.0, 1.0) * 1000.0) as u64)
-            .unwrap_or(1000)
-    })
-}
-
-fn debug_log_parse(msg: &str) {
-    match debug_log_level() {
-        DebugLogLevel::Parse | DebugLogLevel::All => eprintln!("[sentry-options/parse] {msg}"),
-        _ => {}
-    }
-}
-
-fn debug_log_match(feature: &str, result: bool, context_id: u64) {
-    match debug_log_level() {
-        DebugLogLevel::Match | DebugLogLevel::All => {
-            if context_id % 1000 < debug_match_sample_rate() {
-                eprintln!(
-                    "[sentry-options/match] feature='{feature}' result={result} context_id={context_id}"
-                );
-            }
-        }
-        _ => {}
-    }
-}
-
 /// A handle for checking feature flags within a specific namespace.
 pub struct FeatureChecker {
     namespace: String,
@@ -427,24 +371,29 @@ impl FeatureChecker {
         let feature_val = match opts.get(&self.namespace, &key) {
             Ok(v) => v,
             Err(e) => {
-                debug_log_parse(&format!("Failed to get feature '{key}': {e}"));
+                tracing::debug!(key = %key, error = %e, "Failed to get feature");
                 return false;
             }
         };
 
         let feature = match Feature::from_json(&feature_val) {
             Some(f) => {
-                debug_log_parse(&format!("Parsed feature '{key}'"));
+                tracing::debug!(key = %key, "Parsed feature");
                 f
             }
             None => {
-                debug_log_parse(&format!("Failed to parse feature '{key}'"));
+                tracing::debug!(key = %key, "Failed to parse feature");
                 return false;
             }
         };
 
         let result = feature.matches(context);
-        debug_log_match(feature_name, result, context.id());
+        tracing::debug!(
+            feature = feature_name,
+            result,
+            context_id = context.id(),
+            "Feature match result"
+        );
         result
     }
 }

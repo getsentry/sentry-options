@@ -218,7 +218,7 @@ fn cli_validate_schema(schemas: String, quiet: bool) -> Result<()> {
     SchemaRegistry::from_directory(Path::new(&schemas))?;
 
     if !quiet {
-        println!("Schema validation successful");
+        tracing::info!("Schema validation successful");
     }
     Ok(())
 }
@@ -229,7 +229,7 @@ fn cli_validate_values(schemas: String, root: String, quiet: bool) -> Result<()>
     ensure_no_duplicate_keys(&grouped)?;
 
     if !quiet {
-        println!("Values validation successful");
+        tracing::info!("Values validation successful");
     }
     Ok(())
 }
@@ -252,7 +252,7 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
             write_json(PathBuf::from(&out_path), json_outputs)?;
 
             if !quiet {
-                println!("Successfully wrote {} output files", num_files);
+                tracing::info!(num_files, "Successfully wrote output files");
             }
         }
         OutputFormat::Configmap => {
@@ -276,11 +276,12 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
 
             if !quiet {
                 match out_path {
-                    Some(path) => eprintln!("Successfully wrote ConfigMap to {}", path.display()),
-                    None => eprintln!(
-                        "Successfully generated ConfigMap: sentry-options-{}",
-                        namespace
-                    ),
+                    Some(path) => {
+                        tracing::info!(path = %path.display(), "Successfully wrote ConfigMap")
+                    }
+                    None => {
+                        tracing::info!(name = %format!("sentry-options-{namespace}"), "Successfully generated ConfigMap")
+                    }
                 }
             }
         }
@@ -292,7 +293,7 @@ fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
     let config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
     schema_retriever::fetch_all_schemas(&config, Path::new(&out), quiet)?;
     if !quiet {
-        println!("Successfully fetched schemas to {}", out);
+        tracing::info!(path = %out, "Successfully fetched schemas");
     }
     Ok(())
 }
@@ -329,7 +330,7 @@ fn cli_validate_schema_changes(
     )?;
 
     if !quiet {
-        eprintln!("Schema validation passed");
+        tracing::info!("Schema validation passed");
     }
 
     Ok(())
@@ -342,6 +343,12 @@ fn cli_check_option_usage(deletions: String, root: String) -> Result<()> {
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .compact()
+        .without_time()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
     let cli = Cli::parse();
 
     let result = match cli.command {
@@ -359,7 +366,7 @@ fn main() {
     };
 
     if let Err(e) = result {
-        eprintln!("{}", e);
+        tracing::error!(error = %e);
         std::process::exit(1);
     }
 }

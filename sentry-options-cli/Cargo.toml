@@ -16,6 +16,8 @@ sentry-options-validation.workspace = true
 thiserror.workspace = true
 walkdir = "2.5.0"
 tempfile.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3.19", features = ["fmt"] }
 
 [dev-dependencies]
 tempfile.workspace = true

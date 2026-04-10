@@ -304,19 +304,18 @@ pub fn detect_changes(
     }
 
     if !quiet {
-        eprintln!("Schema Changes:");
         if changelog.is_empty() {
-            eprintln!("\tNo changes");
-        }
-        for change in &changelog {
-            eprintln!("\t{}", change);
+            tracing::info!("No schema changes");
+        } else {
+            for change in &changelog {
+                tracing::info!(%change, "Schema change detected");
+            }
         }
     }
 
     if !errors.is_empty() {
-        println!("Errors:");
         for error in &errors {
-            println!("\t{}", error);
+            tracing::error!(%error, "Schema validation error");
         }
         return Err(ValidationError::ValidationErrors(errors));
     }

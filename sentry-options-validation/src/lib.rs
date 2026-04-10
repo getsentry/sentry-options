@@ -599,7 +599,7 @@ impl ValuesWatcher {
     ) -> ValidationResult<Self> {
         // output an error but keep passing
         if !should_suppress_missing_dir_errors() && fs::metadata(values_path).is_err() {
-            eprintln!("Values directory does not exist: {}", values_path.display());
+            tracing::warn!(path = %values_path.display(), "Values directory does not exist");
         }
 
         let stop_signal = Arc::new(AtomicBool::new(false));
@@ -615,7 +615,7 @@ impl ValuesWatcher {
                     Self::run(thread_signal, thread_path, thread_registry, thread_values);
                 }));
                 if let Err(e) = result {
-                    eprintln!("Watcher thread panicked with: {:?}", e);
+                    tracing::error!(error = ?e, "Watcher thread panicked");
                 }
             })?;
 
@@ -659,7 +659,7 @@ impl ValuesWatcher {
             Ok(e) => e,
             Err(e) => {
                 if !should_suppress_missing_dir_errors() {
-                    eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
+                    tracing::warn!(dir = %values_dir.display(), error = %e, "Failed to read directory");
                 }
                 return None;
             }
@@ -702,14 +702,16 @@ impl ValuesWatcher {
                 Self::update_values(values, new_values);
 
                 let reload_duration = reload_start.elapsed();
+                tracing::info!(
+                    path = %values_path.display(),
+                    namespaces = ?namespaces,
+                    elapsed_ms = reload_duration.as_millis(),
+                    "Reloaded values",
+                );
                 Self::emit_reload_spans(&namespaces, reload_duration, &generated_at_by_namespace);
             }
             Err(e) => {
-                eprintln!(
-                    "Failed to reload values from {}: {}",
-                    values_path.display(),
-                    e
-                );
+                tracing::error!(path = %values_path.display(), error = %e, "Failed to reload values");
             }
         }
     }
