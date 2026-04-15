@@ -9,7 +9,7 @@ use sentry::ClientOptions;
 use sentry::transports::DefaultTransportFactory;
 use serde_json::Value;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -182,6 +182,8 @@ pub struct OptionMetadata {
 pub struct NamespaceSchema {
     pub namespace: String,
     pub options: HashMap<String, OptionMetadata>,
+    /// All property keys from the schema, including feature flags that aren't in `options`.
+    all_keys: HashSet<String>,
     validator: jsonschema::Validator,
 }
 
@@ -456,9 +458,11 @@ impl SchemaRegistry {
 
         // Extract option metadata and validate types.
         let mut options = HashMap::new();
+        let mut all_keys = HashSet::new();
         let mut has_feature_keys = false;
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
+                all_keys.insert(prop_name.clone());
                 // Detect feature flags so that we can augment the schema with defs.
                 if prop_name.starts_with("feature.") {
                     has_feature_keys = true;
@@ -506,6 +510,7 @@ impl SchemaRegistry {
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
             options,
+            all_keys,
             validator,
         }))
     }
@@ -553,15 +558,57 @@ impl SchemaRegistry {
                     errors: "values.json must have an 'options' key".to_string(),
                 })?;
 
-            self.validate_values(namespace, values)?;
+            // Strip unknown keys before validation to handle deployment race
+            // conditions where values are deployed before the schema update.
+            let values = self.strip_unknown_keys(namespace, values);
 
-            if let Value::Object(obj) = values.clone() {
+            self.validate_values(namespace, &values)?;
+
+            if let Value::Object(obj) = values {
                 let ns_values: HashMap<String, Value> = obj.into_iter().collect();
                 all_values.insert(namespace.clone(), ns_values);
             }
         }
 
         Ok((all_values, generated_at_by_namespace))
+    }
+
+    /// Remove keys from values that are not defined in the namespace schema.
+    /// Logs a warning for each removed key. Returns the filtered values object.
+    fn strip_unknown_keys(&self, namespace: &str, values: &Value) -> Value {
+        let schema = match self.schemas.get(namespace) {
+            Some(s) => s,
+            None => return values.clone(),
+        };
+
+        let obj = match values.as_object() {
+            Some(obj) => obj,
+            None => return values.clone(),
+        };
+
+        let unknown_keys: Vec<&String> = obj
+            .keys()
+            .filter(|k| !schema.all_keys.contains(*k))
+            .collect();
+
+        if unknown_keys.is_empty() {
+            return values.clone();
+        }
+
+        for key in &unknown_keys {
+            eprintln!(
+                "sentry-options: Ignoring unknown option '{}' in namespace '{}'. \
+                 This is expected during deployments when values are updated before schemas.",
+                key, namespace
+            );
+        }
+
+        let filtered: serde_json::Map<String, Value> = obj
+            .iter()
+            .filter(|(k, _)| schema.all_keys.contains(*k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        Value::Object(filtered)
     }
 }
 
@@ -1376,6 +1423,50 @@ Error: \"version\" is a required property"
         // No values.json files found, returns empty
         assert!(values.is_empty());
         assert!(generated_at_by_namespace.is_empty());
+    }
+
+    #[test]
+    fn test_load_values_json_strips_unknown_keys() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "known-option": {
+                        "type": "string",
+                        "default": "default",
+                        "description": "A known option"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{
+                "options": {
+                    "known-option": "hello",
+                    "unknown-option": "should be stripped"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let registry = SchemaRegistry::from_directory(&schemas_dir).unwrap();
+        let (values, _) = registry.load_values_json(&values_dir).unwrap();
+
+        assert_eq!(values["test"]["known-option"], json!("hello"));
+        assert!(!values["test"].contains_key("unknown-option"));
     }
 
     #[test]
