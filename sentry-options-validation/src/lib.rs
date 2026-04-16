@@ -685,12 +685,17 @@ impl ValuesWatcher {
     }
 
     /// Compares the current and stored PID. If they differ, we
-    /// are likely in a forked process and need to recreate the thread.
-    pub fn compare_pid(&self) -> ValidationResult<()> {
-        if self.pid.load(Ordering::Relaxed) != process::id() {
-            self.respawn()?;
+    /// assume we are in a forked process and stored thread
+    /// handle is dead and invalid. We then respawn the thread.
+    pub fn ensure_alive(&self) {
+        if self.pid.load(Ordering::Relaxed) != process::id()
+            && let Err(e) = self.respawn()
+        {
+            eprintln!(
+                "sentry-options: failed to respawn watcher after fork: {}",
+                e
+            );
         }
-        Ok(())
     }
 }
 

@@ -76,13 +76,13 @@ impl Options {
         Ok(Self {
             registry,
             values,
-            watcher: watcher,
+            watcher,
         })
     }
 
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, namespace: &str, key: &str) -> Result<Value> {
-        self.watcher.compare_pid();
+        self.watcher.ensure_alive();
         if let Some(value) = testing::get_override(namespace, key) {
             return Ok(value);
         }
@@ -130,7 +130,7 @@ impl Options {
     ///
     /// If the namespace or option are not defined, an Err will be returned.
     pub fn isset(&self, namespace: &str, key: &str) -> Result<bool> {
-        self.watcher.compare_pid();
+        self.watcher.ensure_alive();
         let schema = self
             .registry
             .get(namespace)
