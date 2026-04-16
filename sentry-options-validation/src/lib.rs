@@ -526,6 +526,8 @@ impl SchemaRegistry {
     }
 
     /// Load and validate JSON values from a directory.
+    /// Allows extra unknown option values to accommodate deployment race conditions
+    ///
     /// Expects structure: `{values_dir}/{namespace}/values.json`
     /// Values file must have format: `{"options": {"key": value, ...}, "generated_at": "..."}`
     /// Skips namespaces without a values.json file.
