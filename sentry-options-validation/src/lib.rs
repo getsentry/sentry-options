@@ -673,6 +673,10 @@ impl ValuesWatcher {
     /// thread-safe manner. Handles updating the PID and stopping the old thread.
     fn respawn(&self) -> ValidationResult<()> {
         let mut guard = self.watcher.lock().unwrap_or_else(|e| e.into_inner());
+        // just in case another thread has called this already
+        if self.pid.load(Ordering::Relaxed) == process::id() {
+            return Ok(());
+        }
         self.pid.store(process::id(), Ordering::Relaxed);
         guard.stop();
         let watcher = ValuesWatcherThread::new(
