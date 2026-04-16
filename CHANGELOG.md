@@ -1,4 +1,18 @@
 # Changelog
+## 1.0.6
+
+### New Features ✨
+
+- (schema) Support additionalProperties map schemas by @jan-auer in [#114](https://github.com/getsentry/sentry-options/pull/114)
+
+### Bug Fixes 🐛
+
+- (validation) Strip unknown keys from values to handle deployment race condition by @hubertdeng123 in [#117](https://github.com/getsentry/sentry-options/pull/117)
+
+### Internal Changes 🔧
+
+- (deps) Trim sentry SDK to only required features by @lcian in [#112](https://github.com/getsentry/sentry-options/pull/112)
+
 ## 1.0.5
 
 ### New Features ✨
