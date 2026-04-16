@@ -39,7 +39,7 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 pub struct Options {
     registry: Arc<SchemaRegistry>,
     values: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
-    _watcher: ValuesWatcher,
+    watcher: ValuesWatcher,
 }
 
 impl Options {
@@ -68,16 +68,21 @@ impl Options {
         let registry = Arc::new(registry);
         let (loaded_values, _) = registry.load_values_json(values_dir)?;
         let values = Arc::new(RwLock::new(loaded_values));
-        let watcher = ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values))?;
+        let watcher = ValuesWatcher::new(
+            values_dir.to_path_buf(),
+            Arc::clone(&registry),
+            Arc::clone(&values),
+        )?;
         Ok(Self {
             registry,
             values,
-            _watcher: watcher,
+            watcher: watcher,
         })
     }
 
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, namespace: &str, key: &str) -> Result<Value> {
+        self.watcher.compare_pid();
         if let Some(value) = testing::get_override(namespace, key) {
             return Ok(value);
         }
@@ -125,6 +130,7 @@ impl Options {
     ///
     /// If the namespace or option are not defined, an Err will be returned.
     pub fn isset(&self, namespace: &str, key: &str) -> Result<bool> {
+        self.watcher.compare_pid();
         let schema = self
             .registry
             .get(namespace)
