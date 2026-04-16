@@ -389,12 +389,12 @@ fn debug_log_parse(msg: &str) {
 
 fn debug_log_match(feature: &str, result: bool, context_id: u64) {
     match debug_log_level() {
-        DebugLogLevel::Match | DebugLogLevel::All => {
-            if context_id % 1000 < debug_match_sample_rate() {
-                eprintln!(
-                    "[sentry-options/match] feature='{feature}' result={result} context_id={context_id}"
-                );
-            }
+        DebugLogLevel::Match | DebugLogLevel::All
+            if context_id % 1000 < debug_match_sample_rate() =>
+        {
+            eprintln!(
+                "[sentry-options/match] feature='{feature}' result={result} context_id={context_id}"
+            );
         }
         _ => {}
     }
