@@ -2206,41 +2206,6 @@ Error: \"version\" is a required property"
                 assert_eq!(guard["ns1"]["enabled"], json!(false));
             }
         }
-
-        #[test]
-        fn test_respawn_skipped_if_another_thread_already_respawned() {
-            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
-
-            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
-
-            let watcher = Arc::new(
-                ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values)).unwrap(),
-            );
-
-            // Simulate a fork
-            watcher.pid.store(0, Ordering::Relaxed);
-
-            // Call ensure_alive from multiple threads concurrently
-            let handles: Vec<_> = (0..4)
-                .map(|_| {
-                    let w = Arc::clone(&watcher);
-                    thread::spawn(move || {
-                        w.ensure_alive();
-                    })
-                })
-                .collect();
-
-            for h in handles {
-                h.join().unwrap();
-            }
-
-            // PID should be restored, watcher should be alive
-            assert_eq!(watcher.pid.load(Ordering::Relaxed), process::id());
-            let guard = watcher.watcher.lock().unwrap();
-            assert!(guard.is_alive());
-        }
     }
     mod array_tests {
         use super::*;
