@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.7
+
+### New Features ✨
+
+- (watcher) Fork-safe, PID-aware values watcher by @kenzoengineer in [#118](https://github.com/getsentry/sentry-options/pull/118)
+
 ## 1.0.6
 
 ### New Features ✨
