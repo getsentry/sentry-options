@@ -13,7 +13,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::process;
+use std::sync::Mutex;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicU32;
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
@@ -628,19 +631,95 @@ impl Default for SchemaRegistry {
 ///
 /// Uses polling for now, could use `inotify` or similar later on.
 ///
+/// This thread will not be copied when a parent process is forked, so we track the initial PID
+/// and recreate the thread handle if it doesn't match the current process PID.
+///
 /// Some important notes:
 /// - If the thread panics and dies, there is no built in mechanism to catch it and restart
 /// - If a config map is unmounted, we won't reload until the next file modification (because we don't catch the deletion event)
 /// - If any namespace fails validation, we keep all old values (even the namespaces that passed validation)
 /// - If we have a steady stream of readers our writer may starve for a while trying to acquire the lock
-/// - stop() will block until the thread gets joined
+/// - On drop, the thread is joined only if PID matches (skipped in forked processes)
 pub struct ValuesWatcher {
+    pid: AtomicU32,
+    values_path: PathBuf,
+    registry: Arc<SchemaRegistry>,
+    values: Arc<RwLock<ValuesByNamespace>>,
+    watcher: Mutex<ValuesWatcherThread>,
+}
+
+impl ValuesWatcher {
+    pub fn new(
+        values_path: PathBuf,
+        registry: Arc<SchemaRegistry>,
+        values: Arc<RwLock<ValuesByNamespace>>,
+    ) -> ValidationResult<Self> {
+        let pid = AtomicU32::new(process::id());
+        let watcher = Mutex::new(ValuesWatcherThread::new(
+            &values_path,
+            Arc::clone(&registry),
+            Arc::clone(&values),
+        )?);
+        Ok(Self {
+            pid,
+            values_path,
+            registry,
+            values,
+            watcher,
+        })
+    }
+
+    /// Re-creates the value watcher thread with the same arguments in a
+    /// thread-safe manner. Handles updating the PID and stopping the old thread.
+    /// Force reloads values so the child process has fresh data.
+    fn respawn(&self) -> ValidationResult<()> {
+        let mut guard = self.watcher.lock().unwrap_or_else(|e| e.into_inner());
+        // just in case another thread has called this already
+        if self.pid.load(Ordering::Relaxed) == process::id() {
+            return Ok(());
+        }
+        self.pid.store(process::id(), Ordering::Relaxed);
+        guard.stop();
+        let watcher = ValuesWatcherThread::new(
+            &self.values_path,
+            Arc::clone(&self.registry),
+            Arc::clone(&self.values),
+        )?;
+        *guard = watcher;
+
+        // Force reload values so the new watcher thread's mtime baseline
+        // is consistent with what's in memory. Without this, the child
+        // process could have stale values if the file changed since the fork.
+        ValuesWatcherThread::reload_values(&self.values_path, &self.registry, &self.values);
+
+        Ok(())
+    }
+
+    /// Compares the current and stored PID. If they differ, we
+    /// assume we are in a forked process and stored thread
+    /// handle is dead and invalid. We then respawn the thread.
+    pub fn ensure_alive(&self) {
+        if self.pid.load(Ordering::Relaxed) != process::id()
+            && let Err(e) = self.respawn()
+        {
+            eprintln!(
+                "sentry-options: failed to respawn watcher after fork: {}",
+                e
+            );
+        }
+    }
+}
+
+/// The actual value watcher thread struct, containing the
+/// thread handle and cancellation signal.
+pub struct ValuesWatcherThread {
+    pid: u32,
     stop_signal: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
-impl ValuesWatcher {
-    /// Creates a new ValuesWatcher struct and spins up the watcher thread
+impl ValuesWatcherThread {
+    /// Creates a new ValuesWatcherThread and spins up the watcher thread
     pub fn new(
         values_path: &Path,
         registry: Arc<SchemaRegistry>,
@@ -669,6 +748,7 @@ impl ValuesWatcher {
             })?;
 
         Ok(Self {
+            pid: process::id(),
             stop_signal,
             thread: Some(thread),
         })
@@ -738,7 +818,7 @@ impl ValuesWatcher {
 
     /// Reload values from disk, validate them, and update the shared map.
     /// Emits a Sentry transaction per namespace with timing and propagation delay metrics.
-    fn reload_values(
+    pub(crate) fn reload_values(
         values_path: &Path,
         registry: &SchemaRegistry,
         values: &Arc<RwLock<ValuesByNamespace>>,
@@ -804,12 +884,15 @@ impl ValuesWatcher {
         *guard = new_values;
     }
 
-    /// Stops the watcher thread, waiting for it to join.
-    /// May take up to POLLING_DELAY seconds
+    /// Signals the watcher thread to stop
     pub fn stop(&mut self) {
         self.stop_signal.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+    }
+
+    /// Joins the watcher thread, blocking until it finishes
+    fn join(&mut self) {
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
         }
     }
 
@@ -819,9 +902,15 @@ impl ValuesWatcher {
     }
 }
 
-impl Drop for ValuesWatcher {
+impl Drop for ValuesWatcherThread {
     fn drop(&mut self) {
         self.stop();
+        // Only join if we're in the same process that created the thread.
+        // In a forked child, the thread handle is invalid (the thread
+        // wasn't copied), so joining would be incorrect.
+        if self.pid == process::id() {
+            self.join();
+        }
     }
 }
 
@@ -1928,7 +2017,7 @@ Error: \"version\" is a required property"
             let (_temp, _schemas, values_dir) = setup_watcher_test();
 
             // Get initial mtime
-            let mtime1 = ValuesWatcher::get_mtime(&values_dir);
+            let mtime1 = ValuesWatcherThread::get_mtime(&values_dir);
             assert!(mtime1.is_some());
 
             // Modify one namespace
@@ -1940,7 +2029,7 @@ Error: \"version\" is a required property"
             .unwrap();
 
             // Should detect the change
-            let mtime2 = ValuesWatcher::get_mtime(&values_dir);
+            let mtime2 = ValuesWatcherThread::get_mtime(&values_dir);
             assert!(mtime2.is_some());
             assert!(mtime2 > mtime1);
         }
@@ -1950,7 +2039,7 @@ Error: \"version\" is a required property"
             let temp = TempDir::new().unwrap();
             let nonexistent = temp.path().join("nonexistent");
 
-            let mtime = ValuesWatcher::get_mtime(&nonexistent);
+            let mtime = ValuesWatcherThread::get_mtime(&nonexistent);
             assert!(mtime.is_none());
         }
 
@@ -1982,7 +2071,7 @@ Error: \"version\" is a required property"
             .unwrap();
 
             // force a reload
-            ValuesWatcher::reload_values(&values_dir, &registry, &values);
+            ValuesWatcherThread::reload_values(&values_dir, &registry, &values);
 
             // ensure new values are correct
             {
@@ -2012,7 +2101,7 @@ Error: \"version\" is a required property"
             )
             .unwrap();
 
-            ValuesWatcher::reload_values(&values_dir, &registry, &values);
+            ValuesWatcherThread::reload_values(&values_dir, &registry, &values);
 
             // ensure old value persists
             {
@@ -2030,12 +2119,92 @@ Error: \"version\" is a required property"
             let values = Arc::new(RwLock::new(initial_values));
 
             let mut watcher =
-                ValuesWatcher::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
+                ValuesWatcherThread::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
                     .expect("Failed to create watcher");
 
             assert!(watcher.is_alive());
             watcher.stop();
+            watcher.join();
             assert!(!watcher.is_alive());
+        }
+
+        #[test]
+        fn test_ensure_alive_noop_when_pid_matches() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let watcher =
+                ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values)).unwrap();
+
+            // PID matches, ensure_alive should be a no-op
+            watcher.ensure_alive();
+            assert_eq!(watcher.pid.load(Ordering::Relaxed), process::id());
+        }
+
+        #[test]
+        fn test_ensure_alive_respawns_on_pid_mismatch() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let watcher =
+                ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values)).unwrap();
+
+            // Simulate a fork by setting the stored PID to something different
+            watcher.pid.store(0, Ordering::Relaxed);
+
+            watcher.ensure_alive();
+
+            // After respawn, stored PID should match current process
+            assert_eq!(watcher.pid.load(Ordering::Relaxed), process::id());
+
+            // The new watcher thread should be alive
+            let guard = watcher.watcher.lock().unwrap();
+            assert!(guard.is_alive());
+        }
+
+        #[test]
+        fn test_respawn_reloads_values_from_disk() {
+            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
+            let values = Arc::new(RwLock::new(initial_values));
+
+            let watcher = ValuesWatcher::new(
+                values_dir.clone(),
+                Arc::clone(&registry),
+                Arc::clone(&values),
+            )
+            .unwrap();
+
+            // Verify initial values
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], json!(true));
+            }
+
+            // Change values on disk
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"options": {"enabled": false}}"#,
+            )
+            .unwrap();
+
+            // Simulate a fork and trigger respawn
+            watcher.pid.store(0, Ordering::Relaxed);
+            watcher.ensure_alive();
+
+            // Values should be reloaded from disk
+            {
+                let guard = values.read().unwrap();
+                assert_eq!(guard["ns1"]["enabled"], json!(false));
+            }
         }
     }
     mod array_tests {
