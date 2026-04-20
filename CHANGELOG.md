@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.8
+
+### Bug Fixes 🐛
+
+- (sentry) Disable sentry in forks by @kenzoengineer in [#119](https://github.com/getsentry/sentry-options/pull/119)
+
 ## 1.0.7
 
 ### New Features ✨
