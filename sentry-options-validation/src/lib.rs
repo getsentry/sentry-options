@@ -4,6 +4,7 @@
 //! Schemas are loaded once and stored in Arc for efficient sharing.
 //! Values are validated against schemas as complete objects.
 
+use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use sentry::ClientOptions;
 use sentry::transports::DefaultTransportFactory;
@@ -15,7 +16,6 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Mutex;
-use std::sync::RwLock;
 use std::sync::atomic::AtomicU32;
 use std::sync::{
     Arc, OnceLock,
@@ -643,13 +643,13 @@ impl Default for SchemaRegistry {
 /// - If the thread panics and dies, there is no built in mechanism to catch it and restart
 /// - If a config map is unmounted, we won't reload until the next file modification (because we don't catch the deletion event)
 /// - If any namespace fails validation, we keep all old values (even the namespaces that passed validation)
-/// - If we have a steady stream of readers our writer may starve for a while trying to acquire the lock
+/// - Values are swapped atomically via ArcSwap (lock-free, fork-safe)
 /// - On drop, the thread is joined only if PID matches (skipped in forked processes)
 pub struct ValuesWatcher {
     pid: AtomicU32,
     values_path: PathBuf,
     registry: Arc<SchemaRegistry>,
-    values: Arc<RwLock<ValuesByNamespace>>,
+    values: Arc<ArcSwap<ValuesByNamespace>>,
     watcher: Mutex<ValuesWatcherThread>,
 }
 
@@ -657,7 +657,7 @@ impl ValuesWatcher {
     pub fn new(
         values_path: PathBuf,
         registry: Arc<SchemaRegistry>,
-        values: Arc<RwLock<ValuesByNamespace>>,
+        values: Arc<ArcSwap<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
         let pid = AtomicU32::new(process::id());
         let watcher = Mutex::new(ValuesWatcherThread::new(
@@ -729,7 +729,7 @@ impl ValuesWatcherThread {
     pub fn new(
         values_path: &Path,
         registry: Arc<SchemaRegistry>,
-        values: Arc<RwLock<ValuesByNamespace>>,
+        values: Arc<ArcSwap<ValuesByNamespace>>,
     ) -> ValidationResult<Self> {
         // output an error but keep passing
         if !should_suppress_missing_dir_errors() && fs::metadata(values_path).is_err() {
@@ -768,7 +768,7 @@ impl ValuesWatcherThread {
         stop_signal: Arc<AtomicBool>,
         values_path: PathBuf,
         registry: Arc<SchemaRegistry>,
-        values: Arc<RwLock<ValuesByNamespace>>,
+        values: Arc<ArcSwap<ValuesByNamespace>>,
     ) {
         let mut last_mtime = Self::get_mtime(&values_path);
 
@@ -827,7 +827,7 @@ impl ValuesWatcherThread {
     pub(crate) fn reload_values(
         values_path: &Path,
         registry: &SchemaRegistry,
-        values: &Arc<RwLock<ValuesByNamespace>>,
+        values: &Arc<ArcSwap<ValuesByNamespace>>,
     ) {
         let reload_start = Instant::now();
 
@@ -887,10 +887,8 @@ impl ValuesWatcherThread {
     }
 
     /// Update the values map with the new values
-    fn update_values(values: &Arc<RwLock<ValuesByNamespace>>, new_values: ValuesByNamespace) {
-        // safe to unwrap, we only have one thread and if it panics we die anyways
-        let mut guard = values.write().unwrap();
-        *guard = new_values;
+    fn update_values(values: &Arc<ArcSwap<ValuesByNamespace>>, new_values: ValuesByNamespace) {
+        values.store(Arc::new(new_values));
     }
 
     /// Signals the watcher thread to stop
@@ -2058,11 +2056,11 @@ Error: \"version\" is a required property"
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
+            let values = Arc::new(ArcSwap::from_pointee(initial_values));
 
             // ensure initial values are correct
             {
-                let guard = values.read().unwrap();
+                let guard = values.load();
                 assert_eq!(guard["ns1"]["enabled"], json!(true));
                 assert_eq!(guard["ns2"]["count"], json!(42));
             }
@@ -2084,7 +2082,7 @@ Error: \"version\" is a required property"
 
             // ensure new values are correct
             {
-                let guard = values.read().unwrap();
+                let guard = values.load();
                 assert_eq!(guard["ns1"]["enabled"], json!(false));
                 assert_eq!(guard["ns2"]["count"], json!(100));
             }
@@ -2096,10 +2094,10 @@ Error: \"version\" is a required property"
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
+            let values = Arc::new(ArcSwap::from_pointee(initial_values));
 
             let initial_enabled = {
-                let guard = values.read().unwrap();
+                let guard = values.load();
                 guard["ns1"]["enabled"].clone()
             };
 
@@ -2114,7 +2112,7 @@ Error: \"version\" is a required property"
 
             // ensure old value persists
             {
-                let guard = values.read().unwrap();
+                let guard = values.load();
                 assert_eq!(guard["ns1"]["enabled"], initial_enabled);
             }
         }
@@ -2125,7 +2123,7 @@ Error: \"version\" is a required property"
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
+            let values = Arc::new(ArcSwap::from_pointee(initial_values));
 
             let mut watcher =
                 ValuesWatcherThread::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
@@ -2143,7 +2141,7 @@ Error: \"version\" is a required property"
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
+            let values = Arc::new(ArcSwap::from_pointee(initial_values));
 
             let watcher =
                 ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values)).unwrap();
@@ -2159,7 +2157,7 @@ Error: \"version\" is a required property"
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
+            let values = Arc::new(ArcSwap::from_pointee(initial_values));
 
             let watcher =
                 ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values)).unwrap();
@@ -2183,7 +2181,7 @@ Error: \"version\" is a required property"
 
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
             let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(RwLock::new(initial_values));
+            let values = Arc::new(ArcSwap::from_pointee(initial_values));
 
             let watcher = ValuesWatcher::new(
                 values_dir.clone(),
@@ -2194,7 +2192,7 @@ Error: \"version\" is a required property"
 
             // Verify initial values
             {
-                let guard = values.read().unwrap();
+                let guard = values.load();
                 assert_eq!(guard["ns1"]["enabled"], json!(true));
             }
 
@@ -2211,7 +2209,7 @@ Error: \"version\" is a required property"
 
             // Values should be reloaded from disk
             {
-                let guard = values.read().unwrap();
+                let guard = values.load();
                 assert_eq!(guard["ns1"]["enabled"], json!(false));
             }
         }
