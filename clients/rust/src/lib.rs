@@ -4,9 +4,10 @@ pub mod features;
 
 pub use features::{FeatureChecker, FeatureContext, features};
 
+use arc_swap::ArcSwap;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, OnceLock};
 
 use sentry_options_validation::{
     SchemaRegistry, ValidationError, ValuesWatcher, resolve_options_dir,
@@ -38,7 +39,7 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 /// Options store for reading configuration values.
 pub struct Options {
     registry: Arc<SchemaRegistry>,
-    values: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
+    values: Arc<ArcSwap<HashMap<String, HashMap<String, Value>>>>,
     watcher: ValuesWatcher,
 }
 
@@ -67,7 +68,7 @@ impl Options {
     fn with_registry_and_values(registry: SchemaRegistry, values_dir: &Path) -> Result<Self> {
         let registry = Arc::new(registry);
         let (loaded_values, _) = registry.load_values_json(values_dir)?;
-        let values = Arc::new(RwLock::new(loaded_values));
+        let values = Arc::new(ArcSwap::from_pointee(loaded_values));
         let watcher = ValuesWatcher::new(
             values_dir.to_path_buf(),
             Arc::clone(&registry),
@@ -92,10 +93,7 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        let values_guard = self
-            .values
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let values_guard = self.values.load();
         if let Some(ns_values) = values_guard.get(namespace)
             && let Some(value) = ns_values.get(key)
         {
@@ -143,11 +141,7 @@ impl Options {
             });
         }
 
-        let values_guard = self
-            .values
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
+        let values_guard = self.values.load();
         if let Some(ns_values) = values_guard.get(namespace) {
             Ok(ns_values.contains_key(key))
         } else {

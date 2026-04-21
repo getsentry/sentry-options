@@ -16,6 +16,7 @@ tempfile.workspace = true
 sentry = { workspace = true, features = ["transport"] }
 chrono.workspace = true
 openssl.workspace = true
+arc-swap.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
