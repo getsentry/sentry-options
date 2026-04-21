@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.9
+
+### Bug Fixes 🐛
+
+- (watcher) Change RwLock to be ArcSwap by @kenzoengineer in [#120](https://github.com/getsentry/sentry-options/pull/120)
+
 ## 1.0.8
 
 ### Bug Fixes 🐛
