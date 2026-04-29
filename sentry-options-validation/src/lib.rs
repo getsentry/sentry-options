@@ -49,11 +49,6 @@ const SENTRY_OPTIONS_DSN: &str = "";
 /// In test mode, creates a disabled client (empty DSN) so no spans are sent.
 static SENTRY_HUB: OnceLock<Arc<sentry::Hub>> = OnceLock::new();
 
-/// Set to true in forked child processes to prevent using the parent's
-/// Sentry transport, which has invalid internal state after fork and
-/// causes SIGSEGV when used.
-static SENTRY_DISABLED: AtomicBool = AtomicBool::new(false);
-
 fn get_sentry_hub() -> &'static Arc<sentry::Hub> {
     SENTRY_HUB.get_or_init(|| {
         let client = Arc::new(sentry::Client::from((
@@ -774,9 +769,6 @@ impl ValuesWatcher {
         reload_duration: Duration,
         generated_at_by_namespace: &HashMap<String, String>,
     ) {
-        if SENTRY_DISABLED.load(Ordering::Relaxed) {
-            return;
-        }
         let hub = get_sentry_hub();
         let applied_at = Utc::now();
         let reload_duration_ms = reload_duration.as_secs_f64() * 1000.0;
