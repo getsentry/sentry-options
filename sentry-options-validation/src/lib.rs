@@ -715,12 +715,7 @@ impl ValuesWatcher {
 
         let entries = match fs::read_dir(values_dir) {
             Ok(e) => e,
-            Err(e) => {
-                if !should_suppress_missing_dir_errors() {
-                    eprintln!("Failed to read directory {}: {}", values_dir.display(), e);
-                }
-                return None;
-            }
+            Err(_) => return None,
         };
 
         for entry in entries.flatten() {
