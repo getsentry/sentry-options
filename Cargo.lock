@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "example"
-version = "1.0.9"
+version = "1.0.10"
 dependencies = [
  "anyhow",
  "sentry-options",
@@ -1532,7 +1532,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options"
-version = "1.0.9"
+version = "1.0.10"
 dependencies = [
  "arc-swap",
  "num",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options-cli"
-version = "1.0.9"
+version = "1.0.10"
 dependencies = [
  "chrono",
  "clap",
@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options-python"
-version = "1.0.9"
+version = "1.0.10"
 dependencies = [
  "pyo3",
  "sentry-options",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "sentry-options-validation"
-version = "1.0.9"
+version = "1.0.10"
 dependencies = [
  "anyhow",
  "arc-swap",

@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.10
+
+### Bug Fixes 🐛
+
+- (watcher) Revert all fork thread spawning to make latest version stable by @kenzoengineer in [#121](https://github.com/getsentry/sentry-options/pull/121)
+
 ## 1.0.9
 
 ### Bug Fixes 🐛
