@@ -808,10 +808,10 @@ impl ValuesWatcher {
         // Only join if we're in the same process that created the thread.
         // In a forked child, the thread handle is invalid (the thread
         // wasn't copied), so joining would be incorrect.
-        if self.pid == process::id() {
-            if let Some(handle) = self.thread.take() {
-                let _ = handle.join();
-            }
+        if self.pid == process::id()
+            && let Some(handle) = self.thread.take()
+        {
+            let _ = handle.join();
         }
     }
 
