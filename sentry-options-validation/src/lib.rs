@@ -316,7 +316,12 @@ impl SchemaRegistry {
 
             Self::validate_with_namespace_schema(&schema_data, schema_file, &namespace_validator)?;
             let schema = Self::parse_schema(schema_data, namespace, schema_file)?;
-            schemas_map.insert(namespace.to_string(), schema);
+            if schemas_map.insert(namespace.to_string(), schema).is_some() {
+                return Err(ValidationError::SchemaError {
+                    file: schema_file.to_path_buf(),
+                    message: format!("Duplicate namespace '{}'", namespace),
+                });
+            }
         }
 
         Ok(Self {
@@ -1011,6 +1016,32 @@ Error: \"version\" is a required property"
                 assert!(message.contains("\"description\" is a required property"));
             }
             _ => panic!("Expected SchemaError for missing description"),
+        }
+    }
+
+    #[test]
+    fn test_from_schemas_rejects_duplicate_namespace() {
+        let schema_a = r#"{
+            "version": "1.0",
+            "type": "object",
+            "properties": {
+                "opt": {"type": "string", "default": "a", "description": "A"}
+            }
+        }"#;
+        let schema_b = r#"{
+            "version": "1.0",
+            "type": "object",
+            "properties": {
+                "opt": {"type": "string", "default": "b", "description": "B"}
+            }
+        }"#;
+
+        let result = SchemaRegistry::from_schemas(&[("test", schema_a), ("test", schema_b)]);
+        match result {
+            Err(ValidationError::SchemaError { message, .. }) => {
+                assert!(message.contains("Duplicate namespace 'test'"));
+            }
+            _ => panic!("Expected SchemaError for duplicate namespace"),
         }
     }
 
