@@ -21,15 +21,15 @@
 //!    snapshot. Otherwise:
 //!    a. Read all values files from disk and build the new map.
 //!    b. On success, publish the new map into the `ArcSwap`
-//!       (last-writer-wins under contention).
+//!    (last-writer-wins under contention).
 //!    c. `compare_exchange` `last_updated` from the previously-observed
-//!       value to `now` with `AcqRel`. The Release on the timestamp
-//!       publishes the prior `ArcSwap::store`: any reader that
-//!       Acquire-loads the bumped timestamp and short-circuits the
-//!       refresh is guaranteed to subsequently load the new snapshot.
+//!    value to `now` with `AcqRel`. The Release on the timestamp
+//!    publishes the prior `ArcSwap::store`: any reader that
+//!    Acquire-loads the bumped timestamp and short-circuits the
+//!    refresh is guaranteed to subsequently load the new snapshot.
 //!    d. On a parse/validation failure, leave the old map in place — the
-//!       bumped timestamp makes other threads back off until the next
-//!       window.
+//!    bumped timestamp makes other threads back off until the next
+//!    window.
 //!
 //! Multiple threads racing through the stale window will redundantly read
 //! files and publish; the last `ArcSwap::store` wins. The jitter spreads
