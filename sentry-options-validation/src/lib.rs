@@ -1,8 +1,41 @@
-//! Schema validation library for sentry-options
+//! Schema validation library for sentry-options.
 //!
-//! This library provides schema loading and validation for sentry-options.
-//! Schemas are loaded once and stored in Arc for efficient sharing.
+//! Schemas are loaded once into a [`SchemaRegistry`] and shared via `Arc`.
 //! Values are validated against schemas as complete objects.
+//!
+//! # Refresh-on-read scheme
+//!
+//! Values are held in a [`ValuesStore`] that wraps an [`ArcSwap`] for
+//! lock-free reads. There is no background thread — every `load()` decides
+//! whether the cached snapshot is stale and, if so, the calling thread
+//! refreshes it.
+//!
+//! Each `load()` does:
+//!
+//! 1. Read `now` and `last_updated` (an `AtomicU64` of nanoseconds since a
+//!    monotonic baseline) with `Acquire`.
+//! 2. Compute a per-call jitter in `[0, 1s)` from the address of a stack
+//!    local — different threads have different stack bases, so the value
+//!    differs across threads. No `thread_local` is involved.
+//! 3. If `now - last_updated < threshold + jitter`, return the current
+//!    snapshot. Otherwise:
+//!    a. Read all values files from disk and build the new map.
+//!    b. On success, publish the new map into the `ArcSwap`
+//!       (last-writer-wins under contention).
+//!    c. `compare_exchange` `last_updated` from the previously-observed
+//!       value to `now` with `AcqRel`. The Release on the timestamp
+//!       publishes the prior `ArcSwap::store`: any reader that
+//!       Acquire-loads the bumped timestamp and short-circuits the
+//!       refresh is guaranteed to subsequently load the new snapshot.
+//!    d. On a parse/validation failure, leave the old map in place — the
+//!       bumped timestamp makes other threads back off until the next
+//!       window.
+//!
+//! Multiple threads racing through the stale window will redundantly read
+//! files and publish; the last `ArcSwap::store` wins. The jitter spreads
+//! the threshold boundary so that the herd doesn't cross it together. On
+//! error the timestamp is still bumped so a broken values directory does
+//! not turn into an I/O storm.
 
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
@@ -12,14 +45,11 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::process;
 use std::sync::{
     Arc, OnceLock,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicU64, Ordering},
 };
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 /// Embedded meta-schema for validating sentry-options schema files
@@ -31,8 +61,10 @@ const FEATURE_SCHEMA_DEFS_JSON: &str = include_str!("feature-schema-defs.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
 
-/// Time between file polls in seconds
-const POLLING_DELAY: u64 = 5;
+/// Default minimum age of a cached values snapshot before a read triggers a
+/// refresh. A per-thread jitter of up to 1 s is added on top to spread the
+/// reload across threads.
+const REFRESH_THRESHOLD: Duration = Duration::from_secs(5);
 
 /// Dedicated Sentry DSN for sentry-options observability.
 /// This is separate from the host application's Sentry setup.
@@ -621,209 +653,173 @@ impl Default for SchemaRegistry {
     }
 }
 
-/// Watches the values directory for changes, reloading if there are any.
-/// If the directory does not exist we do not panic
+/// Lazily reloads values from disk when reads detect they are stale.
 ///
-/// Does not do an initial fetch, assumes the caller has already loaded values.
-/// Child thread may panic if we run out of memory or cannot create more threads.
-/// We do NOT respawn the values watcher thread for forked processes.
+/// Holds the current `ValuesByNamespace` snapshot in an `ArcSwap` for
+/// lock-free reads. Every `load()` checks whether the snapshot is older than
+/// `refresh_threshold + jitter`; if so, the calling thread reads the values
+/// directory, then compare-and-swaps the timestamp. Whichever thread wins the
+/// CAS publishes its snapshot into the `ArcSwap`; losers discard their work.
 ///
-/// Uses polling for now, could use `inotify` or similar later on.
-///
-/// Some important notes:
-/// - If the thread panics and dies, there is no built in mechanism to catch it and restart
-/// - If a config map is unmounted, we won't reload until the next file modification (because we don't catch the deletion event)
-/// - If any namespace fails validation, we keep all old values (even the namespaces that passed validation)
-/// - Values are swapped atomically via ArcSwap (lock-free, fork-safe)
-/// - On drop, the thread is joined only if PID matches (skipped in forked processes)
-pub struct ValuesWatcher {
-    pid: u32,
-    stop_signal: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+/// Replaces the polling watcher thread: idle processes do no work, and
+/// concurrent readers coordinate through the timestamp CAS.
+pub struct ValuesStore {
+    registry: Arc<SchemaRegistry>,
+    values_dir: PathBuf,
+    values: ArcSwap<ValuesByNamespace>,
+    baseline: Instant,
+    last_refresh_offset_ns: AtomicU64,
+    refresh_threshold: Duration,
 }
 
-impl ValuesWatcher {
-    /// Creates a new ValuesWatcher and spins up the watcher thread
-    pub fn new(
-        values_path: &Path,
+impl ValuesStore {
+    /// Build a store and perform the initial values load synchronously.
+    pub fn new(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValidationResult<Self> {
+        Self::with_threshold(registry, values_dir, REFRESH_THRESHOLD)
+    }
+
+    /// Test-only constructor that lets the caller pick the refresh threshold.
+    /// `Duration::ZERO` makes every `load()` perform a refresh attempt.
+    pub(crate) fn with_threshold(
         registry: Arc<SchemaRegistry>,
-        values: Arc<ArcSwap<ValuesByNamespace>>,
+        values_dir: &Path,
+        refresh_threshold: Duration,
     ) -> ValidationResult<Self> {
-        // output an error but keep passing
-        if !should_suppress_missing_dir_errors() && fs::metadata(values_path).is_err() {
-            eprintln!("Values directory does not exist: {}", values_path.display());
+        if !should_suppress_missing_dir_errors() && fs::metadata(values_dir).is_err() {
+            eprintln!("Values directory does not exist: {}", values_dir.display());
         }
 
-        let stop_signal = Arc::new(AtomicBool::new(false));
-
-        let thread_signal = Arc::clone(&stop_signal);
-        let thread_path = values_path.to_path_buf();
-        let thread_registry = Arc::clone(&registry);
-        let thread_values = Arc::clone(&values);
-        let thread = thread::Builder::new()
-            .name("sentry-options-watcher".into())
-            .spawn(move || {
-                let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    Self::run(thread_signal, thread_path, thread_registry, thread_values);
-                }));
-                if let Err(e) = result {
-                    eprintln!("Watcher thread panicked with: {:?}", e);
-                }
-            })?;
+        let baseline = Instant::now();
+        let (initial, _) = registry.load_values_json(values_dir)?;
+        let last_refresh_offset_ns = AtomicU64::new(baseline.elapsed().as_nanos() as u64);
 
         Ok(Self {
-            pid: process::id(),
-            stop_signal,
-            thread: Some(thread),
+            registry,
+            values_dir: values_dir.to_path_buf(),
+            values: ArcSwap::from_pointee(initial),
+            baseline,
+            last_refresh_offset_ns,
+            refresh_threshold,
         })
     }
 
-    /// Reloads the values if the modified time has changed.
-    ///
-    /// Continuously polls the values directory and reloads all values
-    /// if any modification is detected.
-    fn run(
-        stop_signal: Arc<AtomicBool>,
-        values_path: PathBuf,
-        registry: Arc<SchemaRegistry>,
-        values: Arc<ArcSwap<ValuesByNamespace>>,
-    ) {
-        let mut last_mtime = Self::get_mtime(&values_path);
-
-        while !stop_signal.load(Ordering::Relaxed) {
-            // does not reload values if get_mtime fails
-            if let Some(current_mtime) = Self::get_mtime(&values_path)
-                && Some(current_mtime) != last_mtime
-            {
-                Self::reload_values(&values_path, &registry, &values);
-                last_mtime = Some(current_mtime);
-            }
-
-            thread::sleep(Duration::from_secs(POLLING_DELAY));
-        }
+    /// The registry the store was constructed with.
+    pub fn registry(&self) -> &Arc<SchemaRegistry> {
+        &self.registry
     }
 
-    /// Get the most recent modification time across all namespace values.json files
-    /// Returns None if no valid values files are found
-    fn get_mtime(values_dir: &Path) -> Option<std::time::SystemTime> {
-        let mut latest_mtime = None;
+    /// Returns a guard onto the current values snapshot, refreshing first if
+    /// the cached snapshot is older than `refresh_threshold + jitter`.
+    pub fn load(&self) -> arc_swap::Guard<Arc<ValuesByNamespace>> {
+        self.maybe_refresh();
+        self.values.load()
+    }
 
-        let entries = match fs::read_dir(values_dir) {
-            Ok(e) => e,
-            Err(_) => return None,
+    fn maybe_refresh(&self) {
+        let now_ns = self.baseline.elapsed().as_nanos() as u64;
+        let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
+        let elapsed_ns = now_ns.saturating_sub(last_ns);
+        let threshold_ns = self.refresh_threshold.as_nanos() as u64;
+        // Skip jitter for a zero threshold so callers (chiefly tests) can
+        // force every read to refresh.
+        let jitter_ns = if self.refresh_threshold.is_zero() {
+            0
+        } else {
+            stack_jitter_ns()
         };
 
-        for entry in entries.flatten() {
-            // skip if not a dir
-            if !entry
-                .file_type()
-                .map(|file_type| file_type.is_dir())
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            let values_file = entry.path().join(VALUES_FILE_NAME);
-            if let Ok(metadata) = fs::metadata(&values_file)
-                && let Ok(mtime) = metadata.modified()
-                && latest_mtime.is_none_or(|latest| mtime > latest)
-            {
-                latest_mtime = Some(mtime);
-            }
+        if elapsed_ns < threshold_ns.saturating_add(jitter_ns) {
+            return;
         }
 
-        latest_mtime
+        self.refresh(last_ns, now_ns);
     }
 
-    /// Reload values from disk, validate them, and update the shared map.
-    /// Emits a Sentry transaction per namespace with timing and propagation delay metrics.
-    pub(crate) fn reload_values(
-        values_path: &Path,
-        registry: &SchemaRegistry,
-        values: &Arc<ArcSwap<ValuesByNamespace>>,
-    ) {
+    fn refresh(&self, observed_last_ns: u64, now_ns: u64) {
         let reload_start = Instant::now();
+        let result = self.registry.load_values_json(&self.values_dir);
 
-        match registry.load_values_json(values_path) {
+        // Publish the new snapshot before bumping the timestamp. The CAS below
+        // uses AcqRel (Release on success); a reader that Acquire-loads the
+        // bumped timestamp and decides the snapshot is fresh enough to skip
+        // refreshing is then guaranteed to observe this `ArcSwap::store`.
+        // Reversing the order opens a window where the timestamp says "fresh"
+        // but the ArcSwap still holds the previous snapshot on weakly ordered
+        // architectures.
+        match result {
             Ok((new_values, generated_at_by_namespace)) => {
                 let namespaces: Vec<String> = new_values.keys().cloned().collect();
-                Self::update_values(values, new_values);
-
-                let reload_duration = reload_start.elapsed();
-                Self::emit_reload_spans(&namespaces, reload_duration, &generated_at_by_namespace);
+                self.values.store(Arc::new(new_values));
+                emit_reload_spans(
+                    &namespaces,
+                    reload_start.elapsed(),
+                    &generated_at_by_namespace,
+                );
             }
             Err(e) => {
                 eprintln!(
                     "Failed to reload values from {}: {}",
-                    values_path.display(),
+                    self.values_dir.display(),
                     e
                 );
             }
         }
-    }
 
-    /// Emit a Sentry transaction per namespace with reload timing and propagation delay metrics.
-    /// Uses a dedicated Sentry Hub isolated from the host application's Sentry setup.
-    fn emit_reload_spans(
-        namespaces: &[String],
-        reload_duration: Duration,
-        generated_at_by_namespace: &HashMap<String, String>,
-    ) {
-        let hub = get_sentry_hub();
-        let applied_at = Utc::now();
-        let reload_duration_ms = reload_duration.as_secs_f64() * 1000.0;
-
-        for namespace in namespaces {
-            let mut tx_ctx = sentry::TransactionContext::new(namespace, "sentry_options.reload");
-            tx_ctx.set_sampled(true);
-
-            let transaction = hub.start_transaction(tx_ctx);
-            transaction.set_data("reload_duration_ms", reload_duration_ms.into());
-            transaction.set_data("applied_at", applied_at.to_rfc3339().into());
-
-            if let Some(ts) = generated_at_by_namespace.get(namespace) {
-                transaction.set_data("generated_at", ts.as_str().into());
-
-                if let Ok(generated_time) = DateTime::parse_from_rfc3339(ts) {
-                    let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
-                        .num_milliseconds() as f64
-                        / 1000.0;
-                    transaction.set_data("propagation_delay_secs", delay_secs.into());
-                }
-            }
-
-            transaction.finish();
-        }
-    }
-
-    /// Update the values map with the new values
-    fn update_values(values: &Arc<ArcSwap<ValuesByNamespace>>, new_values: ValuesByNamespace) {
-        values.store(Arc::new(new_values));
-    }
-
-    /// Stops the watcher thread, waiting for it to join.
-    /// May take up to POLLING_DELAY seconds
-    pub fn stop(&mut self) {
-        self.stop_signal.store(true, Ordering::Relaxed);
-        // Only join if we're in the same process that created the thread.
-        // In a forked child, the thread handle is invalid (the thread
-        // wasn't copied), so joining would be incorrect.
-        if self.pid == process::id()
-            && let Some(handle) = self.thread.take()
-        {
-            let _ = handle.join();
-        }
-    }
-
-    /// Returns whether the watcher thread is still running
-    pub fn is_alive(&self) -> bool {
-        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+        // Bump the timestamp regardless of success. On failure, the bumped
+        // timestamp keeps subsequent reads from hammering the filesystem until
+        // the next threshold window. Losing the CAS just means another thread
+        // already bumped — our snapshot, if any, is still published.
+        let _ = self.last_refresh_offset_ns.compare_exchange(
+            observed_last_ns,
+            now_ns,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        );
     }
 }
 
-impl Drop for ValuesWatcher {
-    fn drop(&mut self) {
-        self.stop();
+/// Per-call jitter in `[0, 1s)` nanoseconds, derived from the address of a
+/// stack local. Different threads have different stack bases, so the value
+/// differs across threads; the same thread + call site stays roughly stable.
+/// Cheap (~5 ns) and avoids `thread_local`.
+fn stack_jitter_ns() -> u64 {
+    let local = 0u8;
+    let addr = &local as *const u8 as usize as u64;
+    addr.wrapping_mul(0x9E37_79B9_7F4A_7C15) % 1_000_000_000
+}
+
+/// Emit a Sentry transaction per namespace with reload timing and propagation
+/// delay metrics. Uses the dedicated sentry-options hub isolated from the
+/// host application's Sentry setup.
+fn emit_reload_spans(
+    namespaces: &[String],
+    reload_duration: Duration,
+    generated_at_by_namespace: &HashMap<String, String>,
+) {
+    let hub = get_sentry_hub();
+    let applied_at = Utc::now();
+    let reload_duration_ms = reload_duration.as_secs_f64() * 1000.0;
+
+    for namespace in namespaces {
+        let mut tx_ctx = sentry::TransactionContext::new(namespace, "sentry_options.reload");
+        tx_ctx.set_sampled(true);
+
+        let transaction = hub.start_transaction(tx_ctx);
+        transaction.set_data("reload_duration_ms", reload_duration_ms.into());
+        transaction.set_data("applied_at", applied_at.to_rfc3339().into());
+
+        if let Some(ts) = generated_at_by_namespace.get(namespace) {
+            transaction.set_data("generated_at", ts.as_str().into());
+
+            if let Ok(generated_time) = DateTime::parse_from_rfc3339(ts) {
+                let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
+                    .num_milliseconds() as f64
+                    / 1000.0;
+                transaction.set_data("propagation_delay_secs", delay_secs.into());
+            }
+        }
+
+        transaction.finish();
     }
 }
 
@@ -1868,12 +1864,11 @@ Error: \"version\" is a required property"
         }
     }
 
-    mod watcher_tests {
+    mod store_tests {
         use super::*;
-        use std::thread;
 
-        /// Creates schema and values files for two namespaces: ns1, and ns2
-        fn setup_watcher_test() -> (TempDir, PathBuf, PathBuf) {
+        /// Creates schema and values files for two namespaces: ns1 and ns2.
+        fn setup_store_test() -> (TempDir, PathBuf, PathBuf) {
             let temp_dir = TempDir::new().unwrap();
             let schemas_dir = temp_dir.path().join("schemas");
             let values_dir = temp_dir.path().join("values");
@@ -1925,53 +1920,52 @@ Error: \"version\" is a required property"
             (temp_dir, schemas_dir, values_dir)
         }
 
+        fn store_with_zero_threshold(schemas_dir: &Path, values_dir: &Path) -> ValuesStore {
+            let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir).unwrap());
+            ValuesStore::with_threshold(registry, values_dir, Duration::ZERO).unwrap()
+        }
+
         #[test]
-        fn test_get_mtime_returns_most_recent() {
-            let (_temp, _schemas, values_dir) = setup_watcher_test();
+        fn test_initial_load_populates_values() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let store = ValuesStore::new(registry, &values_dir).unwrap();
 
-            // Get initial mtime
-            let mtime1 = ValuesWatcher::get_mtime(&values_dir);
-            assert!(mtime1.is_some());
+            let guard = store.load();
+            assert_eq!(guard["ns1"]["enabled"], json!(true));
+            assert_eq!(guard["ns2"]["count"], json!(42));
+        }
 
-            // Modify one namespace
-            thread::sleep(std::time::Duration::from_millis(10));
+        #[test]
+        fn test_read_within_threshold_serves_cached() {
+            // Default 5 s threshold: a modification followed by an immediate
+            // read should still see the cached value.
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let store = ValuesStore::new(registry, &values_dir).unwrap();
+
+            // Confirm initial value, then modify the file.
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
             fs::write(
                 values_dir.join("ns1").join("values.json"),
                 r#"{"options": {"enabled": false}}"#,
             )
             .unwrap();
 
-            // Should detect the change
-            let mtime2 = ValuesWatcher::get_mtime(&values_dir);
-            assert!(mtime2.is_some());
-            assert!(mtime2 > mtime1);
+            // Within the threshold window, the cached value is still served.
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
         }
 
         #[test]
-        fn test_get_mtime_with_missing_directory() {
-            let temp = TempDir::new().unwrap();
-            let nonexistent = temp.path().join("nonexistent");
+        fn test_read_after_threshold_refreshes() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let store = store_with_zero_threshold(&schemas_dir, &values_dir);
 
-            let mtime = ValuesWatcher::get_mtime(&nonexistent);
-            assert!(mtime.is_none());
-        }
+            // Initial values.
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
+            assert_eq!(store.load()["ns2"]["count"], json!(42));
 
-        #[test]
-        fn test_reload_values_updates_map() {
-            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
-
-            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(ArcSwap::from_pointee(initial_values));
-
-            // ensure initial values are correct
-            {
-                let guard = values.load();
-                assert_eq!(guard["ns1"]["enabled"], json!(true));
-                assert_eq!(guard["ns2"]["count"], json!(42));
-            }
-
-            // modify
+            // Modify both namespaces.
             fs::write(
                 values_dir.join("ns1").join("values.json"),
                 r#"{"options": {"enabled": false}}"#,
@@ -1983,61 +1977,57 @@ Error: \"version\" is a required property"
             )
             .unwrap();
 
-            // force a reload
-            ValuesWatcher::reload_values(&values_dir, &registry, &values);
-
-            // ensure new values are correct
-            {
-                let guard = values.load();
-                assert_eq!(guard["ns1"]["enabled"], json!(false));
-                assert_eq!(guard["ns2"]["count"], json!(100));
-            }
+            // With a zero threshold, the next read refreshes.
+            let guard = store.load();
+            assert_eq!(guard["ns1"]["enabled"], json!(false));
+            assert_eq!(guard["ns2"]["count"], json!(100));
         }
 
         #[test]
-        fn test_old_values_persist_with_invalid_data() {
-            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+        fn test_refresh_failure_keeps_old_values() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let store = store_with_zero_threshold(&schemas_dir, &values_dir);
 
-            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(ArcSwap::from_pointee(initial_values));
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
 
-            let initial_enabled = {
-                let guard = values.load();
-                guard["ns1"]["enabled"].clone()
-            };
-
-            // won't pass validation
+            // Replace ns1 values with a type-incompatible payload.
             fs::write(
                 values_dir.join("ns1").join("values.json"),
                 r#"{"options": {"enabled": "not-a-boolean"}}"#,
             )
             .unwrap();
 
-            ValuesWatcher::reload_values(&values_dir, &registry, &values);
-
-            // ensure old value persists
-            {
-                let guard = values.load();
-                assert_eq!(guard["ns1"]["enabled"], initial_enabled);
-            }
+            // Refresh attempt fails; old value still served.
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
         }
 
         #[test]
-        fn test_watcher_creation_and_termination() {
-            let (_temp, schemas_dir, values_dir) = setup_watcher_test();
+        fn test_concurrent_reads_observe_new_values() {
+            use std::thread;
 
-            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let (initial_values, _) = registry.load_values_json(&values_dir).unwrap();
-            let values = Arc::new(ArcSwap::from_pointee(initial_values));
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let store = Arc::new(store_with_zero_threshold(&schemas_dir, &values_dir));
 
-            let mut watcher =
-                ValuesWatcher::new(&values_dir, Arc::clone(&registry), Arc::clone(&values))
-                    .expect("Failed to create watcher");
+            // Prime: every thread sees the initial value.
+            assert_eq!(store.load()["ns2"]["count"], json!(42));
 
-            assert!(watcher.is_alive());
-            watcher.stop();
-            assert!(!watcher.is_alive());
+            fs::write(
+                values_dir.join("ns2").join("values.json"),
+                r#"{"options": {"count": 7}}"#,
+            )
+            .unwrap();
+
+            let mut handles = Vec::new();
+            for _ in 0..8 {
+                let store = Arc::clone(&store);
+                handles.push(thread::spawn(move || {
+                    let guard = store.load();
+                    guard["ns2"]["count"].clone()
+                }));
+            }
+            for h in handles {
+                assert_eq!(h.join().unwrap(), json!(7));
+            }
         }
     }
     mod array_tests {
