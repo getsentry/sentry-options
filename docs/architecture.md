@@ -480,9 +480,9 @@ Reject unknown options, fail fast on type mismatches.
 
 | Environment | Path |
 |-------------|------|
-| Production | `/etc/sentry-options/{namespace}/values.json` |
+| Production | `/etc/sentry-options/values/{namespace}/values.json` |
 | Override | `SENTRY_OPTIONS_DIR` environment variable |
-| Local dev | `./sentry-options/{namespace}/values.json` |
+| Local dev | `./sentry-options/values/{namespace}/values.json` |
 
 ## Open Questions
 
