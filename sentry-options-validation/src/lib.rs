@@ -38,16 +38,13 @@
 //! not turn into an I/O storm.
 
 use arc_swap::ArcSwap;
-use chrono::{DateTime, Utc};
-use sentry::ClientOptions;
-use sentry::transports::DefaultTransportFactory;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, OnceLock,
+    Arc,
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
@@ -65,39 +62,6 @@ const VALUES_FILE_NAME: &str = "values.json";
 /// refresh. A per-thread jitter of up to 1 s is added on top to spread the
 /// reload across threads.
 const REFRESH_THRESHOLD: Duration = Duration::from_secs(5);
-
-/// Dedicated Sentry DSN for sentry-options observability.
-/// This is separate from the host application's Sentry setup.
-#[cfg(not(test))]
-const SENTRY_OPTIONS_DSN: &str =
-    "https://d3598a07e9f23a9acee9e2718cfd17bd@o1.ingest.us.sentry.io/4510750163927040";
-
-/// Disabled DSN for tests - empty string creates a disabled client
-#[cfg(test)]
-const SENTRY_OPTIONS_DSN: &str = "";
-
-/// Lazily-initialized dedicated Sentry Hub for sentry-options.
-/// Uses a custom Client that is completely isolated from the host application's Sentry setup.
-/// In test mode, creates a disabled client (empty DSN) so no spans are sent.
-static SENTRY_HUB: OnceLock<Arc<sentry::Hub>> = OnceLock::new();
-
-fn get_sentry_hub() -> &'static Arc<sentry::Hub> {
-    SENTRY_HUB.get_or_init(|| {
-        let client = Arc::new(sentry::Client::from((
-            SENTRY_OPTIONS_DSN,
-            ClientOptions {
-                traces_sample_rate: 1.0,
-                // Explicitly set transport factory - required when not using sentry::init()
-                transport: Some(Arc::new(DefaultTransportFactory)),
-                ..Default::default()
-            },
-        )));
-        Arc::new(sentry::Hub::new(
-            Some(client),
-            Arc::new(sentry::Scope::default()),
-        ))
-    })
-}
 
 /// Production path where options are deployed via config map
 pub const PRODUCTION_OPTIONS_DIR: &str = "/etc/sentry-options";
@@ -736,7 +700,6 @@ impl ValuesStore {
     }
 
     fn refresh(&self, observed_last_ns: u64, now_ns: u64) {
-        let reload_start = Instant::now();
         let result = self.registry.load_values_json(&self.values_dir);
 
         // Publish the new snapshot before bumping the timestamp. The CAS below
@@ -747,14 +710,8 @@ impl ValuesStore {
         // but the ArcSwap still holds the previous snapshot on weakly ordered
         // architectures.
         match result {
-            Ok((new_values, generated_at_by_namespace)) => {
-                let namespaces: Vec<String> = new_values.keys().cloned().collect();
+            Ok((new_values, _)) => {
                 self.values.store(Arc::new(new_values));
-                emit_reload_spans(
-                    &namespaces,
-                    reload_start.elapsed(),
-                    &generated_at_by_namespace,
-                );
             }
             Err(e) => {
                 eprintln!(
@@ -786,41 +743,6 @@ fn stack_jitter_ns() -> u64 {
     let local = 0u8;
     let addr = &local as *const u8 as usize as u64;
     addr.wrapping_mul(0x9E37_79B9_7F4A_7C15) % 1_000_000_000
-}
-
-/// Emit a Sentry transaction per namespace with reload timing and propagation
-/// delay metrics. Uses the dedicated sentry-options hub isolated from the
-/// host application's Sentry setup.
-fn emit_reload_spans(
-    namespaces: &[String],
-    reload_duration: Duration,
-    generated_at_by_namespace: &HashMap<String, String>,
-) {
-    let hub = get_sentry_hub();
-    let applied_at = Utc::now();
-    let reload_duration_ms = reload_duration.as_secs_f64() * 1000.0;
-
-    for namespace in namespaces {
-        let mut tx_ctx = sentry::TransactionContext::new(namespace, "sentry_options.reload");
-        tx_ctx.set_sampled(true);
-
-        let transaction = hub.start_transaction(tx_ctx);
-        transaction.set_data("reload_duration_ms", reload_duration_ms.into());
-        transaction.set_data("applied_at", applied_at.to_rfc3339().into());
-
-        if let Some(ts) = generated_at_by_namespace.get(namespace) {
-            transaction.set_data("generated_at", ts.as_str().into());
-
-            if let Ok(generated_time) = DateTime::parse_from_rfc3339(ts) {
-                let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
-                    .num_milliseconds() as f64
-                    / 1000.0;
-                transaction.set_data("propagation_delay_secs", delay_secs.into());
-            }
-        }
-
-        transaction.finish();
-    }
 }
 
 #[cfg(test)]
