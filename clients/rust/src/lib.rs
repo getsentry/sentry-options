@@ -4,13 +4,11 @@ pub mod features;
 
 pub use features::{FeatureChecker, FeatureContext, features};
 
-use arc_swap::ArcSwap;
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use sentry_options_validation::{
-    SchemaRegistry, ValidationError, ValuesWatcher, resolve_options_dir,
+    SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -38,9 +36,7 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 
 /// Options store for reading configuration values.
 pub struct Options {
-    registry: Arc<SchemaRegistry>,
-    values: Arc<ArcSwap<HashMap<String, HashMap<String, Value>>>>,
-    _watcher: ValuesWatcher,
+    store: ValuesStore,
 }
 
 impl Options {
@@ -66,15 +62,8 @@ impl Options {
     }
 
     fn with_registry_and_values(registry: SchemaRegistry, values_dir: &Path) -> Result<Self> {
-        let registry = Arc::new(registry);
-        let (loaded_values, _) = registry.load_values_json(values_dir)?;
-        let values = Arc::new(ArcSwap::from_pointee(loaded_values));
-        let watcher = ValuesWatcher::new(values_dir, Arc::clone(&registry), Arc::clone(&values))?;
-        Ok(Self {
-            registry,
-            values,
-            _watcher: watcher,
-        })
+        let store = ValuesStore::new(Arc::new(registry), values_dir)?;
+        Ok(Self { store })
     }
 
     /// Get an option value, returning the schema default if not set.
@@ -84,11 +73,12 @@ impl Options {
         }
 
         let schema = self
-            .registry
+            .store
+            .registry()
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        let values_guard = self.values.load();
+        let values_guard = self.store.load();
         if let Some(ns_values) = values_guard.get(namespace)
             && let Some(value) = ns_values.get(key)
         {
@@ -108,7 +98,8 @@ impl Options {
     /// Validate that a key exists in the schema and the value matches the expected type.
     pub fn validate_override(&self, namespace: &str, key: &str, value: &Value) -> Result<()> {
         let schema = self
-            .registry
+            .store
+            .registry()
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
@@ -116,6 +107,7 @@ impl Options {
 
         Ok(())
     }
+
     /// Check if an option has a value.
     ///
     /// Returns true if the option is defined and has a value, will return
@@ -124,7 +116,8 @@ impl Options {
     /// If the namespace or option are not defined, an Err will be returned.
     pub fn isset(&self, namespace: &str, key: &str) -> Result<bool> {
         let schema = self
-            .registry
+            .store
+            .registry()
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
@@ -135,7 +128,7 @@ impl Options {
             });
         }
 
-        let values_guard = self.values.load();
+        let values_guard = self.store.load();
         if let Some(ns_values) = values_guard.get(namespace) {
             Ok(ns_values.contains_key(key))
         } else {
