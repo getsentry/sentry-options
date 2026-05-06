@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.11
+
+### New Features ✨
+
+- (sentry-options) Refresh values lazily on read; drop the watcher thread and embedded Sentry by @chromy in [#122](https://github.com/getsentry/sentry-options/pull/122)
+
 ## 1.0.10
 
 ### Bug Fixes 🐛
