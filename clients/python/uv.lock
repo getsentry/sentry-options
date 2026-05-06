@@ -86,7 +86,7 @@ wheels = [
 
 [[package]]
 name = "sentry-options"
-version = "1.0.10"
+version = "1.0.11"
 source = { editable = "." }
 
 [package.optional-dependencies]
