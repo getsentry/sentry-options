@@ -398,8 +398,10 @@ fn eval_matches(ctx_val: &Value, condition_val: &Value) -> bool {
     let Some(arr) = condition_val.as_array() else {
         return false;
     };
-    arr.iter()
-        .any(|v| v.as_str().is_some_and(|pattern| glob_star_match(pattern, s)))
+    arr.iter().any(|v| {
+        v.as_str()
+            .is_some_and(|pattern| glob_star_match(pattern, s))
+    })
 }
 
 #[derive(Debug, PartialEq)]
@@ -1158,11 +1160,20 @@ mod tests {
         let cond = r#"{"property": "slug", "operator": "matches", "value": ["jayonb*", "dangoldonb*", "value-disc-*"]}"#;
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
 
-        let slugs = [("jayonb73", true), ("dangoldonb3", true), ("value-disc-7", true), ("other-org", false)];
+        let slugs = [
+            ("jayonb73", true),
+            ("dangoldonb3", true),
+            ("value-disc-7", true),
+            ("other-org", false),
+        ];
         for (slug, expected) in slugs {
             let mut ctx = FeatureContext::new();
             ctx.insert("slug", json!(slug));
-            assert_eq!(check(&opts, "organizations:test-feature", &ctx), expected, "slug={slug}");
+            assert_eq!(
+                check(&opts, "organizations:test-feature", &ctx),
+                expected,
+                "slug={slug}"
+            );
         }
     }
 
