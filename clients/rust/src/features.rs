@@ -374,6 +374,11 @@ fn glob_star_match(pattern: &str, value: &str) -> bool {
         value.len() - parts[parts.len() - 1].len()
     };
     let mut start = parts[0].len();
+    // The prefix and suffix anchors overlap, meaning the
+    // value is shorter than prefix + suffix combined — no valid match possible.
+    if start > end {
+        return false;
+    }
     // Walk middle segments left-to-right, advancing the cursor on each hit.
     for part in &parts[1..parts.len() - 1] {
         if part.is_empty() {
@@ -1175,6 +1180,33 @@ mod tests {
                 "slug={slug}"
             );
         }
+    }
+
+    #[test]
+    fn test_condition_matches_overlapping_prefix_suffix_anchors() {
+        // "a*a" requires at least "aa" — a single "a" must not match.
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["a*a"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("a"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("aa"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+
+        // "ab*ab" requires at least "abab" — "ab" alone must not match.
+        let cond2 = r#"{"property": "slug", "operator": "matches", "value": ["ab*ab"]}"#;
+        let (opts2, _t2) = setup_feature_options(&feature_json(true, 100, cond2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("slug", json!("ab"));
+        assert!(!check(&opts2, "organizations:test-feature", &ctx3));
+
+        let mut ctx4 = FeatureContext::new();
+        ctx4.insert("slug", json!("abab"));
+        assert!(check(&opts2, "organizations:test-feature", &ctx4));
     }
 
     #[test]
