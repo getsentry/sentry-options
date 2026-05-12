@@ -373,15 +373,15 @@ fn glob_star_match(pattern: &str, value: &str) -> bool {
     } else {
         value.len() - parts[parts.len() - 1].len()
     };
-    let mut pos = parts[0].len();
+    let mut start = parts[0].len();
     // Walk middle segments left-to-right, advancing the cursor on each hit.
     for part in &parts[1..parts.len() - 1] {
         if part.is_empty() {
             // Skip consecutive '*'s.
             continue;
         }
-        match value[pos..end].find(*part) {
-            Some(idx) => pos += idx + part.len(),
+        match value[start..end].find(*part) {
+            Some(idx) => start += idx + part.len(),
             None => return false,
         }
     }
