@@ -34,6 +34,7 @@ import ast
 import concurrent.futures
 import csv
 import html as _html
+import json
 import os
 import re
 import subprocess
@@ -195,6 +196,8 @@ class ASTScanResult:
 class FileAttribution:
     # Key prefixes this file can reach (e.g. "backpressure.high_watermarks.")
     bounded_prefixes: list[str] = field(default_factory=list)
+    # Key suffixes this file can reach (e.g. ".disallow-new-enrollment")
+    bounded_suffixes: list[str] = field(default_factory=list)
     # Exact keys this file can reach (enumerated from a static registry)
     bounded_keys: set[str] = field(default_factory=set)
     # File reads options.all() / options.filter() — management plane, not app use
@@ -207,6 +210,19 @@ def _fstring_prefix(node: ast.JoinedStr) -> str | None:
     """Return the leading literal string of an f-string, or None."""
     if node.values and isinstance(node.values[0], ast.Constant):
         v = node.values[0].value
+        if isinstance(v, str):
+            return v
+    return None
+
+
+def _fstring_suffix(node: ast.JoinedStr) -> str | None:
+    """
+    Return the trailing literal string of an f-string, or None.
+    Handles patterns like f"{self.interface_id}.disallow-new-enrollment"
+    where the suffix is the fixed part.
+    """
+    if node.values and isinstance(node.values[-1], ast.Constant):
+        v = node.values[-1].value
         if isinstance(v, str):
             return v
     return None
@@ -319,13 +335,17 @@ def _attribute_dynamic_file(file_path: str) -> FileAttribution:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                 continue
 
-            # F-string directly: options.get(f"prefix.{var}")
+            # F-string directly: options.get(f"prefix.{var}") or f"{var}.suffix"
             if isinstance(arg, ast.JoinedStr):
                 prefix = _fstring_prefix(arg)
                 if prefix:
                     attr.bounded_prefixes.append(prefix)
-                else:
-                    attr.unresolved = True
+                    continue
+                suffix = _fstring_suffix(arg)
+                if suffix:
+                    attr.bounded_suffixes.append(suffix)
+                    continue
+                attr.unresolved = True
                 continue
 
             # Variable name: resolve it.
@@ -336,7 +356,7 @@ def _attribute_dynamic_file(file_path: str) -> FileAttribution:
                 if name in param_names:
                     continue
 
-                # Locally assigned f-string: model_key = f"prefix.{x}"
+                # Locally assigned f-string: model_key = f"prefix.{x}" or f"{x}.suffix"
                 if name in local_vals:
                     val = local_vals[name]
                     if isinstance(val, ast.JoinedStr):
@@ -344,7 +364,11 @@ def _attribute_dynamic_file(file_path: str) -> FileAttribution:
                         if prefix:
                             attr.bounded_prefixes.append(prefix)
                         else:
-                            attr.unresolved = True
+                            suffix = _fstring_suffix(val)
+                            if suffix:
+                                attr.bounded_suffixes.append(suffix)
+                            else:
+                                attr.unresolved = True
                     elif isinstance(val, ast.Constant) and isinstance(val.value, str):
                         pass  # literal, already caught
                     else:
@@ -816,12 +840,22 @@ def print_html_report(
     roots: list[str],
     sentry_sha: str,
     getsentry_sha: str,
+    *,
+    active_db_keys: set[str] | None = None,
+    active_disk_keys: set[str] | None = None,
+    active_all_keys: set[str] | None = None,
+    active_unknown_db: set[str] | None = None,
 ) -> None:
+    active_db_keys    = active_db_keys    or set()
+    active_disk_keys  = active_disk_keys  or set()
+    active_all_keys   = active_all_keys   or set()
+    active_unknown_db = active_unknown_db or set()
     def esc(s: str) -> str:
         return _html.escape(str(s))
 
     safety_counts = Counter(safety_map.values())
-    total = len(registrations)
+    # total is computed after runtime cards are known; placeholder updated in template
+    total = len(registrations)  # updated below once runtime_keys is known
     sorted_regs = sorted(
         registrations,
         key=lambda r: (_SAFETY_ORDER.get(safety_map[r['key']], 99), r['key']),
@@ -836,7 +870,7 @@ def print_html_report(
         django_setting = options_mapper.get(key, '')
 
         sc = {'INVESTIGATE': 'investigate', 'SAFE_CANDIDATE': 'safe', 'NEVER_DELETE': 'never'}[safety]
-        open_attr = 'open' if safety != 'NEVER_DELETE' else ''
+        open_attr = 'open' if safety in ('INVESTIGATE', 'SAFE_CANDIDATE') else ''
         found_cls = 'found-none' if found == 'none' else 'found-hit'
         hints = hints_map.get(key, [])
 
@@ -845,6 +879,7 @@ def print_html_report(
             loc += f' <span class="django-tag">→ settings.{esc(django_setting)}</span>'
 
         hints_html = ''.join(f'<span class="hint-tag">{esc(h)}</span>' for h in hints)
+        db_html = '<span class="db-tag">DB value</span>' if key in active_db_keys else ''
 
         if usages:
             items = ''.join(f'<span class="usage-file">{esc(f)}</span>' for f in usages)
@@ -881,7 +916,7 @@ def print_html_report(
 <details {open_attr}><summary class="option-summary">
   <span class="badge badge-{sc}">{esc(safety)}</span>
   <span class="option-key">{esc(key)}</span>
-  {hints_html}<span class="found-tag {found_cls}">{esc(found)}</span>
+  {db_html}{hints_html}<span class="found-tag {found_cls}">{esc(found)}</span>
 </summary><div class="option-body">
   <div class="option-location">{loc}</div>
   <pre class="decl">{esc(reg["declaration"])}</pre>
@@ -889,9 +924,40 @@ def print_html_report(
   {commit_html}
 </div></details></div>''')
 
-    n_inv  = safety_counts.get('INVESTIGATE', 0)
-    n_safe = safety_counts.get('SAFE_CANDIDATE', 0)
-    n_nev  = safety_counts.get('NEVER_DELETE', 0)
+    # Runtime-only cards (not in static scan, auto-registered at runtime)
+    static_keys = {r['key'] for r in registrations}
+    runtime_keys = sorted(active_all_keys - static_keys)
+    for key in runtime_keys:
+        sub = 'feature' if key.startswith('feature.') else ('dynamic' if key.startswith('dynamic.') else 'other')
+        db_html = '<span class="db-tag">DB value</span>' if key in active_db_keys else ''
+        disk_html = '<span class="db-tag disk">disk</span>' if key in active_disk_keys else ''
+        cards.append(f'''\
+<div class="option option-runtime" data-key="{esc(key)}" data-status="RUNTIME_ONLY">
+<details><summary class="option-summary">
+  <span class="badge badge-runtime">runtime/{esc(sub)}</span>
+  <span class="option-key">{esc(key)}</span>
+  {db_html}{disk_html}
+</summary><div class="option-body">
+  <div class="option-location">auto-registered at runtime · not in static scan</div>
+</div></details></div>''')
+
+    # db-only cards (have DB value, found by neither scan)
+    for key in sorted(active_unknown_db):
+        cards.append(f'''\
+<div class="option option-runtime" data-key="{esc(key)}" data-status="DB_ONLY">
+<details><summary class="option-summary">
+  <span class="badge badge-runtime">db-only</span>
+  <span class="option-key">{esc(key)}</span>
+  <span class="db-tag">DB value</span>
+</summary><div class="option-body">
+  <div class="option-location">found in database · not in static scan or runtime registration</div>
+</div></details></div>''')
+
+    n_inv     = safety_counts.get('INVESTIGATE', 0)
+    n_safe    = safety_counts.get('SAFE_CANDIDATE', 0)
+    n_nev     = safety_counts.get('NEVER_DELETE', 0)
+    n_runtime = len(runtime_keys) + len(active_unknown_db)
+    total     = len(registrations) + n_runtime
 
     print(f'''\
 <!DOCTYPE html>
@@ -953,6 +1019,12 @@ pre.decl{{background:#f6f8fa;color:#57606a;margin:0;padding:10px 14px;font-size:
 .usage-file{{font-family:monospace;font-size:12px;color:#0969da;display:block;padding:1px 0;word-break:break-all}}
 .no-usages{{padding:8px 14px;border-top:1px solid #ffd7d5;background:#ffebe9;font-size:12px;color:#cf222e;font-weight:500}}
 .hint-tag{{font-size:11px;background:#fff8c5;color:#7d4e00;border:1px solid #e3b341;padding:1px 6px;border-radius:4px;margin-right:4px;white-space:nowrap}}
+.db-tag{{font-size:11px;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;padding:1px 6px;border-radius:4px;margin-right:4px;white-space:nowrap;font-weight:500}}
+.db-tag.disk{{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}}
+/* ── runtime-only cards ── */
+.option-runtime{{border-left-color:#a78bfa;opacity:.8}}
+.badge-runtime{{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd}}
+.stat-runtime{{background:#ede9fe;color:#5b21b6;border-color:#c4b5fd}}
 /* ── git intro commit ── */
 .git-intro{{border-top:1px solid #d0d7de}}
 .git-intro-summary{{padding:6px 14px;font-size:12px;color:#8c959f;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
@@ -975,6 +1047,7 @@ pre.diff{{margin:0;padding:10px 14px;font-size:11px;line-height:1.45;overflow-x:
   <span class="stat stat-investigate" onclick="setStatus('INVESTIGATE')">{n_inv} investigate</span>
   <span class="stat stat-safe" onclick="setStatus('SAFE_CANDIDATE')">{n_safe} safe candidate</span>
   <span class="stat stat-never" onclick="setStatus('NEVER_DELETE')">{n_nev} never delete</span>
+  {f'<span class="stat stat-runtime" onclick="setStatus(\'RUNTIME_ONLY\')">{n_runtime} runtime-only</span>' if n_runtime else ''}
   <span class="topbar-sha">sentry@{sentry_sha[:9]} · getsentry@{getsentry_sha[:9]}</span>
   <div class="controls">
     <button class="text-btn" onclick="expandAll()">expand all</button>
@@ -983,6 +1056,7 @@ pre.diff{{margin:0;padding:10px 14px;font-size:11px;line-height:1.45;overflow-x:
     <button class="filter-btn" data-status="INVESTIGATE" onclick="setStatus('INVESTIGATE')">investigate</button>
     <button class="filter-btn" data-status="SAFE_CANDIDATE" onclick="setStatus('SAFE_CANDIDATE')">safe candidate</button>
     <button class="filter-btn" data-status="NEVER_DELETE" onclick="setStatus('NEVER_DELETE')">never delete</button>
+    {f'<button class="filter-btn" data-status="RUNTIME_ONLY" onclick="setStatus(\'RUNTIME_ONLY\')">runtime only</button>' if n_runtime else ''}
     <input class="search-box" type="search" placeholder="search key…" oninput="setSearch(this.value)">
     <span class="vis-count" id="vis-count">{total} options</span>
   </div>
@@ -1163,7 +1237,7 @@ def fetch_investigate_commits(
     roots: list[str],
 ) -> dict[str, dict | None]:
     """Parallel-fetch first-introduction commits for every INVESTIGATE option."""
-    candidates = [r for r in registrations if safety_map[r['key']] == 'INVESTIGATE']
+    candidates = [r for r in registrations if safety_map[r['key']] in ('INVESTIGATE', 'SAFE_CANDIDATE')]
     if not candidates:
         return {}
 
@@ -1225,7 +1299,48 @@ def main() -> None:
         '--no-color', action='store_true', dest='no_color',
         help='Disable color output',
     )
+    parser.add_argument(
+        '--active-options', metavar='FILE',
+        help='Path to active_options.json from enumerate_active_options.py. '
+             'When provided the master CSV includes runtime-only and db-only '
+             'options and adds has_db_value / has_disk_value columns.',
+    )
     args = parser.parse_args()
+
+    # --- Load active options snapshot (optional) ---
+    active_db_keys:      set[str] = set()
+    active_disk_keys:    set[str] = set()
+    active_all_keys:     set[str] = set()
+    active_unknown_db:   set[str] = set()
+
+    if args.active_options:
+        try:
+            with open(args.active_options) as _af:
+                _active = json.load(_af)
+            active_db_keys    = set(_active.get('has_db_value', []))
+            active_disk_keys  = set(_active.get('has_disk_value', []))
+            active_all_keys   = set(_active.get('all_registered', []))
+            active_unknown_db = set(_active.get('unknown_db_keys', []))
+            print(
+                f'Active options loaded: {len(active_all_keys)} registered, '
+                f'{len(active_db_keys)} db values, '
+                f'{len(active_disk_keys)} disk values',
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(f'WARNING: could not load active options: {exc}', file=sys.stderr)
+
+    def option_category(key: str, in_static: bool, safety: str) -> str:
+        """Assign a category for the master list."""
+        if not in_static:
+            if key.startswith('feature.'):
+                return 'runtime/feature'
+            if key.startswith('dynamic.'):
+                return 'runtime/dynamic'
+            return 'runtime/other'
+        if safety == 'NEVER_DELETE':
+            return 'static/active'
+        return 'static/candidate'   # SAFE_CANDIDATE or INVESTIGATE
 
     roots = [args.sentry, args.getsentry]
     # Registration discovery stays scoped to the source subdirs to avoid
@@ -1310,10 +1425,37 @@ def main() -> None:
     # --- Attribute dynamic-access files to bound their key reach ---
     print('Attributing dynamic-access files...', file=sys.stderr)
     file_attributions = attribute_dynamic_files(ast_result.dynamic_access_files)
-    n_bounded  = sum(1 for a in file_attributions.values() if a.bounded_prefixes or a.bounded_keys)
-    n_admin    = sum(1 for a in file_attributions.values() if a.is_admin_plane and not a.unresolved)
-    n_unresol  = sum(1 for a in file_attributions.values() if a.unresolved)
-    print(f'  {n_bounded} bounded  {n_admin} admin-plane  {n_unresol} unresolved', file=sys.stderr)
+
+    # B: admin-plane files (options.all/filter) are management interfaces, not application
+    # use of a specific option.  Exclude them from the uncertainty calculation even if they
+    # also happen to have incidental unresolved calls.
+    truly_uncertain: dict[str, FileAttribution] = {
+        path: attr for path, attr in file_attributions.items()
+        if attr.unresolved and not attr.is_admin_plane
+    }
+
+    # A: Pre-read uncertain file contents for namespace plausibility checks.
+    # Reading once here is much cheaper than per-key lookups inside classify().
+    uncertain_contents: dict[str, str] = {}
+    for path in truly_uncertain:
+        try:
+            with open(path, errors='replace') as f:
+                uncertain_contents[path] = f.read()
+        except OSError:
+            uncertain_contents[path] = ''
+
+    n_bounded = sum(1 for a in file_attributions.values() if a.bounded_prefixes or a.bounded_keys)
+    n_admin   = sum(1 for a in file_attributions.values() if a.is_admin_plane)
+    n_unresol = len(truly_uncertain)
+    print(f'  {n_bounded} bounded  {n_admin} admin-plane  {n_unresol} app-unresolved', file=sys.stderr)
+
+    def _namespace_prefix(key: str) -> str:
+        """Return the two-segment prefix used for plausibility matching.
+        e.g. 'api.organization_events.rate-limit-increased.orgs' → 'api.organization_events'
+        Single-segment keys return themselves.
+        """
+        parts = key.split('.')
+        return '.'.join(parts[:2]) if len(parts) >= 2 else key
 
     # --- Safety classification ---
     def classify(reg: dict) -> str:
@@ -1321,12 +1463,22 @@ def main() -> None:
         flags = reg.get('flags', '')
         if merged_usages.get(key) or options_mapper.get(key) or 'FLAG_REQUIRED' in flags:
             return 'NEVER_DELETE'
-        # Check if any attributed file's bounded set covers this key.
+        # Bounded dynamic patterns definitively cover this key.
         for attr in file_attributions.values():
-            if any(key.startswith(p) for p in attr.bounded_prefixes) or key in attr.bounded_keys:
-                return 'NEVER_DELETE'   # definitely reached by bounded dynamic access
-        # If any file has genuinely unresolved dynamic calls, we can't rule it out.
-        if n_unresol:
+            if (
+                any(key.startswith(p) for p in attr.bounded_prefixes)
+                or any(key.endswith(s) for s in attr.bounded_suffixes)
+                or key in attr.bounded_keys
+            ):
+                return 'NEVER_DELETE'
+        if not truly_uncertain:
+            return 'SAFE_CANDIDATE'
+        # A: Plausibility filter — only INVESTIGATE if a truly-uncertain (non-admin-plane)
+        # file references this key's two-segment namespace prefix.  If billing/quota/rollout
+        # code doesn't mention 'api.organization_events' anywhere, it can't be dynamically
+        # constructing 'api.organization_events.rate-limit-increased.orgs'.
+        prefix = _namespace_prefix(key)
+        if any(prefix in content for content in uncertain_contents.values()):
             return 'INVESTIGATE'
         return 'SAFE_CANDIDATE'
 
@@ -1366,6 +1518,10 @@ def main() -> None:
             registrations, merged_usages, options_mapper,
             found_by_map, safety_map, hints_map, first_commits, roots,
             get_sha(args.sentry), get_sha(args.getsentry),
+            active_db_keys=active_db_keys,
+            active_disk_keys=active_disk_keys,
+            active_all_keys=active_all_keys,
+            active_unknown_db=active_unknown_db,
         )
     elif args.all:
         print_all_report(
@@ -1375,14 +1531,17 @@ def main() -> None:
     else:
         writer = csv.writer(sys.stdout)
         writer.writerow([
-            'key', 'type', 'flags', 'default', 'source', 'lineno',
-            'django_setting', 'found_by', 'safe_to_delete', 'hints', 'usages',
+            'key', 'category', 'type', 'flags', 'default', 'source', 'lineno',
+            'django_setting', 'found_by', 'safe_to_delete', 'hints',
+            'has_db_value', 'has_disk_value', 'usages',
         ])
+        # Static options (from register() scan)
         for reg in registrations:
             key = reg['key']
             usages_list = sorted(shorten(f, roots) for f in merged_usages.get(key, set()))
             writer.writerow([
                 key,
+                option_category(key, True, safety_map[key]),
                 reg['type'],
                 reg['flags'],
                 reg['default'],
@@ -1392,7 +1551,34 @@ def main() -> None:
                 found_by_map[key],
                 safety_map[key],
                 ', '.join(hints_map[key]),
+                'yes' if key in active_db_keys else '',
+                'yes' if key in active_disk_keys else '',
                 '; '.join(usages_list),
+            ])
+        # Runtime-only options: in active_options but not in the static scan
+        if active_all_keys:
+            for key in sorted(active_all_keys - known_keys):
+                writer.writerow([
+                    key,
+                    option_category(key, False, ''),
+                    '', '', '', '', '',   # type/flags/default/source/lineno
+                    '',                  # django_setting
+                    '',                  # found_by
+                    'RUNTIME_ONLY',
+                    '',                  # hints
+                    'yes' if key in active_db_keys else '',
+                    'yes' if key in active_disk_keys else '',
+                    '',                  # usages
+                ])
+        # DB-only options: have a DB value but found by neither scan
+        for key in sorted(active_unknown_db):
+            writer.writerow([
+                key,
+                'db-only',
+                '', '', '', '', '',
+                '', '', 'DB_ONLY', '',
+                'yes', '',
+                '',
             ])
 
     # --- Summary to stderr ---
@@ -1426,11 +1612,15 @@ def main() -> None:
     candidates = [r for r in registrations if safety_map[r['key']] in ('INVESTIGATE', 'SAFE_CANDIDATE')]
     if candidates:
         print(file=sys.stderr)
-        bucket = 'INVESTIGATE' if n_unresol else 'SAFE_CANDIDATE'
-        sc = e.for_status(bucket)
+        n_safe = safety_counts.get('SAFE_CANDIDATE', 0)
+        n_inv  = safety_counts.get('INVESTIGATE', 0)
+        parts  = []
+        if n_safe:
+            parts.append(f'{e.for_status("SAFE_CANDIDATE")}{n_safe} SAFE_CANDIDATE{e.reset}')
+        if n_inv:
+            parts.append(f'{e.for_status("INVESTIGATE")}{n_inv} INVESTIGATE{e.reset}')
         print(
-            f'{e.bold}--- {len(candidates)} candidate options '
-            f'({sc}{bucket}{e.reset}{e.bold}) ---{e.reset}',
+            f'{e.bold}--- {len(candidates)} candidate options ({", ".join(parts)}{e.bold}) ---{e.reset}',
             file=sys.stderr,
         )
         for reg in candidates:
