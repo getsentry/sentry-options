@@ -67,7 +67,8 @@
             {"$ref": "#/definitions/ContainsCondition"},
             {"$ref": "#/definitions/NotContainsCondition"},
             {"$ref": "#/definitions/EqualsCondition"},
-            {"$ref": "#/definitions/NotEqualsCondition"}
+            {"$ref": "#/definitions/NotEqualsCondition"},
+            {"$ref": "#/definitions/MatchesCondition"}
           ]
         }
       },
@@ -241,6 +242,29 @@
           {"type": "array", "items": {"type": "number"}},
           {"type": "array", "items": {"type": "string"}}
         ]
+      }
+    },
+    "required": ["property", "operator", "value"],
+    "additionalProperties": false
+  },
+  "MatchesCondition": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Optional name for this condition."
+      },
+      "property": {
+        "type": "string",
+        "description": "The evaluation context property to match against."
+      },
+      "operator": {
+        "type": "string",
+        "enum": ["matches"]
+      },
+      "value": {
+        "type": "array",
+        "items": {"type": "string"}
       }
     },
     "required": ["property", "operator", "value"],

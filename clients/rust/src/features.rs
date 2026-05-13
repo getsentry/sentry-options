@@ -152,6 +152,7 @@ enum OperatorKind {
     NotContains,
     Equals,
     NotEquals,
+    Matches,
 }
 
 #[derive(Debug)]
@@ -241,6 +242,7 @@ impl Condition {
             "not_contains" => OperatorKind::NotContains,
             "equals" => OperatorKind::Equals,
             "not_equals" => OperatorKind::NotEquals,
+            "matches" => OperatorKind::Matches,
             _ => return None,
         };
         let value = value.get("value")?.clone();
@@ -262,6 +264,7 @@ impl Condition {
             OperatorKind::NotContains => !eval_contains(ctx_val, &self.value),
             OperatorKind::Equals => eval_equals(ctx_val, &self.value),
             OperatorKind::NotEquals => !eval_equals(ctx_val, &self.value),
+            OperatorKind::Matches => eval_matches(ctx_val, &self.value),
         }
     }
 }
@@ -343,6 +346,67 @@ fn eval_equals(ctx_val: &Value, condition_val: &Value) -> bool {
         }
         _ => false,
     }
+}
+
+/// Match a value string against a single star-only glob pattern (case-insensitive).
+/// '*' matches zero or more characters. All other characters, including '?' and '[',
+/// are treated as literals.
+fn glob_star_match(pattern: &str, value: &str) -> bool {
+    let pattern = pattern.to_lowercase();
+    let value = value.to_lowercase();
+    let parts: Vec<&str> = pattern.split('*').collect();
+    // No wildcard — require exact equality.
+    if parts.len() == 1 {
+        return value == pattern;
+    }
+    // Check prefix anchor.
+    if !value.starts_with(parts[0]) {
+        return false;
+    }
+    // Check suffix anchor (skip when the last part is empty, i.e. pattern ends with '*').
+    if !parts[parts.len() - 1].is_empty() && !value.ends_with(parts[parts.len() - 1]) {
+        return false;
+    }
+    // Search window: after the prefix, before the suffix.
+    let end = if parts[parts.len() - 1].is_empty() {
+        value.len()
+    } else {
+        value.len() - parts[parts.len() - 1].len()
+    };
+    let mut start = parts[0].len();
+    // The prefix and suffix anchors overlap, meaning the
+    // value is shorter than prefix + suffix combined — no valid match possible.
+    if start > end {
+        return false;
+    }
+    // Walk middle segments left-to-right, advancing the cursor on each hit.
+    for part in &parts[1..parts.len() - 1] {
+        if part.is_empty() {
+            // Skip consecutive '*'s.
+            continue;
+        }
+        match value[start..end].find(*part) {
+            Some(idx) => start += idx + part.len(),
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Check if a string context value matches any pattern in the condition array.
+/// Patterns use star-only glob semantics; comparison is case-insensitive.
+/// Returns false for non-string context values.
+fn eval_matches(ctx_val: &Value, condition_val: &Value) -> bool {
+    let Some(s) = ctx_val.as_str() else {
+        return false;
+    };
+    let Some(arr) = condition_val.as_array() else {
+        return false;
+    };
+    arr.iter().any(|v| {
+        v.as_str()
+            .is_some_and(|pattern| glob_star_match(pattern, s))
+    })
 }
 
 #[derive(Debug, PartialEq)]
@@ -964,5 +1028,195 @@ mod tests {
         let mut ctx = FeatureContext::new();
         ctx.insert("slug", json!("123"));
         assert!(check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_condition_matches_literal() {
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["sentry"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("sentry"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("getsentry"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_matches_prefix_wildcard() {
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["jayonb*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("jayonb73"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        // '*' matches zero chars too
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("jayonb"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("slug", json!("dangoldonb1"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx3));
+    }
+
+    #[test]
+    fn test_condition_matches_prefix_and_suffix_wildcard() {
+        let cond = r#"{"property": "email", "operator": "matches", "value": ["jay.goss+onboarding*@sentry.io"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("email", json!("jay.goss+onboarding70@sentry.io"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        // '*' matches zero chars — prefix runs directly into suffix
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("email", json!("jay.goss+onboarding@sentry.io"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("email", json!("jay.goss+onboarding70@example.com"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx3));
+    }
+
+    #[test]
+    fn test_condition_matches_suffix_wildcard() {
+        let cond = r#"{"property": "email", "operator": "matches", "value": ["*@sentry.io"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("email", json!("user@sentry.io"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("email", json!("user@example.com"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_matches_multi_segment_wildcard() {
+        let cond = r#"{"property": "name", "operator": "matches", "value": ["a*b*c"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("name", json!("abc"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("name", json!("aXbYc"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("name", json!("aXXbYYc"));
+        assert!(check(&opts, "organizations:test-feature", &ctx3));
+
+        let mut ctx4 = FeatureContext::new();
+        ctx4.insert("name", json!("aXXc"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx4));
+    }
+
+    #[test]
+    fn test_condition_matches_star_only_pattern() {
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("anything"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!(""));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_matches_case_insensitive() {
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["JAYONB*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("jayonb73"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        // Pattern lowercase, value uppercase
+        let cond2 = r#"{"property": "slug", "operator": "matches", "value": ["jayonb*"]}"#;
+        let (opts2, _t2) = setup_feature_options(&feature_json(true, 100, cond2));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("JAYONB73"));
+        assert!(check(&opts2, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_matches_no_match() {
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["jayonb*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("dangoldonb1"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_condition_matches_multiple_patterns() {
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["jayonb*", "dangoldonb*", "value-disc-*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let slugs = [
+            ("jayonb73", true),
+            ("dangoldonb3", true),
+            ("value-disc-7", true),
+            ("other-org", false),
+        ];
+        for (slug, expected) in slugs {
+            let mut ctx = FeatureContext::new();
+            ctx.insert("slug", json!(slug));
+            assert_eq!(
+                check(&opts, "organizations:test-feature", &ctx),
+                expected,
+                "slug={slug}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_matches_overlapping_prefix_suffix_anchors() {
+        // "a*a" requires at least "aa" — a single "a" must not match.
+        let cond = r#"{"property": "slug", "operator": "matches", "value": ["a*a"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("a"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("aa"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+
+        // "ab*ab" requires at least "abab" — "ab" alone must not match.
+        let cond2 = r#"{"property": "slug", "operator": "matches", "value": ["ab*ab"]}"#;
+        let (opts2, _t2) = setup_feature_options(&feature_json(true, 100, cond2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("slug", json!("ab"));
+        assert!(!check(&opts2, "organizations:test-feature", &ctx3));
+
+        let mut ctx4 = FeatureContext::new();
+        ctx4.insert("slug", json!("abab"));
+        assert!(check(&opts2, "organizations:test-feature", &ctx4));
+    }
+
+    #[test]
+    fn test_condition_matches_non_string_context_returns_false() {
+        // Non-string context values should not match any pattern — eval_matches returns false.
+        let cond = r#"{"property": "org_id", "operator": "matches", "value": ["123*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", json!(123));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
     }
 }
