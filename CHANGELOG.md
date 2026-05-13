@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.12
+
+### Internal Changes 🔧
+
+- (flagpole-wildcard-op) Implementing 'matches' as a flagpole condition by @Abdkhan14 in [#124](https://github.com/getsentry/sentry-options/pull/124)
+
 ## 1.0.11
 
 ### New Features ✨
