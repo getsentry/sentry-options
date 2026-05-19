@@ -9,5 +9,5 @@ cargo bench --package sentry-options
 ## Python
 
 ```bash
-python benchmarks/python/bench_get.py
+python clients/python/benches/bench_get.py
 ```
