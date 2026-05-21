@@ -1,4 +1,21 @@
 # Changelog
+## 1.0.13
+
+### New Features ✨
+
+- (profiling) Benchmark `get()` for rust and python by @kenzoengineer in [#126](https://github.com/getsentry/sentry-options/pull/126)
+
+### Internal Changes 🔧
+
+#### Flagpole Wildcard Op
+
+- Implementing 'not_matches' as a flagpole… by @Abdkhan14 in [#127](https://github.com/getsentry/sentry-options/pull/127)
+- Implementing 'matches' as a flagpole condition by @Abdkhan14 in [#124](https://github.com/getsentry/sentry-options/pull/124)
+
+### Other
+
+- release: 1.0.12 by @Abdkhan14 in [#125](https://github.com/getsentry/sentry-options/pull/125)
+
 ## 1.0.12
 
 ### Internal Changes 🔧
