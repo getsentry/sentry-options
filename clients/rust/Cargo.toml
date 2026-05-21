@@ -22,3 +22,11 @@ serde_json.workspace = true
 [[bench]]
 name = "options_bench"
 harness = false
+
+[[bench]]
+name = "features_bench"
+harness = false
+
+[[bench]]
+name = "isset_bench"
+harness = false
