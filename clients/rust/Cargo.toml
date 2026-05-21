@@ -30,3 +30,7 @@ harness = false
 [[bench]]
 name = "isset_bench"
 harness = false
+
+[[bench]]
+name = "reload_trace"
+harness = false
