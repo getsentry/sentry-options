@@ -1302,33 +1302,36 @@ def main() -> None:
     parser.add_argument(
         '--active-options', metavar='FILE',
         help='Path to active_options.json from enumerate_active_options.py. '
-             'When provided the master CSV includes runtime-only and db-only '
-             'options and adds has_db_value / has_disk_value columns.',
+             'Defaults to <getsentry>/active_options.json if that file exists.',
     )
     args = parser.parse_args()
 
-    # --- Load active options snapshot (optional) ---
+    # --- Load active options snapshot (auto-discovered or explicit) ---
     active_db_keys:      set[str] = set()
     active_disk_keys:    set[str] = set()
     active_all_keys:     set[str] = set()
     active_unknown_db:   set[str] = set()
 
-    if args.active_options:
+    active_options_path = args.active_options or os.path.join(os.path.dirname(__file__), 'active_options.json')
+    if os.path.exists(active_options_path):
         try:
-            with open(args.active_options) as _af:
+            with open(active_options_path) as _af:
                 _active = json.load(_af)
             active_db_keys    = set(_active.get('has_db_value', []))
             active_disk_keys  = set(_active.get('has_disk_value', []))
             active_all_keys   = set(_active.get('all_registered', []))
             active_unknown_db = set(_active.get('unknown_db_keys', []))
             print(
-                f'Active options loaded: {len(active_all_keys)} registered, '
+                f'Active options loaded from {active_options_path}: '
+                f'{len(active_all_keys)} registered, '
                 f'{len(active_db_keys)} db values, '
                 f'{len(active_disk_keys)} disk values',
                 file=sys.stderr,
             )
         except Exception as exc:
-            print(f'WARNING: could not load active options: {exc}', file=sys.stderr)
+            print(f'WARNING: could not load active options from {active_options_path}: {exc}', file=sys.stderr)
+    elif args.active_options:
+        print(f'WARNING: --active-options file not found: {active_options_path}', file=sys.stderr)
 
     def option_category(key: str, in_static: bool, safety: str) -> str:
         """Assign a category for the master list."""
