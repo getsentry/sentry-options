@@ -153,6 +153,7 @@ enum OperatorKind {
     Equals,
     NotEquals,
     Matches,
+    NotMatches,
 }
 
 #[derive(Debug)]
@@ -243,6 +244,7 @@ impl Condition {
             "equals" => OperatorKind::Equals,
             "not_equals" => OperatorKind::NotEquals,
             "matches" => OperatorKind::Matches,
+            "not_matches" => OperatorKind::NotMatches,
             _ => return None,
         };
         let value = value.get("value")?.clone();
@@ -265,6 +267,7 @@ impl Condition {
             OperatorKind::Equals => eval_equals(ctx_val, &self.value),
             OperatorKind::NotEquals => !eval_equals(ctx_val, &self.value),
             OperatorKind::Matches => eval_matches(ctx_val, &self.value),
+            OperatorKind::NotMatches => !eval_matches(ctx_val, &self.value),
         }
     }
 }
@@ -1218,5 +1221,187 @@ mod tests {
         let mut ctx = FeatureContext::new();
         ctx.insert("org_id", json!(123));
         assert!(!check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_condition_not_matches_literal() {
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["sentry"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        // Exact match → not_matches returns false
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("sentry"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        // No match → not_matches returns true
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("getsentry"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_not_matches_prefix_wildcard() {
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["jayonb*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("jayonb73"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        // '*' matches zero chars — bare prefix is still a match, so not_matches = false
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("jayonb"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("slug", json!("dangoldonb1"));
+        assert!(check(&opts, "organizations:test-feature", &ctx3));
+    }
+
+    #[test]
+    fn test_condition_not_matches_prefix_and_suffix_wildcard() {
+        let cond = r#"{"property": "email", "operator": "not_matches", "value": ["jay.goss+onboarding*@sentry.io"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("email", json!("jay.goss+onboarding70@sentry.io"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("email", json!("jay.goss+onboarding@sentry.io"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("email", json!("jay.goss+onboarding70@example.com"));
+        assert!(check(&opts, "organizations:test-feature", &ctx3));
+    }
+
+    #[test]
+    fn test_condition_not_matches_suffix_wildcard() {
+        let cond = r#"{"property": "email", "operator": "not_matches", "value": ["*@sentry.io"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("email", json!("user@sentry.io"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("email", json!("user@example.com"));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_not_matches_multi_segment_wildcard() {
+        let cond = r#"{"property": "name", "operator": "not_matches", "value": ["a*b*c"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("name", json!("abc"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("name", json!("aXbYc"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("name", json!("aXXbYYc"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx3));
+
+        // Does not match pattern → not_matches returns true
+        let mut ctx4 = FeatureContext::new();
+        ctx4.insert("name", json!("aXXc"));
+        assert!(check(&opts, "organizations:test-feature", &ctx4));
+    }
+
+    #[test]
+    fn test_condition_not_matches_star_only_pattern() {
+        // "*" matches everything — not_matches always returns false
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("anything"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!(""));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_not_matches_case_insensitive() {
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["JAYONB*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        // Pattern uppercase, value lowercase — still matches, so not_matches = false
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("jayonb73"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        // Pattern lowercase, value uppercase — still matches, so not_matches = false
+        let cond2 = r#"{"property": "slug", "operator": "not_matches", "value": ["jayonb*"]}"#;
+        let (opts2, _t2) = setup_feature_options(&feature_json(true, 100, cond2));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("JAYONB73"));
+        assert!(!check(&opts2, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_not_matches_no_match() {
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["jayonb*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("dangoldonb1"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_condition_not_matches_multiple_patterns() {
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["jayonb*", "dangoldonb*", "value-disc-*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        // Any pattern matches → not_matches returns false
+        let slugs_false = ["jayonb73", "dangoldonb3", "value-disc-7"];
+        for slug in slugs_false {
+            let mut ctx = FeatureContext::new();
+            ctx.insert("slug", json!(slug));
+            assert!(
+                !check(&opts, "organizations:test-feature", &ctx),
+                "slug={slug} should not match"
+            );
+        }
+
+        // No pattern matches → not_matches returns true
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("other-org"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_condition_not_matches_overlapping_prefix_suffix_anchors() {
+        // "a*a" requires at least "aa" — "a" alone doesn't match, so not_matches = true
+        let cond = r#"{"property": "slug", "operator": "not_matches", "value": ["a*a"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("slug", json!("a"));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("slug", json!("aa"));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_not_matches_non_string_context_returns_true() {
+        // eval_matches returns false for non-string → not_matches returns true
+        let cond = r#"{"property": "org_id", "operator": "not_matches", "value": ["123*"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", json!(123));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
     }
 }
