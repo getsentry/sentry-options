@@ -323,6 +323,34 @@ jobs:
       schemas-path: sentry-options/schemas
 ```
 
+#### 8. Add Automatic SHA Bump
+
+This workflow automatically bumps the schema SHA in `sentry-options-automator` when
+schema changes merge to main, so you don't have to create that PR manually.
+
+`.github/workflows/bump-sentry-options-sha.yml`:
+```yaml
+name: Bump sentry-options SHA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sentry-options/schemas/**'
+
+jobs:
+  bump-sha:
+    uses: getsentry/sentry-options/.github/workflows/bump-sha.yml@main
+    secrets: inherit
+    with:
+      schemas-path: sentry-options/schemas
+```
+
+When a PR that touches schemas merges to main, this creates a PR in
+`sentry-options-automator` updating `repos.json` with the new commit SHA.
+The PR is labeled `auto-merge` and will be automatically approved and
+squash-merged once CI passes.
+
 ### Phase 2: sentry-options-automator Changes
 
 **Dependency:** Schema must exist in service repo first (CI fetches it for validation).
@@ -350,7 +378,8 @@ Add your service to `repos.json`:
 - `path` - Path to schemas directory within the repo (contains `{namespace}/schema.json`)
 - `sha` - Commit SHA (pinned for reproducibility)
 
-**Important:** When you update your schema, you must also update the SHA in repos.json to point to the commit containing the new schema.
+If your service repo has the auto SHA bump workflow (step 8 above), the SHA
+will be kept up to date automatically when schema changes merge.
 
 #### 2. Create Values File
 
@@ -370,23 +399,26 @@ Region-specific overrides in `option-values/{namespace}/{region}/values.yaml`.
 When you update your schema in the service repo:
 
 1. Merge schema change to service repo (e.g., `getsentry/seer`)
-2. Get the merge commit SHA
-3. Update `repos.json` in sentry-options-automator with new SHA
-4. If values need to change, update them in same PR
+2. SHA bump in `sentry-options-automator` happens automatically via the bump-sha workflow
+3. If values need to change, create a PR in the automator repo with the updated values
 
 ```
 Service Repo                    sentry-options-automator
 ───────────                    ─────────────────────────
-PR: Update schema.json    →    PR: Update repos.json SHA
-        ↓                              ↓
-    Merge                          + Update values if needed
-        ↓                              ↓
-   (commit abc123)                  Merge
+PR: Update schema.json
+        ↓
+    Merge
+        ↓
+   (commit abc123)         →    Auto PR: Update repos.json SHA
                                        ↓
-                               CI validates values against new schema
+                               Auto-merge after CI passes
                                        ↓
                                CD deploys new ConfigMaps
 ```
+
+If you need to set option values alongside the schema change, create a
+separate PR in the automator repo for the values. The auto-bumped SHA
+PR will merge first, then your values PR can merge after.
 
 ### Phase 3: ops Repo Changes
 
