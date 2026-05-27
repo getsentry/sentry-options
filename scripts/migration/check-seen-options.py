@@ -12,7 +12,7 @@ HERE = Path(__file__).parent
 SEEN_FILE = HERE / "seen.txt"
 INVENTORY_FILE = HERE / "inventory.csv"
 
-seen = set(SEEN_FILE.read_text().splitlines())
+seen = {line.split("\t")[0] for line in SEEN_FILE.read_text().splitlines() if line}
 
 inventory: dict[str, dict] = {}
 with INVENTORY_FILE.open() as f:

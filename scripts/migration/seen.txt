@@ -1,783 +1,935 @@
-analytics.backend
-analytics.options
-api-token-async-flush
-api.deprecation.brownout-cron
-api.deprecation.brownout-duration
-api.organization.disable-last-deploys
-api.rate-limit.org-create
-apigateway.proxy.circuit-breaker.config
-apigateway.proxy.circuit-breaker.enabled
-apigateway.proxy.circuit-breaker.enforce
-apigateway.proxy.timeout
-apitoken.use-and-update-hash-rate
-assemble.read_from_redis
-auth-fly.client-id
-auth-fly.client-secret
-auth-google.client-id
-auth-google.client-secret
-auth.ip-rate-limit
-auth.user-rate-limit
-backfill_new_categories.org_ids
-backpressure.checking.enabled
-backpressure.checking.interval
-backpressure.high_watermarks.attachments-store
-backpressure.high_watermarks.post-process-locks
-backpressure.high_watermarks.processing-locks
-backpressure.high_watermarks.processing-store
-backpressure.high_watermarks.processing-store-transactions
-backpressure.monitoring.enabled
-backpressure.monitoring.interval
-backpressure.status_ttl
-billing.add-billing-metric-usage-admin.organizations
-billing.seat-based-seer-launch
-billing.usage_service.cutover_date
-billing.usage_service.enabled
-billing.usagebuffer.batch_incr.projects
-billing.usagebuffer.batch_incr.rollout
-billing.usagebuffer.redis.pipeline_size
-billing.usagebuffer.scan_limit
-billing.usagebuffer.unified_pipeline.chunk_size
-billing.usagebuffer.unified_pipeline.rollout
-chart-rendering.chartcuterie
-chart-rendering.storage.backend
-chart-rendering.storage.options
-chunk-upload.no-compression
-cleanup.abort_execution
-codecov.api-bridge-signing-secret
-codecov.client-secret
-codecov.signing_secret
-consumer.dump_stacktrace_on_shutdown
-consumer.join.profiling.rate
-consumer.shared_memory_spawn_process
-consumer.verbose_multiprocessing_logs
-continuous-profiling-beta
-crons.dispatch_incident_occurrences_to_consumer
-crons.organization.disable-check-in
-crons.per_monitor_rate_limit
-dashboards.prebuilt-dashboard-ids
-data-forwarding.project-cache-ttl
-data-forwarding.task-rollout-rate
-database.encryption.method
-delayed_processing.batch_size
-delayed_workflow.rollout
-deletions.group-hash-metadata.batch-size
-deletions.group-hashes-batch-size
-demo-mode.enabled
-demo-mode.orgs
-demo-mode.users
-demo-org-ids
-discord.application-id
-discord.bot-token
-discord.client-secret
-discord.public-key
-dsym.cache-path
-dynamic-sampling.check_span_feature_flag
-dynamic-sampling.config.killswitch
-dynamic-sampling.per_org.killswitch
-dynamic-sampling.per_org.metrics-sample-rate
-dynamic-sampling.per_org.rollout-rate
-dynamic.saferollouts.occurrences_on_eap.should_eval_experimental
-embeddings-grouping.seer.delete-record-batch-size
-eventstore.adjacent_event_ids_use_snql
-eventstream.eap.deletion-enabled
-eventstream.eap_forwarding_rate
-eventstream:kafka-headers
-explore.trace-items.keys.max
-explore.trace-items.values.max
-feature.organization:workflow-engine-evaluate-seer-activities
-feature.organizations:ai-issue-detection
-feature.organizations:alert-allow-indexed
-feature.organizations:anomaly-detection-eap
-feature.organizations:autofix-on-explorer
-feature.organizations:billing-platform-quotas-enabled
-feature.organizations:billing-platform-quotas-shadow
-feature.organizations:billing-usage-service-shadow-mode
-feature.organizations:code-review-beta
-feature.organizations:code-review-experiments-enabled
-feature.organizations:conduit-demo
-feature.organizations:context-engine-structured-page-context
-feature.organizations:continuous-profiling
-feature.organizations:create-org-control
-feature.organizations:custom-span-trimming-max-size
-feature.organizations:dashboards-ai-generate
-feature.organizations:dashboards-ai-generate-edit
-feature.organizations:dashboards-basic
-feature.organizations:dashboards-details-widget
-feature.organizations:dashboards-drilldown-flow
-feature.organizations:dashboards-edit
-feature.organizations:dashboards-import
-feature.organizations:dashboards-metrics-transition
-feature.organizations:dashboards-prebuilt-insights-dashboards
-feature.organizations:dashboards-revisions
-feature.organizations:dashboards-sync-all-registered-prebuilt-dashboards
-feature.organizations:dashboards-text-widgets
-feature.organizations:dashboards-widget-unfurl
-feature.organizations:data-browsing-heat-map-widget
-feature.organizations:data-browsing-widget-unfurl
-feature.organizations:data-secrecy
-feature.organizations:data-secrecy-v2
-feature.organizations:default-anomaly-detector
-feature.organizations:defer-commit-resolution
-feature.organizations:discover-saved-queries-deprecation
-feature.organizations:dynamic-sampling-custom
-feature.organizations:dynamic-sampling-minimum-sample-rate
-feature.organizations:explore-dev-features
-feature.organizations:explore-errors
-feature.organizations:expose-category-installable-build
-feature.organizations:expose-category-trace-metric-byte
-feature.organizations:expose-migrated-discover-queries
-feature.organizations:external-issues-ai-generate
-feature.organizations:gen-ai-consent
-feature.organizations:gen-ai-conversations
-feature.organizations:gen-ai-explore-metrics-search
-feature.organizations:gen-ai-features
-feature.organizations:gen-ai-search-agent-translate
-feature.organizations:github-enterprise-github-com-source
-feature.organizations:github-repo-auto-sync-webhook
-feature.organizations:increased-issue-owners-rate-limit
-feature.organizations:ingest-through-trusted-relays-only
-feature.organizations:init-sentry-toolbar
-feature.organizations:insight-modules
-feature.organizations:insights-ai-and-mcp-dashboard-migration
-feature.organizations:insights-alerts
-feature.organizations:insights-modules-use-eap
-feature.organizations:insights-to-dashboards-ui-rollout
-feature.organizations:integrations-claude-code
-feature.organizations:integrations-github-copilot-agent
-feature.organizations:integrations-github-platform-detection
-feature.organizations:integrations-github-project-management
-feature.organizations:integrations-github_enterprise-project-management
-feature.organizations:integrations-gitlab-project-management
-feature.organizations:integrations-slack-staging
-feature.organizations:intercom-support
-feature.organizations:issue-activity-feed-v2
-feature.organizations:issue-ai-detected-code-health-ingest
-feature.organizations:issue-ai-detected-code-health-post-process-group
-feature.organizations:issue-ai-detected-code-health-visible
-feature.organizations:issue-ai-detected-db-ingest
-feature.organizations:issue-ai-detected-db-visible
-feature.organizations:issue-ai-detected-general-visible
-feature.organizations:issue-ai-detected-http-ingest
-feature.organizations:issue-ai-detected-http-post-process-group
-feature.organizations:issue-ai-detected-http-visible
-feature.organizations:issue-ai-detected-runtime-performance-ingest
-feature.organizations:issue-ai-detected-runtime-performance-post-process-group
-feature.organizations:issue-ai-detected-runtime-performance-visible
-feature.organizations:issue-ai-detected-security-post-process-group
-feature.organizations:issue-ai-detected-security-visible
-feature.organizations:issue-db-query-injection-vulnerability-visible
-feature.organizations:issue-details-new-stack-trace
-feature.organizations:issue-feed.eap-search
-feature.organizations:issue-instrumentation-issue-experimental-visible
-feature.organizations:issue-issue-stream-visible
-feature.organizations:issue-llm-detected-experimental-v2-visible
-feature.organizations:issue-llm-detected-experimental-visible
-feature.organizations:issue-low-value-span-configuration-ingest
-feature.organizations:issue-low-value-span-configuration-post-process-group
-feature.organizations:issue-low-value-span-configuration-visible
-feature.organizations:issue-performance-m-n-plus-one-db-queries-experimental-visible
-feature.organizations:issue-performance-n-plus-one-api-calls-experimental-visible
-feature.organizations:issue-performance-n-plus-one-db-queries-experimental-visible
-feature.organizations:issue-performance-streamed-spans-exp-visible
-feature.organizations:issue-preprod-size-analysis-visible
-feature.organizations:issue-query-injection-vulnerability-ingest
-feature.organizations:issue-query-injection-vulnerability-post-process-group
-feature.organizations:issue-query-injection-vulnerability-visible
-feature.organizations:issue-send-test-notification-visible
-feature.organizations:issue-sourcemap-configuration-ingest
-feature.organizations:issue-sourcemap-configuration-post-process-group
-feature.organizations:issue-sourcemap-configuration-visible
-feature.organizations:issue-stream-recommended-sort
-feature.organizations:issue-summary-experimental
-feature.organizations:jira-issue-updated-payload-logging
-feature.organizations:legacy-webhook-disable-old-path
-feature.organizations:legacy-webhook-dry-run
-feature.organizations:legacy-webhook-new-path
-feature.organizations:metrickit-flamegraph
-feature.organizations:migrate-am1-metrics-alerts-to-transactions
-feature.organizations:more-fast-alerts
-feature.organizations:more-slow-alerts
-feature.organizations:more-workflows
-feature.organizations:notification-platform.early-adopter
-feature.organizations:notification-platform.general-access
-feature.organizations:notification-platform.internal-testing
-feature.organizations:notification-platform.is-sentry
-feature.organizations:on-demand-metrics-extraction
-feature.organizations:on-demand-metrics-extraction-widgets
-feature.organizations:on-demand-metrics-ui
-feature.organizations:on-demand-metrics-ui-widgets
-feature.organizations:onboarding-copy-setup-instructions
-feature.organizations:onboarding-copy-setup-instructions-project-creation
-feature.organizations:onboarding-new-welcome-ui
-feature.organizations:onboarding-scm
-feature.organizations:onboarding-scm-experiment
-feature.organizations:onboarding-scm-project-details-experiment
-feature.organizations:ourlogs-enabled
-feature.organizations:ourlogs-ingestion
-feature.organizations:ourlogs-modal-export
-feature.organizations:ourlogs-pinning
-feature.organizations:ourlogs-schema-hints-removal
-feature.organizations:ownership-size-limit-large
-feature.organizations:ownership-size-limit-xlarge
-feature.organizations:page-frame
-feature.organizations:performance-discover-get-custom-measurements-reduced-range
-feature.organizations:performance-sentry-conventions-fields
-feature.organizations:performance-transaction-deprecation-banner
-feature.organizations:performance-web-vitals-seer-suggestions
-feature.organizations:preprod-artifact-webhooks
-feature.organizations:preprod-build-distribution-pr-comments
-feature.organizations:preprod-enforce-distribution-quota
-feature.organizations:preprod-enforce-size-quota
-feature.organizations:preprod-size-monitors-frontend
-feature.organizations:preprod-snapshot-pr-comments
-feature.organizations:preprod-snapshots
-feature.organizations:processing-error-analytics
-feature.organizations:processing-errors-eap
-feature.organizations:profiling-function-trends
-feature.organizations:profiling-global-suspect-functions
-feature.organizations:profiling-reject-sdks
-feature.organizations:relay-default-trace-id
-feature.organizations:relay-new-error-processing
-feature.organizations:replay-ai-summaries
-feature.organizations:replay-ai-summaries-mobile
-feature.organizations:replay-details-eap-query
-feature.organizations:root-cause-stopping-point
-feature.organizations:scm-repositories-v2
-feature.organizations:sdk-crash-detection
-feature.organizations:search-query-attribute-validation
-feature.organizations:search-query-builder-raw-search-replacement
-feature.organizations:seer-activity-timeline
-feature.organizations:seer-agent-pr-consolidation
-feature.organizations:seer-agent-source-code-search
-feature.organizations:seer-autofix-introspection
-feature.organizations:seer-autopilot
-feature.organizations:seer-code-review-github-enterprise
-feature.organizations:seer-config-reminder
-feature.organizations:seer-disable-coding-setting
-feature.organizations:seer-explorer
-feature.organizations:seer-explorer-chat-coding
-feature.organizations:seer-explorer-code-mode-tools
-feature.organizations:seer-explorer-context-engine
-feature.organizations:seer-explorer-context-engine-allow-fe-override
-feature.organizations:seer-explorer-context-engine-fe-override-ui-flag
-feature.organizations:seer-explorer-index
-feature.organizations:seer-explorer-thinking-blocks
-feature.organizations:seer-explorer-ui-tools
-feature.organizations:seer-gitlab-support
-feature.organizations:seer-issue-view
-feature.organizations:seer-night-shift
-feature.organizations:seer-night-shift-settings
-feature.organizations:seer-public-rpc
-feature.organizations:seer-run-mirror
-feature.organizations:seer-run-mirror-autofix
-feature.organizations:seer-run-mirror-explorer
-feature.organizations:seer-slack-explorer
-feature.organizations:seer-slack-workflows
-feature.organizations:seer-user-billing-launch
-feature.organizations:seer-user-credits-promotion
-feature.organizations:seer-wizard
-feature.organizations:semver-ordering-with-build-code
-feature.organizations:sentry-app-schema-form-migration
-feature.organizations:sentry-app-webhook-circuit-breaker
-feature.organizations:sentry-app-webhook-circuit-breaker-live-run
-feature.organizations:sentry-app-webhook-hard-timeout
-feature.organizations:session-health-eap
-feature.organizations:sourcemap-issue-detection
-feature.organizations:sso-saml2-slo
-feature.organizations:supergroups-lightweight-rca-clustering-write
-feature.organizations:tag-key-sample-n
-feature.organizations:top-issues-ui
-feature.organizations:trace-item-details-array-fields
-feature.organizations:trace-metrics-beta
-feature.organizations:trace-spans-format
-feature.organizations:tracemetrics-enabled
-feature.organizations:tracemetrics-equations-in-alerts
-feature.organizations:tracemetrics-equations-in-dashboards
-feature.organizations:tracemetrics-equations-in-explore
-feature.organizations:tracemetrics-ingestion
-feature.organizations:tracemetrics-multi-metric-selection-in-dashboards
-feature.organizations:tracemetrics-pii-scrubbing-ui
-feature.organizations:tracemetrics-stats-bytes-ui
-feature.organizations:tracemetrics-units-ui
-feature.organizations:transaction-widget-deprecation-explore-view
-feature.organizations:uptime-ai-assertion-suggestions
-feature.organizations:uptime-backlog-retry
-feature.organizations:uptime-response-capture
-feature.organizations:user-feedback-spam-ingest
-feature.organizations:view-hierarchy-scrubbing
-feature.organizations:visibility-dashboards-async-queue
-feature.organizations:visibility-explore-range-high
-feature.organizations:visibility-explore-view
-feature.organizations:workflow-engine-issue-alert-endpoints-post
-feature.organizations:workflow-engine-issue-alert-endpoints-put
-feature.organizations:workflow-engine-log-evaluations
-feature.organizations:workflow-engine-metric-detector-limit
-feature.organizations:workflow-engine-metric-issue-disable-issue-detector-notifications
-feature.organizations:workflow-engine-process-workflows-logs
-feature.organizations:workflow-engine-redirect-opt-out
-feature.organizations:workflow-engine-rule-serializers
-feature.organizations:workflow-engine-ui
-feature.projects:error-upsampling
-feature.projects:first-event-severity-calculation
-feature.projects:profile-functions-metrics-eap-ingestion
-feature.projects:relay-measurements-smart-conversion
-feature.projects:relay-minidump-attachment-uploads
-feature.projects:relay-minidump-uploads
-feature.projects:relay-playstation-uploads
-feature.projects:relay-upload-endpoint
-feature.projects:similarity-grouping-model-next
-feature.projects:span-v2-attachment-processing
-feature.projects:span-v2-experimental-processing
-feature.projects:trace-attachment-processing
-feature.projects:transaction-name-clustering-disabled
-feature.projects:workflow-engine-performance-detectors
-feedback.filter_garbage_messages
-feedback.message.max-size
-feedback.organizations.slug-denylist
-filestore-timeout-seconds
-filestore.backend
-filestore.control.backend
-filestore.control.options
-filestore.options
-filestore.profiles-backend
-filestore.profiles-options
-filestore.relocation-backend
-filestore.relocation-options
-flagpole.allowed_features
-flagpole.log_features
-flagpole.missing_features_logging_rate
-getsentry.detect-low-value-spans.enabled
-getsentry.detect-low-value-spans.llm-max-tokens
-getsentry.detect-low-value-spans.llm-processing-timeout
-getsentry.detect-low-value-spans.llm-reasoning
-getsentry.detect-low-value-spans.llm-request-timeout
-getsentry.override-sample-rate-for-instance
-getsentry.quotas.run_spike_projection.on_missing
-getsentry.rate-limit.org-errors
-getsentry.rate-limit.org-feedback
-getsentry.rate-limit.org-logs
-getsentry.rate-limit.org-profile.duration
-getsentry.rate-limit.org-profile.duration-ui
-getsentry.rate-limit.org-profiles
-getsentry.rate-limit.org-replays
-getsentry.rate-limit.org-spans
-getsentry.rate-limit.org-trace-metrics
-getsentry.rate-limit.org-transactions
-getsentry.rate-limit.project-errors
-getsentry.rate-limit.project-feedback
-getsentry.rate-limit.project-feedback-sustained.limit
-getsentry.rate-limit.project-feedback-sustained.window
-getsentry.rate-limit.project-logs
-getsentry.rate-limit.project-profile.duration
-getsentry.rate-limit.project-profile.duration-ui
-getsentry.rate-limit.project-profiles
-getsentry.rate-limit.project-replays
-getsentry.rate-limit.project-spans
-getsentry.rate-limit.project-trace-metrics
-getsentry.rate-limit.project-transactions
-getsentry.rate-limit.window
-getsentry.spike-protection.calculate_spike_projections
-github-app.client-id
-github-app.client-secret
-github-app.fetch-commits.max-compare-commits
-github-app.id
-github-app.name
-github-app.private-key
-github-app.rate-limit-sensitive-orgs
-github-app.webhook-secret
-github-enterprise-app.allowed-hosts-legacy-webhooks
-github.apps-install-url
-github.client-id
-github.webhook.mailbox-bucketing.enabled
-grouping.config_transition.config_upgrade_sample_rate
-grouping.config_transition.metrics_sample_rate
-grouping.experimental_parameterization
-grouping.grouphash_metadata.ingestion_writes_enabled
-grouping.use_ingest_grouphash_caching
-groups.enable-post-update-signal
-hybrid_cloud.authentication.disabled_organization_shards
-hybrid_cloud.authentication.disabled_user_shards
-hybrid_cloud.disable_relative_upload_urls
-hybrid_cloud.disable_tombstone_cleanup
-hybrid_cloud.rpc.disabled-service-methods
-hybridcloud.integrationproxy.retries
-hybridcloud.regionsiloclient.retries
-hybridcloud.rpc.method_retry_overrides
-hybridcloud.rpc.method_timeout_overrides
-hybridcloud.rpc.retries
-hybridcloud.webhookpayload.push_drain_trigger
-hybridcloud.webhookpayload.skip_on_failure_providers
-hybridcloud.webhookpayload.worker_threads
-indexed-spans-extraction-enabled
-indexed-spans-extraction-orgs-denylist
-insights-query-date-range-limit.enable
-integrations.slo.integration-id-tag-enabled
-intercom.app-id
-issue-detection.llm-detection.enabled
-issue-detection.llm-detection.traces-per-invocation
-issues.client_error_sampling.project_allowlist
-issues.group_events.batch_nodestore_enabled
-issues.occurrence-consumer.rate-limit.enabled
-issues.occurrence-consumer.rate-limit.quota
-issues.sdk_crash_detection.cocoa.project_id
-issues.sdk_crash_detection.cocoa.sample_rate
-issues.sdk_crash_detection.dart.organization_allowlist
-issues.sdk_crash_detection.dart.project_id
-issues.sdk_crash_detection.dart.sample_rate
-issues.sdk_crash_detection.dotnet.organization_allowlist
-issues.sdk_crash_detection.dotnet.project_id
-issues.sdk_crash_detection.dotnet.sample_rate
-issues.sdk_crash_detection.java.organization_allowlist
-issues.sdk_crash_detection.java.project_id
-issues.sdk_crash_detection.java.sample_rate
-issues.sdk_crash_detection.native.organization_allowlist
-issues.sdk_crash_detection.native.project_id
-issues.sdk_crash_detection.native.sample_rate
-issues.sdk_crash_detection.react-native.organization_allowlist
-issues.sdk_crash_detection.react-native.project_id
-issues.sdk_crash_detection.react-native.sample_rate
-issues.severity.seer-circuit-breaker-passthrough-limit
-issues.severity.seer-global-rate-limit
-issues.severity.seer-project-rate-limit
-issues.severity.seer-timeout
-issues.severity.skip-seer-requests
-kafka.send-project-events-to-random-partitions
-mail.backend
-mail.enable-replies
-mail.from
-mail.host
-mail.list-namespace
-mail.mailgun-api-key
-mail.password
-mail.port
-mail.reply-hostname
-mail.subject-prefix
-mail.timeout
-mail.use-ssl
-mail.use-tls
-mail.username
-marketo.base-url
-marketo.client-id
-marketo.client-secret
-metric-abuse-quota.organization
-metric-abuse-quota.organization.sessions
-metric-abuse-quota.organization.spans
-metric-abuse-quota.organization.transactions
-metric-abuse-quota.project
-metric-abuse-quota.project.sessions
-metric-abuse-quota.project.spans
-metric-abuse-quota.project.transactions
-metric_alerts.extended_max_subscriptions
-metric_alerts.extended_max_subscriptions_orgs
-msteams.app-id
-msteams.client-id
-msteams.client-secret
-nodestore.cache-ttl
-nodestore.set-subkeys.enable-set-cache-item
-notifications.platform-rollout.early-adopter
-notifications.platform-rollout.general-access
-notifications.platform-rollout.is-sentry
-notifications.platform.killswitch.sources
-objectstore.config
-on_demand.extended_alert_spec_orgs
-on_demand.extended_max_widget_specs
-on_demand.extended_widget_spec_orgs
-on_demand.max_alert_specs
-on_demand.max_widget_cardinality.count
-on_demand.max_widget_cardinality.on_query_count
-on_demand.max_widget_specs
-on_demand.update_on_demand_modified
-on_demand_metrics.cache_should_use_on_demand
-on_demand_metrics.check_widgets.enable
-on_demand_metrics.widgets.use_stateful_extraction
-organization.default-owner-id-cache-ttl
-ourlogs.sentry-emit-rollout
-outbox_replication.auth_authenticator.replication_version
-outbox_replication.auth_user.replication_version
-outbox_replication.sentry_apikey.replication_version
-outbox_replication.sentry_apitoken.replication_version
-outbox_replication.sentry_authidentity.replication_version
-outbox_replication.sentry_authprovider.replication_version
-outbox_replication.sentry_organizationintegration.replication_version
-outbox_replication.sentry_organizationslugreservation.replication_version
-outbox_replication.sentry_orgauthtoken.replication_version
-outbox_replication.sentry_sentryappinstallation.replication_version
-outbox_replication.sentry_sentryappinstallationtoken.replication_version
-outbox_replication.sentry_useremail.replication_version
-outbox_replication.sentry_userpermission.replication_version
-outbox_replication.sentry_userrole.replication_version
-outbox_replication.sentry_userrole_users.replication_version
-performance.event-tracker.sample-rate.transactions
-performance.issues.all.problem-detection
-performance.issues.compressed_assets.problem-creation
-performance.issues.consecutive_db.min_time_saved_threshold
-performance.issues.consecutive_db.problem-creation
-performance.issues.consecutive_http.consecutive_count_threshold
-performance.issues.consecutive_http.max_duration_between_spans
-performance.issues.consecutive_http.min_time_saved_threshold
-performance.issues.consecutive_http.problem-creation
-performance.issues.consecutive_http.span_duration_threshold
-performance.issues.db_main_thread.problem-creation
-performance.issues.db_on_main_thread.total_spans_duration_threshold
-performance.issues.file_io_main_thread.problem-creation
-performance.issues.file_io_on_main_thread.total_spans_duration_threshold
-performance.issues.http_overhead.http_request_delay_threshold
-performance.issues.http_overhead.problem-creation
-performance.issues.large_http_payload.filtered_paths
-performance.issues.large_http_payload.problem-creation
-performance.issues.large_http_payload.size_threshold
-performance.issues.m_n_plus_one_db.problem-creation
-performance.issues.n_plus_one_api_calls.problem-creation
-performance.issues.n_plus_one_api_calls.total_duration
-performance.issues.n_plus_one_db.count_threshold
-performance.issues.n_plus_one_db.duration_threshold
-performance.issues.n_plus_one_db.problem-creation
-performance.issues.query_injection.problem-creation
-performance.issues.render_blocking_assets.fcp_maximum_threshold
-performance.issues.render_blocking_assets.fcp_minimum_threshold
-performance.issues.render_blocking_assets.fcp_ratio_threshold
-performance.issues.render_blocking_assets.problem-creation
-performance.issues.render_blocking_assets.size_threshold
-performance.issues.slow_db_query.duration_threshold
-performance.issues.slow_db_query.problem-creation
-performance.issues.sql_injection.problem-creation
-performance.issues.sql_injection.query_value_length_threshold
-performance.issues.uncompressed_asset.duration_threshold
-performance.issues.uncompressed_asset.size_threshold
-performance.issues.web_vitals.count_threshold
-performance.trace.span_with_errors_ok_status.sample_rate
-performance.traces.check_span_extraction_date
-performance.traces.pagination.max-iterations
-performance.traces.pagination.max-timeout
-performance.traces.pagination.query-limit
-performance.traces.query_timestamp_projects
-performance.traces.spans_extraction_date
-performance.traces.trace-explorer-skip-recent-seconds
-performance.traces.transaction_query_timebuffer_days
-post-process-forwarder:kafka-headers
-post_process.get-autoassign-owners
-processing.severity-backlog-test.error
-processing.severity-backlog-test.timeout
-profiling.continuous-profiling.chunks-set.size
-profiling.flamegraph.profile-set.size
-profiling.killswitch.ingest-profiles
-profiling.profile_metrics.unsampled_profiles.enabled
-profiling.profile_metrics.unsampled_profiles.platforms
-profiling.profile_metrics.unsampled_profiles.sample_rate
-project-abuse-quota.attachment-item-limit
-project-abuse-quota.attachment-limit
-project-abuse-quota.session-limit
-project-abuse-quota.window
-provision_organization.override.rate
-recovery.disallow-new-enrollment
-redis.clusters
-relay.drop-transaction-attachments
-relay.drop-transaction-metrics
-relay.eap-outcomes.rollout-rate
-relay.eap-span-outcomes.rollout-rate
-relay.endpoint-fetch-config.enabled
-relay.invalidation-direct-outside-atomic
-relay.metric-bucket-distribution-encodings
-relay.metric-bucket-set-encodings
-relay.objectstore-attachments.sample-rate
-relay.sessions-eap.rollout-rate
-relay.span-normalization.allowed_hosts
-relay.span-usage-metric
-relay.static_auth
-release-health.disable-release-last-seen-update
-releases.no_snuba_for_release_creation
-relocation.enabled
-relocation.selectable-regions
-replay.consumer.enable_new_query_caching_system
-replay.consumer.msgspec_recording_parser
-replay.endpoints.project_replay_summary.trace_sample_rate_get
-replay.endpoints.project_replay_summary.trace_sample_rate_post
-replay.recording.ingest-trace-items.rollout
-replay.replay-video.disabled
-replay.replay-video.slug-denylist
-replay.storage.backend
-replay.storage.options
-replay.viewed-by.project-denylist
-reprocessing2.drop-delete-old-primary-hash
-sdk-deprecation.profile-chunk.cocoa.hard
-sdk-deprecation.profile-chunk.python.hard
-sdk_http2_experiment.enabled
-secret-scanning.github.enable-signature-verification
-seer.code-review.excluded-pr-author-logins
-seer.explorer.context-engine-rollout
-seer.global-killswitch.enabled
-seer.max_num_autofix_autotriggered_per_hour
-seer.max_num_scanner_autotriggered_per_ten_seconds
-seer.night_shift.issues_per_org
-seer.organizations.force-config-reminder
-seer.similarity-embeddings-delete-by-hash-killswitch.enabled
-seer.similarity-embeddings-killswitch.enabled
-seer.similarity-killswitch.enabled
-seer.similarity.circuit-breaker-config
-seer.similarity.global-rate-limit
-seer.similarity.grouping-ingest-retries
-seer.similarity.grouping-ingest-timeout
-seer.similarity.grouping_killswitch_projects
-seer.similarity.ingest.num_matches_to_request
-seer.similarity.ingest.store_hybrid_fingerprint_non_matches
-seer.similarity.max_token_count
-seer.similarity.metrics_sample_rate
-seer.similarity.per-project-rate-limit
-seer.similarity.token_count_metrics_enabled
-sentry-apps.disable-paranoia
-sentry-apps.disabled-enforcement
-sentry-apps.expanded-webhook-categories
-sentry-apps.webhook-logging.enabled
-sentry-apps.webhook.circuit-breaker.config
-sentry-apps.webhook.hard-timeout.sec
-sentry-apps.webhook.restricted-webhook-sending
-sentry-apps.webhook.timeout.sec
-sentry-metrics.drop-percentiles.per-use-case
-sentry-metrics.indexer.disable-memcache-replenish-rollout
-sentry-metrics.indexer.disabled-namespaces
-sentry-metrics.indexer.generic-metrics.schema-validation-rules
-sentry-metrics.indexer.read-new-cache-namespace
-sentry-metrics.indexer.reconstruct.enable-orjson
-sentry-metrics.indexer.release-health.schema-validation-rules
-sentry-metrics.indexer.write-new-cache-namespace
-sentry-metrics.releasehealth.abnormal-mechanism-extraction-rate
-sentry-metrics.writes-limiter.limits.releasehealth.global
-sentry-metrics.writes-limiter.limits.releasehealth.per-org
-sentry-metrics.writes-limiter.limits.spans.global
-sentry-metrics.writes-limiter.limits.spans.per-org
-sentry.save-event-attachments.project-per-5-minute-limit
-sentry.save-event-attachments.project-per-sec-limit
-sentry.scm.stream.rollout
-sentry.search.events.project.check_event
-sentry.send_onboarding_task_metrics
-sentry.similarity.indexing.enabled
-sentry:install-id
-sentry:latest_version
-sentry:skip-record-onboarding-tasks-if-complete
-sentry:system-token
-sentry:version-configured
-shared_resources_accounting_enabled
-similarity.new_project_seer_grouping.enabled
-slack.client-id
-slack.client-secret
-slack.signing-secret
-slack.verification-token
-sms.disallow-new-enrollment
-sms.twilio-account
-snuba.groupsnooze.user-counts-debounce-seconds
-snuba.search.chunk-growth-rate
-snuba.search.hits-sample-size
-snuba.search.max-chunk-size
-snuba.search.max-pre-snuba-candidates
-snuba.search.max-total-chunk-time-seconds
-snuba.search.recommended.event-volume-weight
-snuba.search.recommended.group-type-boost
-snuba.search.recommended.recency-weight
-snuba.search.recommended.severity-weight
-snuba.search.recommended.spike-weight
-snuba.search.recommended.user-impact-weight
-span-metrics-extraction-addons-enabled
-span-metrics-extraction-addons-orgs-denylist
-span-metrics-extraction-addons-projects-denylist
-span-metrics-extraction-enabled
-span-metrics-extraction-orgs-denylist
-span-metrics-extraction-projects-denylist
-spans.buffer.compression.level
-spans.buffer.debug-traces
-spans.buffer.evalsha-cumulative-logger-enabled
-spans.buffer.flusher-cumulative-logger-enabled
-spans.buffer.flusher.backpressure-seconds
-spans.buffer.flusher.flush-lock-ttl
-spans.buffer.flusher.log-flushed-segments
-spans.buffer.flusher.max-unhealthy-seconds
-spans.buffer.flusher.use-stuck-detector
-spans.buffer.max-flush-segments
-spans.buffer.max-memory-percentage
-spans.buffer.max-segment-bytes
-spans.buffer.max-spans-per-evalsha
-spans.buffer.pipeline-batch-size
-spans.buffer.redis-ttl
-spans.buffer.root-timeout
-spans.buffer.segment-page-size
-spans.buffer.timeout
-spans.drop-in-buffer
-spans.process-segments.consumer.enable
-spans.process-segments.dedupe-filter-enable
-spans.process-segments.dedupe-ttl
-spans.process-segments.detect-performance-problems.enable
-spans.process-segments.drop-segments
-spans.process-segments.schema-validation
-spans.process-segments.skip-enrichment-projects
-spans.process-spans.profiling.rate
-staff.ga-rollout
-standalone-span-discard-transaction
-standalone-span-discard-transaction-project-allowlist
-statistical_detectors.enable
-statistical_detectors.query.batch_size
-statistical_detectors.query.functions.timeseries_days
-statistical_detectors.ratelimit.ema
-statistical_detectors.throughput.threshold.functions
-store.load-shed-group-creation-projects
-store.load-shed-parsed-pipeline-projects
-store.load-shed-pipeline-projects
-store.load-shed-process-event-projects
-store.load-shed-process-event-projects-gradual
-store.load-shed-save-event-projects
-store.load-shed-symbolicate-event-projects
-store.reprocessing-force-disable
-store.s4s-transaction-sample-rate
-store.use-relay-dsn-sample-rate
-subscriptions-query.sample-rate
-superuser.read-write.ga-rollout
-symbolicate.symx-logging-rate
-symbolicator.ignored_sources
-system.base-hostname
-system.debug-files-renewal-age-threshold-days
-system.event-retention-days
-system.internal-url-prefix
-system.organization-base-hostname
-system.organization-url-template
-system.region-api-url-template
-system.secret-key
-system.security-email
-system.support-email
-system.upload-url-prefix
-system.url-prefix
-tally-usage-delay-seconds
-taskworker.producer.max_futures
-taskworker.route.overrides
-totp.disallow-new-enrollment
-transaction-events.force-disable-internal-project
-txnames.bump-lifetime-sample-rate
-u2f.app-id
-u2f.disallow-new-enrollment
-u2f.facets
-uptime.automatic-hostname-detection
-uptime.checker-regions-mode-override
-uptime.create-issues
-uptime.restrict-issue-creation-by-hosting-provider-id
-uptime.uptime-ips-api-response
-uptime.use-detectors-by-data-source-cache
-user-settings.signed-url-confirmation-emails
-user-settings.signed-url-confirmation-emails-salt
-vercel.client-id
-vercel.client-secret
-vercel.integration-slug
-viewer-context.enabled
-visibility.tag-key-max-date-range.days
-visibility.tag-key-sample-size
-vsts.client-secret
-vsts.consent-prompt
-vsts.social-auth-migration
-vsts_new.client-id
-vsts_new.client-secret
-workflow_engine.associate_error_detectors
-workflow_engine.ensure_detector_association
-workflow_engine.evaluation_log_sample_rate
-workflow_engine.evaluation_logs_direct_to_sentry
-workflow_engine.filter_cross_org_workflows
-workflow_engine.group.type_id.disable_issue_stream_detector
-workflow_engine.group.type_id.open_periods_type_denylist
-workflow_engine.max_workflows_per_org
-workflow_engine.num_cohorts
-workflow_engine.schedule.min_cohort_scheduling_age_seconds
+ourlogs.sentry-emit-rollout	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-replays	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.java.project_id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.webhook.timeout.sec	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+workflow_engine.ensure_detector_association	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.use-relay-dsn-sample-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-errors	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.react-native.organization_allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+analytics.options	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+analytics.backend	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.s4s-transaction-sample-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:processing-errors-eap	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.react-native.sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.window	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+nodestore.set-subkeys.enable-set-cache-item	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ourlogs-pinning	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+transaction-events.force-disable-internal-project	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+txnames.bump-lifetime-sample-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+uptime.automatic-hostname-detection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.webhook.hard-timeout.sec	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-rule-serializers	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.react-native.project_id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sdk_http2_experiment.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-trace-metrics	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+nodestore.cache-ttl	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+discord.client-secret	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+discord.bot-token	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+discord.public-key	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+discord.application-id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:profiling-function-trends	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:preprod-snapshots	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.cocoa.sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-trace-metrics	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:sentry-app-webhook-hard-timeout	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:alert-allow-indexed	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.organization-base-hostname	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:onboarding-new-welcome-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.organization-url-template	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.cocoa.project_id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+workflow_engine.evaluation_log_sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-logs	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+crons.per_monitor_rate_limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-context-engine-allow-fe-override	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+workflow_engine.evaluation_logs_direct_to_sentry	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-night-shift-settings	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+flagpole.log_features	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-logs	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:expose-category-trace-metric-byte	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.organization.spans	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+flagpole.missing_features_logging_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+redis.clusters	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry.similarity.indexing.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:sdk-crash-detection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ourlogs-schema-hints-removal	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.organization.sessions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-profile.duration-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.organization.transactions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-details-widget	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.dotnet.organization_allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.organization	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+flagpole.allowed_features	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:onboarding-copy-setup-instructions-project-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-log-evaluations	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.webhook.circuit-breaker.config	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.url-prefix	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.project.spans	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-profile.duration-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.dotnet.sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:gen-ai-conversations	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-user-billing-launch	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.project.sessions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+msteams.app-id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:defer-commit-resolution	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:onboarding-scm-experiment	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.event-tracker.sample-rate.transactions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.project.transactions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.dotnet.project_id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-profile.duration	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+metric-abuse-quota.project	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+project-abuse-quota.session-limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.dart.organization_allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:insights-modules-use-eap	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+shared_resources_accounting_enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+project-abuse-quota.attachment-item-limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:top-issues-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-profile.duration	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+project-abuse-quota.attachment-limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+github.apps-install-url	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.dart.sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry:skip-record-onboarding-tasks-if-complete	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-pii-scrubbing-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:sentry-app-webhook-circuit-breaker	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-errors	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-spans	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:on-demand-metrics-ui-widgets	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.dart.project_id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+project-abuse-quota.window	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-equations-in-alerts	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.native.organization_allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-spans	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-ingestion	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.expanded-webhook-categories	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:insight-modules	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.native.sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-transactions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-slack-workflows	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-basic	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.native.project_id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-redirect-opt-out	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-user-credits-promotion	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-transactions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.java.organization_allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:gen-ai-features	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.occurrence-consumer.rate-limit.quota	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-process-workflows-logs	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.sdk_crash_detection.java.sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-stats-bytes-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.occurrence-consumer.rate-limit.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+symbolicator.ignored_sources	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+taskworker.producer.max_futures	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-units-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-equations-in-explore	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+taskworker.route.overrides	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ingest-through-trusted-relays-only	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+data-forwarding.project-cache-ttl	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:replay-ai-summaries-mobile	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:sourcemap-issue-detection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+grouping.grouphash_metadata.ingestion_writes_enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ai-issue-detection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sdk-deprecation.profile-chunk.python.hard	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.internal-url-prefix	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-multi-metric-selection-in-dashboards	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-feedback-sustained.window	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:gen-ai-search-agent-translate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-feedback-sustained.limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:explore-dev-features	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:trace-metrics-beta	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ourlogs-ingestion	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:profiling-reject-sdks	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-feedback	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dynamic-sampling-custom	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-claude-code	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.webhook.restricted-webhook-sending	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-feedback	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-github_enterprise-project-management	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+workflow_engine.group.type_id.disable_issue_stream_detector	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-metric-issue-disable-issue-detector-notifications	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-github-project-management	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-process-event-projects-gradual	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-save-event-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-profiles	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-prebuilt-insights-dashboards	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-process-event-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-import	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.disabled-enforcement	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.project-profiles	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-ui-tools	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+grouping.use_ingest_grouphash_caching	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-gitlab-support	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-disable-coding-setting	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.rate-limit.org-replays	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.base-hostname	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-chat-coding	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-activity-feed-v2	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:insights-alerts	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:search-query-builder-raw-search-replacement	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+viewer-context.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.list-namespace	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:uptime-ai-assertion-suggestions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+grouping.experimental_parameterization	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-context-engine	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:preprod-build-distribution-pr-comments	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:performance-transaction-deprecation-banner	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:notification-platform.is-sentry	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-slack-staging	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-gitlab-project-management	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-github-copilot-agent	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+symbolicate.symx-logging-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:gen-ai-explore-metrics-search	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:intercom-support	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:on-demand-metrics-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:profiling-global-suspect-functions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.client_error_sampling.project_allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:notification-platform.internal-testing	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.max_num_scanner_autotriggered_per_ten_seconds	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:processing-error-analytics	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-slack-explorer	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-thinking-blocks	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+post_process.get-autoassign-owners	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:github-enterprise-github-com-source	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:supergroups-lightweight-rca-clustering-write	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+explore.trace-items.keys.max	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:visibility-explore-view	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:notification-platform.general-access	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tracemetrics-equations-in-dashboards	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-edit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ourlogs-enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:increased-issue-owners-rate-limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-activity-timeline	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-config-reminder	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-metric-detector-limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-details-new-stack-trace	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:sentry-app-schema-form-migration	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:replay-ai-summaries	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:preprod-size-monitors-frontend	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.enable-replies	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:workflow-engine-ui	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:data-browsing-heat-map-widget	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dynamic-sampling-minimum-sample-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:trace-item-details-array-fields	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:insights-ai-and-mcp-dashboard-migration	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-text-widgets	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:preprod-snapshot-pr-comments	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:anomaly-detection-eap	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:context-engine-structured-page-context	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+dynamic.saferollouts.occurrences_on_eap.should_eval_experimental	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:performance-sentry-conventions-fields	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sdk-deprecation.profile-chunk.cocoa.hard	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:explore-errors	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-code-mode-tools	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:data-secrecy-v2	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:visibility-explore-range-high	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybridcloud.rpc.method_timeout_overrides	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:transaction-widget-deprecation-explore-view	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:user-feedback-spam-ingest	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.organizations.force-config-reminder	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:search-query-attribute-validation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybridcloud.rpc.retries	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-metrics-transition	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybridcloud.rpc.method_retry_overrides	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:visibility-dashboards-async-queue	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybrid_cloud.rpc.disabled-service-methods	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:init-sentry-toolbar	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:conduit-demo	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-ai-generate-edit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:preprod-artifact-webhooks	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:integrations-github-platform-detection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:discover-saved-queries-deprecation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+getsentry.override-sample-rate-for-instance	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:on-demand-metrics-extraction	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:scm-repositories-v2	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:external-issues-ai-generate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+dynamic-sampling.check_span_feature_flag	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-context-engine-fe-override-ui-flag	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybridcloud.integrationproxy.retries	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.region-api-url-template	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-run-mirror	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+groups.enable-post-update-signal	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:gen-ai-consent	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:trace-spans-format	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-autofix-introspection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:data-secrecy	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-drilldown-flow	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-revisions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+dynamic-sampling.per_org.rollout-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+dynamic-sampling.per_org.killswitch	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:performance-web-vitals-seer-suggestions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:expose-category-installable-build	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-night-shift	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-agent-pr-consolidation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:continuous-profiling	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:notification-platform.early-adopter	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.traces.pagination.max-timeout	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybrid_cloud.authentication.disabled_organization_shards	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:onboarding-scm-project-details-experiment	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.traces.pagination.max-iterations	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:onboarding-scm	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:metrickit-flamegraph	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-wizard	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+eventstream.eap_forwarding_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:onboarding-copy-setup-instructions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:dashboards-ai-generate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.similarity.circuit-breaker-config	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:ourlogs-modal-export	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+github-app.rate-limit-sensitive-orgs	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:data-browsing-widget-unfurl	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.similarity.grouping_killswitch_projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:page-frame	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:create-org-control	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.similarity-killswitch.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.traces.pagination.query-limit	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-explorer-index	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:expose-migrated-discover-queries	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:insights-to-dashboards-ui-rollout	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.global-killswitch.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-issue-view	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+eventstream:kafka-headers	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.from	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.reply-hostname	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-ai-detected-http-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+kafka.send-project-events-to-random-partitions	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-db-query-injection-vulnerability-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.subject-prefix	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-sourcemap-configuration-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-query-injection-vulnerability-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-low-value-span-configuration-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-ai-detected-code-health-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-performance-m-n-plus-one-db-queries-experimental-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-performance-streamed-spans-exp-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-ai-detected-general-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-performance-n-plus-one-api-calls-experimental-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-ai-detected-security-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-performance-n-plus-one-db-queries-experimental-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-llm-detected-experimental-v2-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+snuba.groupsnooze.user-counts-debounce-seconds	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-llm-detected-experimental-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-send-test-notification-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-issue-stream-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-ai-detected-db-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-ai-detected-runtime-performance-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+relay.invalidation-direct-outside-atomic	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-preprod-size-analysis-visible	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+span-metrics-extraction-addons-orgs-denylist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+span-metrics-extraction-addons-projects-denylist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry.search.events.project.check_event	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+dynamic-sampling.per_org.metrics-sample-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+span-metrics-extraction-addons-enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+dynamic-sampling.prioritise_transactions.rebalance_intensity	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+span-metrics-extraction-orgs-denylist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+span-metrics-extraction-projects-denylist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+billing.seat-based-seer-launch	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+span-metrics-extraction-enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+chart-rendering.storage.options	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+chart-rendering.storage.backend	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.similarity-embeddings-killswitch.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+standalone-span-discard-transaction-project-allowlist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+standalone-span-discard-transaction	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:performance-discover-get-custom-measurements-reduced-range	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:similarity-grouping-model-next	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.code-review.excluded-pr-author-logins	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:trace-attachment-processing	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:profile-functions-metrics-eap-ingestion	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:span-v2-attachment-processing	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:relay-playstation-uploads	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:transaction-name-clustering-disabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:first-event-severity-calculation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:relay-minidump-attachment-uploads	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:workflow-engine-performance-detectors	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:relay-upload-endpoint	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:relay-minidump-uploads	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:relay-measurements-smart-conversion	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:error-upsampling	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.projects:span-v2-experimental-processing	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+grouping.config_transition.metrics_sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+seer.similarity.metrics_sample_rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+chart-rendering.chartcuterie	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-summary-experimental	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+hybridcloud.regionsiloclient.retries	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+slack.verification-token	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+slack.signing-secret	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+filestore-timeout-seconds	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:default-anomaly-detector	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+filestore.options	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+filestore.backend	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry.send_onboarding_task_metrics	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+similarity.new_project_seer_grouping.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-apps.webhook-logging.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.reprocessing-force-disable	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-symbolicate-event-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+on_demand.max_widget_cardinality.on_query_count	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:seer-code-review-github-enterprise	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.query_injection.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.sql_injection.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.http_overhead.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:legacy-webhook-disable-old-path	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.large_http_payload.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:legacy-webhook-new-path	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.compressed_assets.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.m_n_plus_one_db.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.n_plus_one_api_calls.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.file_io_main_thread.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.n_plus_one_db.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.render_blocking_assets.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.slow_db_query.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.db_main_thread.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_http.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_db.problem-creation	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.web_vitals.count_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.sql_injection.query_value_length_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:on-demand-metrics-extraction-widgets	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.n_plus_one_api_calls.total_duration	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.http_overhead.http_request_delay_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_db.min_time_saved_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.uncompressed_asset.size_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.uncompressed_asset.duration_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.file_io_on_main_thread.total_spans_duration_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.db_on_main_thread.total_spans_duration_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.large_http_payload.filtered_paths	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.large_http_payload.size_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_http.min_time_saved_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_http.span_duration_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_http.consecutive_count_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.consecutive_http.max_duration_between_spans	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.render_blocking_assets.size_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.render_blocking_assets.fcp_ratio_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.render_blocking_assets.fcp_maximum_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.render_blocking_assets.fcp_minimum_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.slow_db_query.duration_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.n_plus_one_db.duration_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.n_plus_one_db.count_threshold	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.issues.all.problem-detection	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-parsed-pipeline-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-pipeline-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:billing-platform-quotas-enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:billing-platform-quotas-shadow	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:replay-details-eap-query	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+profiling.profile_metrics.unsampled_profiles.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:session-health-eap	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+continuous-profiling-beta	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:issue-feed.eap-search	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry:system-token	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+on_demand.extended_max_widget_specs	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+on_demand.extended_widget_spec_orgs	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+snuba.search.max-total-chunk-time-seconds	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+snuba.search.max-chunk-size	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+snuba.search.chunk-growth-rate	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+snuba.search.max-pre-snuba-candidates	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+recovery.disallow-new-enrollment	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+u2f.disallow-new-enrollment	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sms.disallow-new-enrollment	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+totp.disallow-new-enrollment	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+u2f.app-id	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+organization.default-owner-id-cache-ttl	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+spans.process-segments.dedupe-filter-enable	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+spans.process-segments.dedupe-ttl	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+spans.process-segments.detect-performance-problems.enable	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-metrics.indexer.read-new-cache-namespace	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+spans.process-segments.drop-segments	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+on_demand_metrics.widgets.use_stateful_extraction	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+demo-mode.users	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+on_demand_metrics.cache_should_use_on_demand	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+backpressure.monitoring.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+spans.process-segments.skip-enrichment-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+backpressure.checking.enabled	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+backpressure.checking.interval	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+spans.process-segments.consumer.enable	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+eventstore.adjacent_event_ids_use_snql	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+snuba.search.hits-sample-size	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+notifications.platform-rollout.early-adopter	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+workflow_engine.associate_error_detectors	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+workflow_engine.group.type_id.open_periods_type_denylist	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+system.debug-files-renewal-age-threshold-days	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+issues.severity.skip-seer-requests	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+consumer.shared_memory_spawn_process	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+store.load-shed-group-creation-projects	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.timeout	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.use-ssl	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.use-tls	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.password	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.username	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.port	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.host	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+mail.backend	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+github-app.name	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+performance.traces.transaction_query_timebuffer_days	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+codecov.client-secret	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+feature.organizations:tag-key-sample-n	window 1/720 2026-05-22T15:02:06Z→2026-05-22T15:12:06Z
+sentry-metrics.indexer.write-new-cache-namespace	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+demo-org-ids	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+dsym.cache-path	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+processing.severity-backlog-test.error	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+processing.severity-backlog-test.timeout	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+issues.severity.seer-timeout	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+releases.no_snuba_for_release_creation	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+issues.severity.seer-project-rate-limit	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+issues.severity.seer-global-rate-limit	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+issues.severity.seer-circuit-breaker-passthrough-limit	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+auth-google.client-secret	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+auth-google.client-id	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:root-cause-stopping-point	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+issues.group_events.batch_nodestore_enabled	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.grouping-ingest-timeout	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.grouping-ingest-retries	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.ingest.num_matches_to_request	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+integrations.slo.integration-id-tag-enabled	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+performance.traces.check_span_extraction_date	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+performance.traces.spans_extraction_date	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+metric_alerts.extended_max_subscriptions_orgs	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+backfill_new_categories.org_ids	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+billing.add-billing-metric-usage-admin.organizations	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+insights-query-date-range-limit.enable	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+sentry.scm.stream.rollout	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:code-review-beta	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:jira-issue-updated-payload-logging	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+chunk-upload.no-compression	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+hybrid_cloud.disable_relative_upload_urls	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+system.upload-url-prefix	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+system.event-retention-days	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+objectstore.config	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.max_num_autofix_autotriggered_per_hour	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:semver-ordering-with-build-code	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+github-app.webhook-secret	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+filestore.profiles-options	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+filestore.profiles-backend	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:workflow-engine-issue-alert-endpoints-put	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+database.encryption.method	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:autofix-on-explorer	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.per-project-rate-limit	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.global-rate-limit	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.token_count_metrics_enabled	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+seer.similarity.max_token_count	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+provision_organization.override.rate	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+api-token-async-flush	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+github-app.private-key	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+github-app.id	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+api.organization.disable-last-deploys	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+replay.storage.options	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+replay.storage.backend	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:github-repo-auto-sync-webhook	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+github-app.fetch-commits.max-compare-commits	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+staff.ga-rollout	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+billing.usagebuffer.unified_pipeline.chunk_size	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+billing.usagebuffer.unified_pipeline.rollout	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+billing.usagebuffer.redis.pipeline_size	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feature.organizations:dashboards-sync-all-registered-prebuilt-dashboards	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+dashboards.prebuilt-dashboard-ids	window 2/720 2026-05-22T15:12:06Z→2026-05-22T15:22:06Z
+feedback.filter_garbage_messages	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+feedback.organizations.slug-denylist	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+seer.similarity.ingest.store_hybrid_fingerprint_non_matches	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+vsts_new.client-secret	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+vsts_new.client-id	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+feature.organizations:preprod-enforce-size-quota	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+api.deprecation.brownout-duration	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+api.deprecation.brownout-cron	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+billing.usagebuffer.scan_limit	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+notifications.platform-rollout.general-access	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+replay.viewed-by.project-denylist	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+performance.traces.query_timestamp_projects	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+hybrid_cloud.disable_tombstone_cleanup	window 3/720 2026-05-22T15:22:06Z→2026-05-22T15:32:06Z
+feature.organizations:code-review-experiments-enabled	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+apigateway.proxy.timeout	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+apigateway.proxy.circuit-breaker.config	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+apigateway.proxy.circuit-breaker.enabled	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+sentry-apps.disable-paranoia	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+replay.endpoints.project_replay_summary.trace_sample_rate_get	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+replay.endpoints.project_replay_summary.trace_sample_rate_post	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+github.webhook.mailbox-bucketing.enabled	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+hybridcloud.webhookpayload.push_drain_trigger	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+notifications.platform.killswitch.sources	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+spans.process-spans.profiling.rate	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+consumer.join.profiling.rate	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+feature.organizations:preprod-enforce-distribution-quota	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+sentry:last_worker_version	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+sentry:last_worker_ping	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+sms.twilio-account	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+feature.organizations:seer-run-mirror-explorer	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+seer.explorer.context-engine-rollout	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+marketo.base-url	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+marketo.client-secret	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+marketo.client-id	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+sentry-metrics.indexer.disable-memcache-replenish-rollout	window 4/720 2026-05-22T15:32:06Z→2026-05-22T15:42:06Z
+tempest.crashes-timeout	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+tempest.poll-limit	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+backfill_new_categories.should_run	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+tempest.latest-id-timeout	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+tempest.lock-buffer-seconds	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+tempest.task-deadline-seconds	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+tally-usage-delay-seconds	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+relay.static_auth	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+system.secret-key	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+auth.user-rate-limit	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+auth.ip-rate-limit	window 5/720 2026-05-22T15:42:06Z→2026-05-22T15:52:06Z
+github-app.client-secret	window 6/720 2026-05-22T15:52:06Z→2026-05-22T16:02:06Z
+github-app.client-id	window 6/720 2026-05-22T15:52:06Z→2026-05-22T16:02:06Z
+feature.organizations:sentry-app-webhook-circuit-breaker-live-run	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+billing.usage_service.cutover_date	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+billing.usage_service.enabled	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+feature.organizations:billing-usage-service-shadow-mode	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+sentry.save-event-attachments.project-per-5-minute-limit	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+sentry.save-event-attachments.project-per-sec-limit	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+explore.trace-items.values.max	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+feature.organization:workflow-engine-evaluate-seer-activities	window 7/720 2026-05-22T16:02:06Z→2026-05-22T16:12:06Z
+embeddings-grouping.seer.delete-record-batch-size	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+seer.similarity-embeddings-delete-by-hash-killswitch.enabled	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+profiling.flamegraph.profile-set.size	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+deletions.group-hash-metadata.batch-size	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+deletions.group-hashes-batch-size	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+cleanup.abort_execution	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+hybrid_cloud.authentication.disabled_user_shards	window 8/720 2026-05-22T16:12:06Z→2026-05-22T16:22:06Z
+feedback.message.max-size	window 9/720 2026-05-22T16:22:06Z→2026-05-22T16:32:06Z
+uptime.checker-regions-mode-override	window 9/720 2026-05-22T16:22:06Z→2026-05-22T16:32:06Z
+uptime.automatic-subscription-creation	window 9/720 2026-05-22T16:22:06Z→2026-05-22T16:32:06Z
+vsts.social-auth-migration	window 10/720 2026-05-22T16:32:06Z→2026-05-22T16:42:06Z
+auth-fly.client-secret	window 11/720 2026-05-22T16:42:06Z→2026-05-22T16:52:06Z
+auth-fly.client-id	window 11/720 2026-05-22T16:42:06Z→2026-05-22T16:52:06Z
+vsts.client-secret	window 11/720 2026-05-22T16:42:06Z→2026-05-22T16:52:06Z
+demo-mode.orgs	window 11/720 2026-05-22T16:42:06Z→2026-05-22T16:52:06Z
+hybridcloud.webhookpayload.skip_on_failure_providers	window 12/720 2026-05-22T16:52:06Z→2026-05-22T17:02:06Z
+msteams.client-secret	window 13/720 2026-05-22T17:02:06Z→2026-05-22T17:12:06Z
+msteams.client-id	window 13/720 2026-05-22T17:02:06Z→2026-05-22T17:12:06Z
+demo-mode.enabled	window 13/720 2026-05-22T17:02:06Z→2026-05-22T17:12:06Z
+feature.organizations:issue-query-injection-vulnerability-ingest	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+statistical_detectors.throughput.threshold.functions	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+statistical_detectors.query.batch_size	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+statistical_detectors.ratelimit.ema	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+filestore.control.options	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+filestore.control.backend	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+statistical_detectors.enable	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+vercel.client-secret	window 14/720 2026-05-22T17:12:06Z→2026-05-22T17:22:06Z
+visibility.tag-key-sample-size	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+visibility.tag-key-max-date-range.days	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_sentryappinstallationtoken.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_sentryappinstallation.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_organizationintegration.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_userrole_users.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_userrole.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_userpermission.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.auth_user.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_useremail.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.auth_authenticator.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_authprovider.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_authidentity.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+github-enterprise-app.allowed-hosts-legacy-webhooks	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_apitoken.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_orgauthtoken.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_apikey.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+outbox_replication.sentry_organizationslugreservation.replication_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.endpoint-fetch-config.enabled	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.objectstore-attachments.sample-rate	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.drop-transaction-attachments	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.span-normalization.allowed_hosts	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.sessions-eap.rollout-rate	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.metric-bucket-distribution-encodings	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.metric-bucket-set-encodings	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.eap-span-outcomes.rollout-rate	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.eap-outcomes.rollout-rate	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relay.span-usage-metric	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+profiling.profile_metrics.unsampled_profiles.sample_rate	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+intercom.app-id	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+profiling.profile_metrics.unsampled_profiles.platforms	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relocation.selectable-regions	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+relocation.enabled	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+sentry:latest_version	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+system.support-email	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+performance.traces.trace-explorer-skip-recent-seconds	window 15/720 2026-05-22T17:22:06Z→2026-05-22T17:32:06Z
+superuser.read-write.ga-rollout	window 19/720 2026-05-22T18:02:06Z→2026-05-22T18:12:06Z
+eventstream.eap.deletion-enabled	window 20/720 2026-05-22T18:12:06Z→2026-05-22T18:22:06Z
+feature.organizations:issue-ai-detected-http-post-process-group	window 20/720 2026-05-22T18:12:06Z→2026-05-22T18:22:06Z
+delayed_processing.batch_size	window 20/720 2026-05-22T18:12:06Z→2026-05-22T18:22:06Z
+workflow_engine.schedule.min_cohort_scheduling_age_seconds	window 20/720 2026-05-22T18:12:06Z→2026-05-22T18:22:06Z
+workflow_engine.num_cohorts	window 20/720 2026-05-22T18:12:06Z→2026-05-22T18:22:06Z
+delayed_workflow.rollout	window 20/720 2026-05-22T18:12:06Z→2026-05-22T18:22:06Z
+feature.organizations:ownership-size-limit-large	window 21/720 2026-05-22T18:22:06Z→2026-05-22T18:32:06Z
+feature.organizations:ownership-size-limit-xlarge	window 21/720 2026-05-22T18:22:06Z→2026-05-22T18:32:06Z
+uptime.uptime-ips-api-response	window 21/720 2026-05-22T18:22:06Z→2026-05-22T18:32:06Z
+performance.trace.span_with_errors_ok_status.sample_rate	window 21/720 2026-05-22T18:22:06Z→2026-05-22T18:32:06Z
+post-process-forwarder:kafka-headers	window 22/720 2026-05-22T18:32:06Z→2026-05-22T18:42:06Z
+subscriptions-query.sample-rate	window 22/720 2026-05-22T18:32:06Z→2026-05-22T18:42:06Z
+feature.organizations:issue-query-injection-vulnerability-post-process-group	window 24/720 2026-05-22T18:52:06Z→2026-05-22T19:02:06Z
+billing.usagebuffer.batch_incr.rollout	window 24/720 2026-05-22T18:52:06Z→2026-05-22T19:02:06Z
+billing.usagebuffer.batch_incr.projects	window 24/720 2026-05-22T18:52:06Z→2026-05-22T19:02:06Z
+mail.mailgun-api-key	window 25/720 2026-05-22T19:02:06Z→2026-05-22T19:12:06Z
+uptime.restrict-issue-creation-by-hosting-provider-id	window 25/720 2026-05-22T19:02:06Z→2026-05-22T19:12:06Z
+uptime.create-issues	window 25/720 2026-05-22T19:02:06Z→2026-05-22T19:12:06Z
+grouping.config_transition.config_upgrade_sample_rate	window 26/720 2026-05-22T19:12:06Z→2026-05-22T19:22:06Z
+spans.process-segments.schema-validation	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.drop-in-buffer	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.max-memory-percentage	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.flusher.backpressure-seconds	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.evalsha-cumulative-logger-enabled	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.debug-traces	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.root-timeout	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.redis-ttl	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.segment-page-size	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+consumer.verbose_multiprocessing_logs	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+consumer.dump_stacktrace_on_shutdown	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+feature.organizations:seer-agent-source-code-search	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.flusher-cumulative-logger-enabled	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.max-flush-segments	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.max-segment-bytes	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.flusher.log-flushed-segments	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.timeout	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.flusher.flush-lock-ttl	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.pipeline-batch-size	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.max-spans-per-evalsha	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.compression.level	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.flusher.max-unhealthy-seconds	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+spans.buffer.flusher.use-stuck-detector	window 27/720 2026-05-22T19:22:06Z→2026-05-22T19:32:06Z
+release-health.disable-release-last-seen-update	window 28/720 2026-05-22T19:32:06Z→2026-05-22T19:42:06Z
+sentry-metrics.writes-limiter.limits.releasehealth.per-org	window 29/720 2026-05-22T19:42:06Z→2026-05-22T19:52:06Z
+sentry-metrics.writes-limiter.limits.releasehealth.global	window 29/720 2026-05-22T19:42:06Z→2026-05-22T19:52:06Z
+feature.organizations:workflow-engine-issue-alert-endpoints-post	window 30/720 2026-05-22T19:52:06Z→2026-05-22T20:02:06Z
+feature.organizations:more-slow-alerts	window 30/720 2026-05-22T19:52:06Z→2026-05-22T20:02:06Z
+feature.organizations:seer-slack-code-mode	window 30/720 2026-05-22T19:52:06Z→2026-05-22T20:02:06Z
+feature.organizations:uptime-backlog-retry	window 31/720 2026-05-22T20:02:06Z→2026-05-22T20:12:06Z
+github-login.client-secret	window 32/720 2026-05-22T20:12:06Z→2026-05-22T20:22:06Z
+github-login.client-id	window 32/720 2026-05-22T20:12:06Z→2026-05-22T20:22:06Z
+secret-scanning.github.enable-signature-verification	window 32/720 2026-05-22T20:12:06Z→2026-05-22T20:22:06Z
+feature.organizations:more-fast-alerts	window 32/720 2026-05-22T20:12:06Z→2026-05-22T20:22:06Z
+sentry-metrics.indexer.disabled-namespaces	window 33/720 2026-05-22T20:22:06Z→2026-05-22T20:32:06Z
+sentry-metrics.indexer.generic-metrics.schema-validation-rules	window 33/720 2026-05-22T20:22:06Z→2026-05-22T20:32:06Z
+sentry-metrics.indexer.reconstruct.enable-orjson	window 33/720 2026-05-22T20:22:06Z→2026-05-22T20:32:06Z
+sentry-metrics.drop-percentiles.per-use-case	window 33/720 2026-05-22T20:22:06Z→2026-05-22T20:32:06Z
+sentry-metrics.indexer.release-health.schema-validation-rules	window 33/720 2026-05-22T20:22:06Z→2026-05-22T20:32:06Z
+notifications.platform-rollout.is-sentry	window 39/720 2026-05-22T21:22:06Z→2026-05-22T21:32:06Z
+sentry-metrics.writes-limiter.limits.spans.per-org	window 40/720 2026-05-22T21:32:06Z→2026-05-22T21:42:06Z
+sentry-metrics.writes-limiter.limits.spans.global	window 40/720 2026-05-22T21:32:06Z→2026-05-22T21:42:06Z
+vercel.integration-slug	window 41/720 2026-05-22T21:42:06Z→2026-05-22T21:52:06Z
+hybridcloud.webhookpayload.worker_threads	window 46/720 2026-05-22T22:32:06Z→2026-05-22T22:42:06Z
+crons.dispatch_incident_occurrences_to_consumer	window 47/720 2026-05-22T22:42:06Z→2026-05-22T22:52:06Z
+feature.organizations:issue-ai-detected-runtime-performance-post-process-group	window 54/720 2026-05-22T23:52:06Z→2026-05-23T00:02:06Z
+sms.twilio-number	window 54/720 2026-05-22T23:52:06Z→2026-05-23T00:02:06Z
+sms.twilio-token	window 54/720 2026-05-22T23:52:06Z→2026-05-23T00:02:06Z
+filestore.relocation-options	window 54/720 2026-05-22T23:52:06Z→2026-05-23T00:02:06Z
+filestore.relocation-backend	window 54/720 2026-05-22T23:52:06Z→2026-05-23T00:02:06Z
+getsentry.quotas.run_spike_projection.on_missing	window 55/720 2026-05-23T00:02:06Z→2026-05-23T00:12:06Z
+getsentry.spike-protection.calculate_spike_projections	window 56/720 2026-05-23T00:12:06Z→2026-05-23T00:22:06Z
+statistical_detectors.query.functions.timeseries_days	window 60/720 2026-05-23T00:52:06Z→2026-05-23T01:02:06Z
+system.security-email	window 67/720 2026-05-23T02:02:06Z→2026-05-23T02:12:06Z
+feature.organizations:custom-span-trimming-max-size	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+sentry-metrics.releasehealth.abnormal-mechanism-extraction-rate	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+on_demand.max_alert_specs	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+on_demand.extended_alert_spec_orgs	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+relay.drop-transaction-metrics	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+dynamic-sampling.config.killswitch	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+feature.organizations:relay-default-trace-id	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+feature.organizations:view-hierarchy-scrubbing	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+feature.organizations:relay-new-error-processing	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+indexed-spans-extraction-orgs-denylist	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+indexed-spans-extraction-enabled	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+replay.replay-video.slug-denylist	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+replay.replay-video.disabled	window 71/720 2026-05-23T02:42:06Z→2026-05-23T02:52:06Z
+reprocessing2.drop-delete-old-primary-hash	window 78/720 2026-05-23T03:52:06Z→2026-05-23T04:02:06Z
+profiling.continuous-profiling.chunks-set.size	window 91/720 2026-05-23T06:02:06Z→2026-05-23T06:12:06Z
+workflow_engine.max_workflows_per_org	window 111/720 2026-05-23T09:22:06Z→2026-05-23T09:32:06Z
+feature.organizations:more-workflows	window 111/720 2026-05-23T09:22:06Z→2026-05-23T09:32:06Z
+feature.organizations:issue-sourcemap-configuration-post-process-group	window 112/720 2026-05-23T09:32:06Z→2026-05-23T09:42:06Z
+slack.client-secret	window 115/720 2026-05-23T10:02:06Z→2026-05-23T10:12:06Z
+slack.client-id	window 115/720 2026-05-23T10:02:06Z→2026-05-23T10:12:06Z
+feature.organizations:sso-saml2-slo	window 115/720 2026-05-23T10:02:06Z→2026-05-23T10:12:06Z
+user-settings.signed-url-confirmation-emails-salt	window 117/720 2026-05-23T10:22:06Z→2026-05-23T10:32:06Z
+user-settings.signed-url-confirmation-emails	window 117/720 2026-05-23T10:22:06Z→2026-05-23T10:32:06Z
+seer.night_shift.issues_per_org	window 119/720 2026-05-23T10:42:06Z→2026-05-23T10:52:06Z
+codecov.api-bridge-signing-secret	window 120/720 2026-05-23T10:52:06Z→2026-05-23T11:02:06Z
+on_demand.max_widget_specs	window 129/720 2026-05-23T12:22:06Z→2026-05-23T12:32:06Z
+seer.explorer_index.killswitch.enable	window 187/720 2026-05-23T22:02:06Z→2026-05-23T22:12:06Z
+billing.create_invoices.tasks_per_second	window 201/720 2026-05-24T00:22:06Z→2026-05-24T00:32:06Z
+api.rate-limit.org-create	window 293/720 2026-05-24T15:42:06Z→2026-05-24T15:52:06Z
+intercom.sentry-api-secret	window 294/720 2026-05-24T15:52:06Z→2026-05-24T16:02:06Z
+apitoken.use-and-update-hash-rate	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+assemble.read_from_redis	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+replay.consumer.msgspec_recording_parser	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+replay.consumer.enable_new_query_caching_system	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+replay.recording.ingest-trace-items.rollout	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-low-value-span-configuration-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-low-value-span-configuration-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:legacy-webhook-dry-run	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:dashboards-widget-unfurl	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:migrate-am1-metrics-alerts-to-transactions	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-sourcemap-configuration-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:seer-run-mirror-autofix	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:seer-run-id-in-slack	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-preprod-size-analysis-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-preprod-size-analysis-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:seer-public-rpc	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:context-engine-experiments	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:migrate-transaction-alerts-to-spans	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:migrate-transaction-queries-to-spans	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-performance-streamed-spans-exp-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-general-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-general-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-code-health-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-code-health-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-security-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-security-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-runtime-performance-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-db-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-db-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-ai-detected-http-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-llm-detected-experimental-v2-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-llm-detected-experimental-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-llm-detected-experimental-v2-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-llm-detected-experimental-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-db-query-injection-vulnerability-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-db-query-injection-vulnerability-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-performance-n-plus-one-db-queries-experimental-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-performance-n-plus-one-db-queries-experimental-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-performance-n-plus-one-api-calls-experimental-post-process-group	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+feature.organizations:issue-performance-n-plus-one-api-calls-experimental-ingest	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.supergroups_backfill_lightweight.max_failures_per_batch	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.supergroups_backfill_lightweight.inter_batch_delay_s	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.supergroups_backfill_lightweight.batch_size	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+dynamic.saferollouts.occurrences_on_eap.mismatch_log_callsite_allowlist	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+dynamic.saferollouts.occurrences_on_eap.eval_experimental_sample_rate	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+getsentry.detect-low-value-spans.enabled	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+getsentry.detect-low-value-spans.llm-max-tokens	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+getsentry.detect-low-value-spans.llm-processing-timeout	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+getsentry.detect-low-value-spans.llm-request-timeout	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+getsentry.detect-low-value-spans.llm-reasoning	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+sentry-apps.webhook.circuit-breaker.dry-run	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+objectstore.enable_for.attachments	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+explorer.service_map.parent_span_batch_size	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.night_shift.enable	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.explorer-index.rollout	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.explorer_index.enable	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+explorer.context_engine_indexing.enable	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+notifications.platform-rollout.internal-testing	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.scanner_no_consent.rollout_rate	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relay.kafka.span-v2.sample-rate	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.dashboards-transactions.dashboards	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.dashboards-transactions.organizations	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.discover-transactions.projects	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.discover-transactions.queries	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.discover-transactions.organizations	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.discover-transactions.enable	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+profiling.flamegraph.query.multiplier	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+profiling.flamegraph.query.max_delta.hours	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+eap-migration.dashboard-comparison.enable	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+sdk-deprecation.profile-chunk.cocoa	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outcomes_consumer.usage_buffer.recover_orphaned_data.limit	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outcomes_consumer.usage_buffer.recover_orphaned_data.enable	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+backfill_new_categories.lock_ttl	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+backfill_new_categories.prioritize_paid_plans	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+backfill_new_categories.categories	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+backfill_new_categories.chunk_size	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outcomes_consumer.usage_buffer.percent.rollout	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+crons.system_incidents.pct_deviation_incident_threshold	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+crons.system_incidents.pct_deviation_anomaly_threshold	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+crons.system_incidents.use_decisions	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+crons.system_incidents.collect_metrics	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+crons.organization.disable-check-in	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+profiling.continuous-profiling.chunks-query.size	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+tempest.tempest-ips-api-response	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+seer.api.use-shared-secret	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+vercel.invoice-notpaid.disable-downgrade	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+sentry-apps.hard-delete	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+workflow_engine.scheduler.use_conditional_delete	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+github-extension.enabled	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+github-extension.enabled-orgs	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+traces.sample-list.sample-rate	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+staff.user-email-allowlist	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relocation.daily-limit.small	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relocation.daily-limit.medium	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relocation.daily-limit.large	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relocation.autopause.saas-to-saas	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relocation.autopause.self-hosted	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+relocation.autopause	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+store.save-event-highcpu-platforms	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.accounts_thirdpartyaccount.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.sentry_organizationavatar.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.sentry_projectkey.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.sentry_externalactor.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.sentry_organizationmember_teams.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.sentry_team.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+outbox_replication.sentry_organization.replication_version	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+delayed_processing.emit_logs	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+release-health.use-org-and-project-filter	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+flags:options-audit-log-organization-id	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+flags:options-audit-log-is-enabled	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+options_automator_slack_webhook_enabled	window 334/720 2026-05-24T22:32:06Z→2026-05-24T22:42:06Z
+vsts.consent-prompt	window 353/720 2026-05-25T01:42:06Z→2026-05-25T01:52:06Z
+on_demand.update_on_demand_modified	window 396/720 2026-05-25T08:52:06Z→2026-05-25T09:02:06Z
+on_demand_metrics.check_widgets.enable	window 396/720 2026-05-25T08:52:06Z→2026-05-25T09:02:06Z
+on_demand.max_widget_cardinality.count	window 396/720 2026-05-25T08:52:06Z→2026-05-25T09:02:06Z
+snuba.search.recommended.group-type-boost	window 406/720 2026-05-25T10:32:06Z→2026-05-25T10:42:06Z
+snuba.search.recommended.event-volume-weight	window 406/720 2026-05-25T10:32:06Z→2026-05-25T10:42:06Z
+snuba.search.recommended.user-impact-weight	window 406/720 2026-05-25T10:32:06Z→2026-05-25T10:42:06Z
+snuba.search.recommended.severity-weight	window 406/720 2026-05-25T10:32:06Z→2026-05-25T10:42:06Z
+snuba.search.recommended.spike-weight	window 406/720 2026-05-25T10:32:06Z→2026-05-25T10:42:06Z
+snuba.search.recommended.recency-weight	window 406/720 2026-05-25T10:32:06Z→2026-05-25T10:42:06Z
+uptime.use-detectors-by-data-source-cache	window 429/720 2026-05-25T14:22:06Z→2026-05-25T14:32:06Z
+feature.organizations:uptime-response-capture	window 429/720 2026-05-25T14:22:06Z→2026-05-25T14:32:06Z
+issue-detection.llm-detection.traces-per-invocation	window 430/720 2026-05-25T14:32:06Z→2026-05-25T14:42:06Z
+issue-detection.llm-detection.enabled	window 430/720 2026-05-25T14:32:06Z→2026-05-25T14:42:06Z
+slack-staging.signing-secret	window 431/720 2026-05-25T14:42:06Z→2026-05-25T14:52:06Z
+profiling.killswitch.ingest-profiles	window 439/720 2026-05-25T16:02:06Z→2026-05-25T16:12:06Z
+apigateway.proxy.circuit-breaker.enforce	window 478/720 2026-05-25T22:32:06Z→2026-05-25T22:42:06Z
+outbox_replication.sentry_organizationmember.replication_version	window 480/720 2026-05-25T22:52:06Z→2026-05-25T23:02:06Z
+api.project-transfer.rate-limit-overrides	window 504/720 2026-05-26T02:52:06Z→2026-05-26T03:02:06Z
+span-metrics-extraction-enabled-for-am2_f	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+indexed-spans.agg-span-waterfall.enable	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+devtoolbar.analytics.enabled	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+grouping.merge.stuck_group_ids	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+issue-detection.web-vitals-detection.enabled	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+issue-detection.web-vitals-detection.projects-allowlist	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+snuba.search.pre-snuba-candidates-percentage	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+snuba.search.pre-snuba-candidates-optimizer	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+eap-migration.alerts-transactions-rollforward.queries	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+eap-migration.alerts-transactions-rollback.queries	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+eap-migration.alerts-transactions.queries	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+metric_alerts.extended_max_subscriptions	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+eap-migration.alert-comparison.enable	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry.demo_mode.sync_debug_artifacts.source_org_id	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry.demo_mode.sync_debug_artifacts.enable	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+relay.ourlogs-ingestion.sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+relay.projectconfigs.migration.rollout	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+relay.quotas.migration.rollout	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+billing.counters.workers.rollout	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+outcomes_consumer.task.capture_message	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+processingstore.bigtable.projects	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+attachments.memorystore.sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+grouping.rust_enhancers.prefer_rust_components	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+grouping.rust_enhancers.compare_components	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+statistical_detectors.enable.projects.profiling	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+statistical_detectors.enable.projects.performance	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+processing.sourcemapcache-processor	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+fileblob.upload.use_lock	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+filestore.migration.rollout	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+backpressure.high_watermarks.processing-locks	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+store.allow-s4s-ddm-sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+performance_issues.file_io_main_thread.disabled	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+processing.calculate-severity-on-group-creation	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+on_demand.max_widget_cardinality.killswitch	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+on_demand_metrics.check_widgets.rollout	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+discover.saved-query-dataset-split.organization-id-allowlist	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+discover.saved-query-dataset-split.enable	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+performance.traces.span_query_minimum_spans	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+performance.traces.span_query_timebuffer_hours	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+project-abuse-quota.span-limit	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+symbolicate.symx-os-description-list	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+symbolicate-event.low-priority.metrics.submission-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+store.experimental-dsn-double-write.sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+symbolicator.sourcemaps-bundle-index-refresh-sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+kafka-publisher.raw-event-sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+snuba.tagstore.cache-tagkeys-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+snuba.track-outcomes-sample-rate	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+pagerduty.app-id	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+releasefile.cache-limit	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.10s-granularity	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.writes-limiter.limits.generic-metrics.global	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.writes-limiter.limits.performance.global	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.writes-limiter.limits.generic-metrics.per-org	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.writes-limiter.limits.performance.per-org	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.synchronized-rebalance-delay	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+sentry-metrics.synchronize-kafka-rebalances	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+system.use-date-util-timestamps	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+system.root-api-key	window 517/720 2026-05-26T05:02:06Z→2026-05-26T05:12:06Z
+codecov.signing_secret	window 537/720 2026-05-26T08:22:06Z→2026-05-26T08:32:06Z
+sentry:version-configured	window 570/720 2026-05-26T13:52:06Z→2026-05-26T14:02:06Z
+data-forwarding.task-rollout-rate	window 588/720 2026-05-26T16:52:06Z→2026-05-26T17:02:06Z
+feature.organizations:issue-stream-recommended-sort	window 590/720 2026-05-26T17:12:06Z→2026-05-26T17:22:06Z
+workflow_engine.filter_cross_org_workflows	window 617/720 2026-05-26T21:42:06Z→2026-05-26T21:52:06Z
+feature.organizations:workflow-engine-evaluate-seer-activities	window 630/720 2026-05-26T23:52:06Z→2026-05-27T00:02:06Z
