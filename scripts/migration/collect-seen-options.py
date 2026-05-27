@@ -9,7 +9,7 @@ from pathlib import Path
 
 PROJECT = "internal-sentry"
 INTERVAL = 600  # seconds per window
-LOOKBACK = 43200  # 12 hours
+LOOKBACK = 432000  # 120 hours
 
 out_file = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "seen.txt")
 
