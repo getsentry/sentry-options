@@ -180,6 +180,22 @@ def find_options_mapper(sentry_path: str) -> dict[str, str]:
 _OPTIONS_CALL_ATTRS = frozenset({'get', 'set', 'delete', 'isset'})
 
 
+def _options_local_names(tree: ast.AST) -> frozenset[str]:
+    """
+    Return locally-bound names imported directly from sentry.options.
+    e.g. `from sentry.options import get` → frozenset({'get'})
+    These bare names are used like `get("key")` instead of `options.get("key")`.
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == 'sentry.options':
+            for alias in node.names:
+                local = alias.asname or alias.name
+                if alias.name in _OPTIONS_CALL_ATTRS:
+                    names.add(local)
+    return frozenset(names)
+
+
 @dataclass
 class ASTScanResult:
     # key -> set of file paths where options.get("key") was found
@@ -279,6 +295,9 @@ def _attribute_dynamic_file(file_path: str) -> FileAttribution:
     # Collect class-level string constants for self.attr_name resolution.
     class_str = _class_str_attrs(tree)
 
+    # Locally-bound names imported from sentry.options (e.g. `from sentry.options import get`).
+    options_local = _options_local_names(tree)
+
     # Try to enumerate a static registry dict used for killswitch-style access.
     # Convention: if the file has ALL_*_OPTIONS = {...} we treat those keys as bounded.
     for node in ast.walk(tree):
@@ -314,19 +333,26 @@ def _attribute_dynamic_file(file_path: str) -> FileAttribution:
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
-            if not (
+            is_attr_call = (
                 isinstance(func, ast.Attribute)
                 and isinstance(func.value, ast.Name)
                 and func.value.id == 'options'
-            ):
+            )
+            is_bare_call = (
+                isinstance(func, ast.Name)
+                and func.id in options_local
+            )
+            if not (is_attr_call or is_bare_call):
                 continue
 
+            effective_attr = func.attr if is_attr_call else func.id
+
             # options.all() / options.filter() → management plane
-            if func.attr in ('all', 'filter'):
+            if effective_attr in ('all', 'filter'):
                 attr.is_admin_plane = True
                 continue
 
-            if func.attr not in _OPTIONS_CALL_ATTRS or not node.args:
+            if effective_attr not in _OPTIONS_CALL_ATTRS or not node.args:
                 continue
 
             arg = node.args[0]
@@ -445,17 +471,24 @@ def _scan_python_file(file_path: str, known_keys: set[str], result: ASTScanResul
     except (SyntaxError, OSError, ValueError):
         return
 
+    options_local = _options_local_names(tree)
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        # Match `options.get(...)` where `options` is any local name
-        if not (
+        # Match `options.get(...)` or bare `get(...)` imported from sentry.options
+        is_attr = (
             isinstance(func, ast.Attribute)
             and func.attr in _OPTIONS_CALL_ATTRS
             and isinstance(func.value, ast.Name)
             and func.value.id == 'options'
-        ):
+        )
+        is_bare = (
+            isinstance(func, ast.Name)
+            and func.id in options_local
+        )
+        if not (is_attr or is_bare):
             continue
         if not node.args:
             continue
@@ -476,15 +509,23 @@ def ast_scan_repos(
     """Run AST scan over all Python files in search_dirs."""
     result = ASTScanResult()
     for search_dir in search_dirs:
-        try:
-            rg = subprocess.run(
-                ['rg', '-l', '--type', 'py', r'options\.(?:get|set|delete|isset)\s*\(', search_dir],
-                capture_output=True, text=True, timeout=120,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            continue
-        for filepath in rg.stdout.strip().split('\n'):
-            if filepath and filepath not in exclude_files:
+        candidate_files: set[str] = set()
+        for pattern in [
+            r'options\.(?:get|set|delete|isset)\s*\(',
+            r'from sentry\.options import',
+        ]:
+            try:
+                rg = subprocess.run(
+                    ['rg', '-l', '--type', 'py', pattern, search_dir],
+                    capture_output=True, text=True, timeout=120,
+                )
+                for filepath in rg.stdout.strip().split('\n'):
+                    if filepath:
+                        candidate_files.add(filepath)
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+        for filepath in candidate_files:
+            if filepath not in exclude_files:
                 _scan_python_file(filepath, known_keys, result)
     return result
 
