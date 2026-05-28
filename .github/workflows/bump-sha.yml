@@ -91,8 +91,8 @@ jobs:
           # branch/PR instead of creating competing ones.
           BRANCH="auto/bump-${REPO_NAME}"
 
-          git config user.name "getsentry-bot"
-          git config user.email "bot@getsentry.com"
+          git config user.name "sentry-internal[bot]"
+          git config user.email "38422159+sentry-internal[bot]@users.noreply.github.com"
 
           # Create or reset the branch to current main with our change.
           git checkout -b "$BRANCH"
