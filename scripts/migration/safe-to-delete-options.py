@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-Produces a list of options that are absolutely safe to delete:
-  - no detected usages in inventory.csv (static analysis found nothing)
-  - not present in seen.txt (never observed in production via GCP logs)
+Produces a list of options that are safe to delete:
+  - SAFE_CANDIDATE: no static usages found anywhere in sentry/getsentry,
+    and the key's namespace prefix doesn't appear in any unresolved
+    dynamic-access file (plausibility filter). seen.txt is intentionally
+    ignored for SAFE_CANDIDATE — production "seen" events for these keys
+    come from admin-plane sweeps (options.all()), not genuine reads.
 """
 import csv
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
-SEEN_FILE = HERE / "seen.txt"
 INVENTORY_FILE = HERE / "inventory.csv"
-
-seen = {line.split("\t")[0] for line in SEEN_FILE.read_text().splitlines() if line}
 
 safe = []
 with INVENTORY_FILE.open() as f:
     for row in csv.DictReader(f):
-        key = row["key"]
-        if row.get("safe_to_delete") == "SAFE_CANDIDATE" and key not in seen:
-            safe.append(key)
+        if row.get("safe_to_delete") == "SAFE_CANDIDATE":
+            safe.append(row["key"])
 
-print(f"# {len(safe)} options with no static usages and never seen in production", file=sys.stderr)
+print(f"# {len(safe)} SAFE_CANDIDATE options", file=sys.stderr)
 for key in sorted(safe):
     print(key)
