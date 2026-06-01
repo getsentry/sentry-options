@@ -203,7 +203,6 @@ jobs:
 
   bump-sha:
     name: Bump SHA in automator
-    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/bump-sha.yml
     secrets: inherit
 
