@@ -201,6 +201,12 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
 
+  bump-sha:
+    name: Bump SHA in automator
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/bump-sha.yml
+    secrets: inherit
+
   validate-schema-changes:
     name: Validate Schema Changes
     needs: check-cli-changes
@@ -250,7 +256,7 @@ jobs:
         run: uv run pytest tests -xvs
 
   collector:
-    needs: [build-python, build-python-sdist, build-rust, pre-commit, rust-lint, rust-test, validate-schema-changes, python-client-test]
+    needs: [build-python, build-python-sdist, build-rust, pre-commit, rust-lint, rust-test, validate-schema-changes, python-client-test, bump-sha]
     if: always()
     runs-on: ubuntu-latest
     steps:
