@@ -205,8 +205,6 @@ jobs:
     name: Bump SHA in automator
     uses: ./.github/workflows/bump-sha.yml
     secrets: inherit
-    with:
-      schemas-path: schemas
 
   validate-schema-changes:
     name: Validate Schema Changes
