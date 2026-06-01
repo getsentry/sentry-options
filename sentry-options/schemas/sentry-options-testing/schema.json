@@ -59,6 +59,11 @@
       "items": {"type": "integer"},
       "description": "An example array option"
     },
+    "pre-migration": {
+      "type": "string",
+      "default": "hello world",
+      "description": "just testing to see if sha autobump works!"
+    },
     "feature.organizations:enabled-feature": {
         "$ref": "#/definitions/Feature"
     },
