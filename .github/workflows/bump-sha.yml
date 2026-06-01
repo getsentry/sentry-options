@@ -35,6 +35,14 @@ jobs:
           app_id: ${{ vars.SENTRY_INTERNAL_APP_ID }}
           private_key: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
 
+      - name: Checkout sentry-options
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: getsentry/sentry-options
+          sparse-checkout: .github/scripts/bump_sha.py
+          sparse-checkout-cone-mode: false
+          path: sentry-options
+
       - name: Checkout sentry-options-automator
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -48,4 +56,4 @@ jobs:
           SCHEMAS_PATH: ${{ inputs.schemas-path }}
           REPO_NAME: ${{ github.event.repository.name }}
           NEW_SHA: ${{ github.sha }}
-        run: python3 .github/scripts/bump_sha.py
+        run: python3 sentry-options/.github/scripts/bump_sha.py
