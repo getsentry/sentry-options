@@ -1,0 +1,59 @@
+name: Bump SHA in sentry-options-automator
+
+on:
+  workflow_call:
+    inputs:
+      schemas-path:
+        description: "Path to the schemas directory (used to verify schema files exist)"
+        type: string
+        default: "sentry-options/schemas"
+
+# Serialize per-repo so two rapid merges don't race.
+concurrency:
+  group: bump-sha-${{ github.repository }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail -ux {0}
+
+jobs:
+  bump-sha:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Generate token for sentry-options-automator
+        id: app-token
+        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
+        with:
+          app_id: ${{ vars.SENTRY_INTERNAL_APP_ID }}
+          private_key: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
+
+      - name: Checkout sentry-options
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: getsentry/sentry-options
+          sparse-checkout: .github/scripts/bump_sha.py
+          sparse-checkout-cone-mode: false
+          path: sentry-options
+
+      - name: Checkout sentry-options-automator
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: getsentry/sentry-options-automator
+          token: ${{ steps.app-token.outputs.token }}
+          path: automator
+
+      - name: Bump SHA and open PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SCHEMAS_PATH: ${{ inputs.schemas-path }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          NEW_SHA: ${{ github.sha }}
+        run: python3 sentry-options/.github/scripts/bump_sha.py
