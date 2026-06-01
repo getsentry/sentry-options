@@ -41,7 +41,8 @@ import subprocess
 import sys
 import textwrap
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
 CHUNK_SIZE = 100
 
@@ -86,13 +87,17 @@ def extract_registrations(file_path: str) -> list[dict]:
         declaration = '\n'.join(comment_lines + block.split('\n'))
 
         type_m = re.search(r'type=(\w+)', block)
-        flags_m = re.search(r'flags=([\w\s|]+?)(?:,|\))', block)
+        flags_m = re.search(r'flags=([\w\s|.]+?)(?:,|\))', block)
         default_m = re.search(r'default=([^,\)]+)', block)
+
+        # Normalize flags: strip `options.` prefix (getsentry uses it, sentry doesn't)
+        raw_flags = flags_m.group(1).strip() if flags_m else 'DEFAULT_FLAGS'
+        raw_flags = re.sub(r'options\.', '', raw_flags)
 
         results.append({
             'key': key,
             'type': type_m.group(1) if type_m else 'inferred',
-            'flags': flags_m.group(1).strip() if flags_m else 'DEFAULT_FLAGS',
+            'flags': raw_flags,
             'default': default_m.group(1).strip() if default_m else '',
             'source': file_path,
             'lineno': lineno,
@@ -696,7 +701,8 @@ def print_plan_report(
     w()
     w('## How to use this plan')
     w()
-    w(textwrap.dedent('''\
+    w(
+        textwrap.dedent('''\
         This file is designed to be worked through by a coding agent (or a human)
         option-by-option. Each section below corresponds to one candidate option.
         Work top-to-bottom. Options with hints (`deprecation_note`, `all_peers_used`)
@@ -755,22 +761,27 @@ def print_plan_report(
         - Search for the key in `configs/` YAML value files and remove any entries.
         - Run `cargo test` and `pytest tests/` to confirm nothing broke.
         - Commit with message: `chore(options): remove unused option <key>`
-    ''').rstrip())
+    ''').rstrip(),
+    )
     w()
     w('---')
     w()
     w('## Unresolved dynamic-access files')
     w()
-    w('These files contain `options.get(variable)` calls that could not be '
-      'statically attributed to a specific key or namespace. Check the relevant '
-      'ones before deleting options in related namespaces.')
+    w(
+        'These files contain `options.get(variable)` calls that could not be '
+        'statically attributed to a specific key or namespace. Check the relevant '
+        'ones before deleting options in related namespaces.',
+    )
     w()
     for f in unresolved_files:
         w(f'- `{f}`')
     if admin_files:
         w()
-        w('The following are management-plane files (admin APIs / CLI) that iterate '
-          'all options — they do not represent application use of specific options:')
+        w(
+            'The following are management-plane files (admin APIs / CLI) that iterate '
+            'all options — they do not represent application use of specific options:',
+        )
         w()
         for f in admin_files:
             w(f'- `{f}`')
@@ -887,10 +898,11 @@ def print_html_report(
     active_all_keys: set[str] | None = None,
     active_unknown_db: set[str] | None = None,
 ) -> None:
-    active_db_keys    = active_db_keys    or set()
-    active_disk_keys  = active_disk_keys  or set()
-    active_all_keys   = active_all_keys   or set()
+    active_db_keys = active_db_keys or set()
+    active_disk_keys = active_disk_keys or set()
+    active_all_keys = active_all_keys or set()
     active_unknown_db = active_unknown_db or set()
+
     def esc(s: str) -> str:
         return _html.escape(str(s))
 
@@ -924,7 +936,11 @@ def print_html_report(
 
         if usages:
             items = ''.join(f'<span class="usage-file">{esc(f)}</span>' for f in usages)
-            usages_html = f'<div class="usages-section"><div class="usages-label">usages ({len(usages)})</div>{items}</div>'
+            usages_html = (
+                f'<div class="usages-section">'
+                f'<div class="usages-label">usages ({len(usages)})</div>'
+                f'{items}</div>'
+            )
         else:
             usages_html = '<div class="no-usages">no usages found</div>'
 
@@ -994,11 +1010,11 @@ def print_html_report(
   <div class="option-location">found in database · not in static scan or runtime registration</div>
 </div></details></div>''')
 
-    n_inv     = safety_counts.get('INVESTIGATE', 0)
-    n_safe    = safety_counts.get('SAFE_CANDIDATE', 0)
-    n_nev     = safety_counts.get('NEVER_DELETE', 0)
+    n_inv = safety_counts.get('INVESTIGATE', 0)
+    n_safe = safety_counts.get('SAFE_CANDIDATE', 0)
+    n_nev = safety_counts.get('NEVER_DELETE', 0)
     n_runtime = len(runtime_keys) + len(active_unknown_db)
-    total     = len(registrations) + n_runtime
+    total = len(registrations) + n_runtime
 
     print(f'''\
 <!DOCTYPE html>
@@ -1097,7 +1113,10 @@ pre.diff{{margin:0;padding:10px 14px;font-size:11px;line-height:1.45;overflow-x:
     <button class="filter-btn" data-status="INVESTIGATE" onclick="setStatus('INVESTIGATE')">investigate</button>
     <button class="filter-btn" data-status="SAFE_CANDIDATE" onclick="setStatus('SAFE_CANDIDATE')">safe candidate</button>
     <button class="filter-btn" data-status="NEVER_DELETE" onclick="setStatus('NEVER_DELETE')">never delete</button>
-    {f'<button class="filter-btn" data-status="RUNTIME_ONLY" onclick="setStatus(\'RUNTIME_ONLY\')">runtime only</button>' if n_runtime else ''}
+    {
+        f'<button class="filter-btn" data-status="RUNTIME_ONLY" onclick="setStatus(\'RUNTIME_ONLY\')">'
+        f'runtime only</button>' if n_runtime else ''
+    }
     <input class="search-box" type="search" placeholder="search key…" oninput="setSearch(this.value)">
     <span class="vis-count" id="vis-count">{total} options</span>
   </div>
@@ -1137,21 +1156,21 @@ def _extract_relevant_hunk(diff: str, key: str) -> str:
 
     # Commit header ends at the first 'diff --git' or '@@' line.
     pre_end = next(
-        (i for i, l in enumerate(lines) if l.startswith('diff --git') or l.startswith('@@')),
+        (i for i, line in enumerate(lines) if line.startswith('diff --git') or line.startswith('@@')),
         min(8, len(lines)),
     )
-    header = [l for l in lines[:pre_end] if l.strip()]
+    header = [line for line in lines[:pre_end] if line.strip()]
 
     # Slice remaining lines into hunks (each starting with '@@').
     rest = lines[pre_end:]
-    hunk_starts = [i for i, l in enumerate(rest) if l.startswith('@@')]
+    hunk_starts = [i for i, line in enumerate(rest) if line.startswith('@@')]
     if not hunk_starts:
         return '\n'.join(header)
 
     for idx, start in enumerate(hunk_starts):
         end = hunk_starts[idx + 1] if idx + 1 < len(hunk_starts) else len(rest)
         hunk = rest[start:end]
-        if any(search in l for l in hunk):
+        if any(search in line for line in hunk):
             return '\n'.join(header + [''] + hunk)
 
     return '\n'.join(header)
@@ -1218,7 +1237,7 @@ def _git_log_first(
         cmd += ['--', file_path]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=_GIT_ENV)
-        return next((l for l in r.stdout.splitlines() if l), None)
+        return next((line for line in r.stdout.splitlines() if line), None)
     except Exception:
         return None
 
@@ -1358,9 +1377,9 @@ def main() -> None:
         try:
             with open(active_options_path) as _af:
                 _active = json.load(_af)
-            active_db_keys    = set(_active.get('has_db_value', []))
-            active_disk_keys  = set(_active.get('has_disk_value', []))
-            active_all_keys   = set(_active.get('all_registered', []))
+            active_db_keys = set(_active.get('has_db_value', []))
+            active_disk_keys = set(_active.get('has_disk_value', []))
+            active_all_keys = set(_active.get('all_registered', []))
             active_unknown_db = set(_active.get('unknown_db_keys', []))
             print(
                 f'Active options loaded from {active_options_path}: '
@@ -1489,7 +1508,7 @@ def main() -> None:
             uncertain_contents[path] = ''
 
     n_bounded = sum(1 for a in file_attributions.values() if a.bounded_prefixes or a.bounded_keys)
-    n_admin   = sum(1 for a in file_attributions.values() if a.is_admin_plane)
+    n_admin = sum(1 for a in file_attributions.values() if a.is_admin_plane)
     n_unresol = len(truly_uncertain)
     print(f'  {n_bounded} bounded  {n_admin} admin-plane  {n_unresol} app-unresolved', file=sys.stderr)
 
@@ -1528,7 +1547,7 @@ def main() -> None:
 
     # --- Pre-compute maps so both output paths share them ---
     found_by_map = {key: _found_by(key) for key in all_keys}
-    safety_map   = {reg['key']: classify(reg) for reg in registrations}
+    safety_map = {reg['key']: classify(reg) for reg in registrations}
 
     # --- Hints: supplemental heuristic signals ---
     hints_map = {reg['key']: compute_hints(reg, safety_map[reg['key']], safety_map) for reg in registrations}
@@ -1657,8 +1676,8 @@ def main() -> None:
     if candidates:
         print(file=sys.stderr)
         n_safe = safety_counts.get('SAFE_CANDIDATE', 0)
-        n_inv  = safety_counts.get('INVESTIGATE', 0)
-        parts  = []
+        n_inv = safety_counts.get('INVESTIGATE', 0)
+        parts = []
         if n_safe:
             parts.append(f'{e.for_status("SAFE_CANDIDATE")}{n_safe} SAFE_CANDIDATE{e.reset}')
         if n_inv:
