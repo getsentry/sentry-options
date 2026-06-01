@@ -15,6 +15,10 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail -ux {0}
+
 jobs:
   bump-sha:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
@@ -23,15 +27,6 @@ jobs:
     steps:
       - name: Checkout calling repo
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Verify schemas directory exists
-        env:
-          SCHEMAS_PATH: ${{ inputs.schemas-path }}
-        run: |
-          if [ ! -d "$SCHEMAS_PATH" ]; then
-            echo "::error::Schemas directory '$SCHEMAS_PATH' not found"
-            exit 1
-          fi
 
       - name: Generate token for sentry-options-automator
         id: app-token
@@ -47,91 +42,10 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           path: automator
 
-      - name: Update SHA in repos.json
-        id: update-sha
-        env:
-          REPO_NAME: ${{ github.event.repository.name }}
-          NEW_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          cd automator
-
-          CURRENT_SHA=$(jq -r --arg repo "$REPO_NAME" '.repos[$repo].sha // empty' repos.json)
-
-          if [ -z "$CURRENT_SHA" ]; then
-            echo "::error::Repository '$REPO_NAME' not found in repos.json"
-            exit 1
-          fi
-
-          if [ "$CURRENT_SHA" = "$NEW_SHA" ]; then
-            echo "SHA is already up to date ($NEW_SHA), nothing to do."
-            echo "updated=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          jq --arg repo "$REPO_NAME" --arg sha "$NEW_SHA" \
-            '.repos[$repo].sha = $sha' repos.json > repos.json.tmp
-          mv repos.json.tmp repos.json
-
-          echo "updated=true" >> "$GITHUB_OUTPUT"
-          echo "Updated $REPO_NAME SHA: $CURRENT_SHA -> $NEW_SHA"
-
-      - name: Create or update PR in sentry-options-automator
-        if: steps.update-sha.outputs.updated == 'true'
+      - name: Bump SHA and open PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SCHEMAS_PATH: ${{ inputs.schemas-path }}
           REPO_NAME: ${{ github.event.repository.name }}
           NEW_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          cd automator
-
-          SHORT_SHA="${NEW_SHA:0:12}"
-          # Fixed branch name per repo — rapid merges update the same
-          # branch/PR instead of creating competing ones.
-          BRANCH="auto/bump-${REPO_NAME}"
-
-          git config user.name "sentry-internal[bot]"
-          git config user.email "38422159+sentry-internal[bot]@users.noreply.github.com"
-
-          # Create or reset the branch to current main with our change.
-          git checkout -b "$BRANCH"
-          git add repos.json
-          git commit -m "chore: bump ${REPO_NAME} schema SHA to ${SHORT_SHA}"
-          git push --force origin "$BRANCH"
-
-          # If a PR already exists for this branch, it auto-updates from
-          # the force-push. Just add the auto-merge label in case a
-          # previous attempt had it removed.
-          EXISTING_PR=$(gh pr list \
-            --repo getsentry/sentry-options-automator \
-            --head "$BRANCH" \
-            --state open \
-            --json number \
-            --jq '.[0].number // empty')
-
-          if [ -n "$EXISTING_PR" ]; then
-            gh pr edit "$EXISTING_PR" \
-              --repo getsentry/sentry-options-automator \
-              --title "chore: bump ${REPO_NAME} schema SHA to ${SHORT_SHA}" \
-              --add-label "auto-merge"
-            echo "Updated existing PR #${EXISTING_PR}"
-            exit 0
-          fi
-
-          PR_BODY=$(cat <<EOF
-          Automated SHA bump for **${REPO_NAME}** to [\`${SHORT_SHA}\`](https://github.com/getsentry/${REPO_NAME}/commit/${NEW_SHA}).
-
-          Triggered by merge to \`main\` in [getsentry/${REPO_NAME}](https://github.com/getsentry/${REPO_NAME}).
-          EOF
-          )
-
-          PR_URL=$(gh pr create \
-            --repo getsentry/sentry-options-automator \
-            --head "$BRANCH" \
-            --base main \
-            --title "chore: bump ${REPO_NAME} schema SHA to ${SHORT_SHA}" \
-            --body "$PR_BODY" \
-            --label "auto-merge")
-
-          echo "Created PR: ${PR_URL}"
+        run: python3 .github/scripts/bump_sha.py
