@@ -11,15 +11,15 @@ type complexity, `FLAG_PRIORITIZE_DISK`, and cross-repo usage.
 
 | Tier | Count | DD Reads | Description |
 |------|-------|----------|-------------|
-| **1: Scaffold** | 228 | 0-900 | <1K reads, 0-2 usages, simple types, no DISK |
-| **2: Moderate** | 240 | 0-479,300 | Everything not in Tier 1/3/4 |
-| **3: High volume** | 162 | 0-9,897,200 | 1M+ reads, OR 6+ usages, OR DISK+high-usage, OR complex+high-reads |
-| **4: Critical** | 23 | 0-68,830,600 | 10M+ reads, OR system/mail/staff critical paths |
+| **Wave 1** | 228 | 0-900 | <1K reads, 0-2 usages, simple types, no DISK |
+| **Wave 2** | 240 | 0-479,300 | Everything not in Tier 1/3/4 |
+| **Wave 3** | 162 | 0-9,897,200 | 1M+ reads, OR 6+ usages, OR DISK+high-usage, OR complex+high-reads |
+| **Wave 4** | 23 | 0-68,830,600 | 10M+ reads, OR system/mail/staff critical paths |
 | **Total** | **653** | | |
 
 ---
 
-## Tier 1: Scaffold (228 options)
+## Wave 1 (228 options)
 
 Near-zero production read volume. Validate the migration pipeline e2e with zero risk.
 
@@ -256,7 +256,7 @@ Stats: 0 DISK, 0 complex types
 | `workflow_engine.max_more_workflows_per_org` | Int | 2 |  | 0 |
 | `workflow_engine.max_workflows_per_org` | Int | 2 |  | 0 |
 
-## Tier 2: Moderate (240 options)
+## Wave 2 (240 options)
 
 The main body of the migration. Moderate production reads, manageable code refs. Migrate in batches by namespace.
 
@@ -505,7 +505,7 @@ Stats: 77 DISK, 48 complex types
 | `uptime.uptime-ips-api-response` | Sequence | 2 |  | 0 |
 | `vsts.consent-prompt` | inferred | 3 |  | 0 |
 
-## Tier 3: High volume (162 options)
+## Wave 3 (162 options)
 
 Significant production read volume or multiple risk factors. Careful testing required.
 
@@ -676,7 +676,7 @@ Stats: 46 DISK, 34 complex types
 | `user-settings.signed-url-confirmation-emails` | inferred | 3 | DISK | 0 |
 | `user-settings.signed-url-confirmation-emails-salt` | String | 3 | DISK | 0 |
 
-## Tier 4: Critical (23 options)
+## Wave 4 (23 options)
 
 Highest blast radius. Migrate last, after 600+ options proven.
 

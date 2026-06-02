@@ -17,8 +17,8 @@ Every `register()` call in sentry and getsentry, classified into a destination.
 | **Credentials (secrets mgmt)** | 31 | `FLAG_CREDENTIAL` or actual secrets — should not be in ConfigMaps |
 | **Total** | **748** | |
 
-> **Not included:** ~263 feature flags (`manager.add()` in `temporary.py`, `permanent.py`,
-> `getsentry/features.py`). These are covered by a separate migration phase (Step 2.2).
+> **Not included:** 305 feature flags (`features.add()` / `manager.add()` in `temporary.py`,
+> `permanent.py`, `getsentry/features.py`). These are covered by a separate migration phase (Step 2.2).
 
 ### Known gap: loop-registered options (8)
 
