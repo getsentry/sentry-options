@@ -71,7 +71,7 @@ def extract_registrations(file_path: str) -> list[dict]:
     lines = content.split('\n')
 
     results = []
-    pattern = re.compile(r'(?:options\.)?register\(\s*\n?\s*"([^"]+)"', re.MULTILINE)
+    pattern = re.compile(r'(?:options\.)?register\(\s*(?:#[^\n]*\n\s*)*"([^"]+)"', re.MULTILINE)
     for match in pattern.finditer(content):
         lineno = content[:match.start()].count('\n') + 1  # 1-indexed
         block = _extract_block(content, match.start())

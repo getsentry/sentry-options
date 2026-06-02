@@ -4,34 +4,46 @@ Every `register()` call in sentry and getsentry, classified into a destination.
 
 > Generated from `inventory.csv` on the `kjiang/options-inventory` branch.
 > Inventory run against latest sentry/getsentry master as of 2026-06-01.
-> Excludes runtime-only options (flagpole feature flags, safe rollouts) which are
-> not found via static analysis without `active_options.json`.
-> Total: **738 options**.
+> Excludes runtime-only options (flagpole feature flags, safe rollouts).
+> Total: **748 options** (740 found by script + 8 loop-registered).
 
 ## Summary
 
 | Destination | Count | Description |
 |-------------|-------|-------------|
-| **Move to new sentry-options** | 656 | All have `FLAG_AUTOMATOR_MODIFIABLE` — already managed by the automator |
-| **Move to Django settings** | 48 | Per-environment config: `FLAG_NOSTORE`, `FLAG_REQUIRED`, `FLAG_PRIORITIZE_DISK` |
-| **Delete** | 5 | Unused (`SAFE_CANDIDATE`/`INVESTIGATE`) |
-| **Credentials (secrets mgmt)** | 29 | Options with `FLAG_CREDENTIAL` — secrets that should not be in ConfigMaps |
-| **Total** | **738** | |
+| **Move to new sentry-options** | 653 | `FLAG_AUTOMATOR_MODIFIABLE` — managed by automator. See `MIGRATION-SUB-TIERS.md` |
+| **Move to Django settings** | 59 | Per-environment config: `FLAG_NOSTORE`, `FLAG_REQUIRED`, integration client IDs |
+| **Delete** | 5 | Unused (`SAFE_CANDIDATE`/`INVESTIGATE`) — zero code references |
+| **Credentials (secrets mgmt)** | 31 | `FLAG_CREDENTIAL` or actual secrets — should not be in ConfigMaps |
+| **Total** | **748** | |
 
-> **Not included:** ~288 flagpole feature flags and ~24 other runtime-registered
-> options that only appear when booting a live instance. These are covered by
-> a separate migration phase (Step 2.2 in the plan).
+> **Not included:** ~263 feature flags (`manager.add()` in `temporary.py`, `permanent.py`,
+> `getsentry/features.py`). These are covered by a separate migration phase (Step 2.2).
+
+### Known gap: loop-registered options (8)
+
+These options are registered in a `for` loop in `src/sentry/options/defaults.py:1504`
+via `build_metric_abuse_quotas()` (`src/sentry/quotas/base.py:91`). The inventory
+script cannot parse dynamic `register()` calls. They are included in the migration
+count but not in `inventory.csv`.
+
+| Option | Type | Default | Flags |
+|--------|------|---------|-------|
+| `metric-abuse-quota.project` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.project.transactions` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.project.sessions` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.project.spans` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.organization` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.organization.transactions` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.organization.sessions` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
+| `metric-abuse-quota.organization.spans` | Int | 0 | FLAG_PRIORITIZE_DISK | FLAG_AUTOMATOR_MODIFIABLE |
 
 ---
 
-## Move to new sentry-options (656 options)
+## Move to new sentry-options (645 options)
 
-These options all have `FLAG_AUTOMATOR_MODIFIABLE` and are already managed by the
-automator pipeline today. They need to be defined in a sentry-options schema, have
-their values set in sentry-options-automator's new `option-values/` directory, and
-be read by the new `get()` fallback mechanism.
-
-### FLAG_AUTOMATOR_MODIFIABLE (655)
+These 645 options (+ 8 loop-registered) all have `FLAG_AUTOMATOR_MODIFIABLE`.
+See **`MIGRATION-SUB-TIERS.md`** for the 4-tier migration ordering.
 
 | Option | Type | Default | Usages | DISK |
 |--------|------|---------|--------|------|
@@ -48,7 +60,6 @@ be read by the new `get()` fallback mechanism.
 | `apigateway.proxy.timeout` | Int | `None` | 1 |  |
 | `auth.ip-rate-limit` | inferred | `0` | 4 | DISK |
 | `auth.user-rate-limit` | inferred | `0` | 4 | DISK |
-| `aws-lambda.access-key-id` | inferred | `` | 3 | DISK |
 | `aws-lambda.account-number` | inferred | `"943013980633"` | 4 |  |
 | `aws-lambda.cloudformation-url` | inferred | `` | 4 |  |
 | `aws-lambda.host-region` | inferred | `"us-east-2"` | 1 |  |
@@ -119,7 +130,6 @@ be read by the new `get()` fallback mechanism.
 | `discord.application-id` | inferred | `` | 7 | DISK |
 | `discord.debug-channel` | inferred | `` | 1 |  |
 | `discord.debug-server` | inferred | `` | 1 |  |
-| `discord.public-key` | inferred | `` | 6 | DISK |
 | `dsym.cache-path` | String | `"/tmp/sentry-dsym-cache"` | 4 | DISK |
 | `dynamic-sampling.check_span_feature_flag` | inferred | `False` | 6 |  |
 | `dynamic-sampling.config.killswitch` | inferred | `False` | 1 |  |
@@ -202,17 +212,14 @@ be read by the new `get()` fallback mechanism.
 | `getsentry.rate-limit.project-transactions` | Int | `0` | 1 | DISK |
 | `getsentry.rate-limit.window` | Int | `10` | 2 | DISK |
 | `getsentry.spike-protection.calculate_spike_projections` | inferred | `True` | 2 |  |
-| `github-app.client-id` | inferred | `` | 12 | DISK |
 | `github-app.fetch-commits.max-compare-commits` | Int | `500` | 2 |  |
 | `github-app.id` | inferred | `0` | 11 |  |
 | `github-app.name` | inferred | `""` | 7 |  |
 | `github-app.rate-limit-sensitive-orgs` | Sequence | `[]` | 2 |  |
-| `github-console-sdk-app.client-id` | inferred | `""` | 1 |  |
 | `github-console-sdk-app.id` | inferred | `0` | 6 |  |
 | `github-enterprise-app.allowed-hosts-legacy-webhooks` | Sequence | `[]` | 2 |  |
 | `github-login.api-domain` | inferred | `"api.github.com"` | 1 | DISK |
 | `github-login.base-domain` | inferred | `"github.com"` | 1 | DISK |
-| `github-login.client-id` | inferred | `""` | 7 | DISK |
 | `github-login.extended-permissions` | Sequence | `[]` | 2 | DISK |
 | `github-login.organization` | inferred | `` | 1 | DISK |
 | `github-login.require-verified-email` | Bool | `False` | 1 | DISK |
@@ -286,13 +293,11 @@ be read by the new `get()` fallback mechanism.
 | `issues.severity.skip-seer-requests` | Sequence | `[]` | 4 |  |
 | `kafka.send-project-events-to-random-partitions` | inferred | `[]` | 2 |  |
 | `mail.enable-replies` | inferred | `False` | 11 | DISK |
-| `mail.mailgun-api-key` | inferred | `""` | 10 | DISK |
 | `mail.reply-hostname` | inferred | `""` | 10 | DISK |
 | `mail.subject-prefix` | inferred | `"[Sentry]"` | 19 | DISK |
 | `mail.timeout` | Int | `10` | 2 | DISK |
 | `metric_alerts.extended_max_subscriptions` | inferred | `1250` | 5 |  |
 | `metric_alerts.extended_max_subscriptions_orgs` | inferred | `[]` | 5 |  |
-| `msteams.client-id` | inferred | `` | 7 | DISK |
 | `nodestore.cache-ttl` | Int | `300` | 2 |  |
 | `nodestore.set-subkeys.enable-set-cache-item` | inferred | `True` | 2 |  |
 | `notifications.platform-rollout.early-adopter` | Dict | `{}` | 1 |  |
@@ -397,6 +402,7 @@ be read by the new `get()` fallback mechanism.
 | `performance.traces.pagination.query-limit` | Int | `10_000` | 2 |  |
 | `performance.traces.query_timestamp_projects` | Bool | `False` | 1 |  |
 | `performance.traces.span_query_timebuffer_hours` | Float | `1.0` | 1 |  |
+| `performance.traces.spans_extraction_date` | Int | `` | 1 |  |
 | `performance.traces.trace-explorer-skip-recent-seconds` | Int | `0` | 1 |  |
 | `performance.traces.transaction_query_timebuffer_days` | Float | `1.5` | 2 |  |
 | `post-process-forwarder:kafka-headers` | inferred | `True` | 1 |  |
@@ -494,6 +500,7 @@ be read by the new `get()` fallback mechanism.
 | `seer.similarity.max_token_count` | Int | `7000` | 3 |  |
 | `seer.similarity.metrics_sample_rate` | Float | `1.0` | 9 |  |
 | `seer.similarity.per-project-rate-limit` | Dict | `{"limit": 5` | 1 |  |
+| `seer.similarity.token_count_metrics_enabled` | Bool | `True` | 1 |  |
 | `seer.supergroups_backfill_lightweight.batch_size` | Int | `40` | 2 |  |
 | `seer.supergroups_backfill_lightweight.inter_batch_delay_s` | Int | `5` | 1 |  |
 | `seer.supergroups_backfill_lightweight.killswitch` | Bool | `False` | 2 |  |
@@ -548,9 +555,8 @@ be read by the new `get()` fallback mechanism.
 | `sentry.send_onboarding_task_metrics` | Bool | `False` | 1 |  |
 | `sentry.similarity.indexing.enabled` | Bool | `True` | 2 |  |
 | `sentry:skip-record-onboarding-tasks-if-complete` | Bool | `False` | 1 |  |
+| `shared_resources_accounting_enabled` | inferred | `[]` | 4 |  |
 | `similarity.new_project_seer_grouping.enabled` | inferred | `False` | 2 |  |
-| `slack-staging.client-id` | inferred | `` | 3 | DISK |
-| `slack.client-id` | inferred | `` | 6 | DISK |
 | `slack.debug-channel` | inferred | `` | 1 |  |
 | `slack.debug-workspace` | inferred | `` | 1 |  |
 | `slack.log-unfurl-payload` | inferred | `False` | 1 |  |
@@ -669,16 +675,12 @@ be read by the new `get()` fallback mechanism.
 | `uptime.use-detectors-by-data-source-cache` | Bool | `True` | 1 |  |
 | `user-settings.signed-url-confirmation-emails` | inferred | `False` | 3 | DISK |
 | `user-settings.signed-url-confirmation-emails-salt` | String | `"signed-url-confirmation-email` | 3 | DISK |
-| `vercel.client-id` | inferred | `` | 6 | DISK |
 | `vercel.integration-slug` | inferred | `"sentry"` | 1 |  |
 | `vercel.invoice-notpaid.disable-downgrade` | inferred | `False` | 2 |  |
 | `visibility.tag-key-max-date-range.days` | inferred | `14` | 2 |  |
 | `visibility.tag-key-sample-size` | inferred | `1_000_000` | 1 |  |
-| `vsts-limited.client-id` | inferred | `` | 4 | DISK |
-| `vsts.client-id` | inferred | `` | 4 | DISK |
 | `vsts.consent-prompt` | inferred | `False` | 3 |  |
 | `vsts.social-auth-migration` | Bool | `False` | 1 |  |
-| `vsts_new.client-id` | inferred | `` | 2 | DISK |
 | `workflow_engine.associate_error_detectors` | Bool | `False` | 2 |  |
 | `workflow_engine.ensure_detector_association` | Bool | `True` | 2 |  |
 | `workflow_engine.evaluation_log_sample_rate` | Float | `0.1` | 3 |  |
@@ -691,17 +693,10 @@ be read by the new `get()` fallback mechanism.
 | `workflow_engine.num_cohorts` | Int | `1` | 1 |  |
 | `workflow_engine.schedule.min_cohort_scheduling_age_seconds` | Int | `50` | 1 |  |
 
-### FLAG_MODIFIABLE_BOOL (1)
+## Move to Django settings (59 options)
 
-| Option | Type | Default | Usages | DISK |
-|--------|------|---------|--------|------|
-| `seer.similarity.token_count_metrics_enabled` | Bool | `True` | 1 |  |
-
-## Move to Django settings (48 options)
-
-Per-environment configuration that should become regular Django settings.
-These are `FLAG_NOSTORE` (never written to DB), `FLAG_REQUIRED` (system fundamentals),
-or `FLAG_PRIORITIZE_DISK` options that are static per deployment.
+Per-environment configuration: `FLAG_NOSTORE`, `FLAG_REQUIRED`, auth provider configs,
+and integration client IDs (per-environment, never change at runtime).
 
 ### FLAG_NOSTORE (31)
 
@@ -756,6 +751,22 @@ or `FLAG_PRIORITIZE_DISK` options that are static per deployment.
 | `system.admin-email` | inferred | `` | 16 |  |
 | `system.url-prefix` | inferred | `os.environ.get("SENTRY_SYSTEM_` | 127 | DISK |
 
+### Integration client ID (reclassified) (11)
+
+| Option | Type | Default | Usages | DISK |
+|--------|------|---------|--------|------|
+| `discord.public-key` | inferred | `` | 6 | DISK |
+| `github-app.client-id` | inferred | `` | 12 | DISK |
+| `github-console-sdk-app.client-id` | inferred | `""` | 1 |  |
+| `github-login.client-id` | inferred | `""` | 7 | DISK |
+| `msteams.client-id` | inferred | `` | 7 | DISK |
+| `slack-staging.client-id` | inferred | `` | 3 | DISK |
+| `slack.client-id` | inferred | `` | 6 | DISK |
+| `vercel.client-id` | inferred | `` | 6 | DISK |
+| `vsts-limited.client-id` | inferred | `` | 4 | DISK |
+| `vsts.client-id` | inferred | `` | 4 | DISK |
+| `vsts_new.client-id` | inferred | `` | 2 | DISK |
+
 ### FLAG_ALLOW_EMPTY + DISK (4)
 
 | Option | Type | Default | Usages | DISK |
@@ -773,11 +784,7 @@ or `FLAG_PRIORITIZE_DISK` options that are static per deployment.
 
 ## Delete (5 options)
 
-The inventory script found **zero references** to these keys anywhere in sentry
-or getsentry (outside the `register()` call itself). They are dead code.
-
-> Before deleting: (1) re-run `rg '<key>' ~/code/sentry ~/code/getsentry` to confirm,
-> (2) check the production database for non-default values.
+Zero code references found. Before deleting: (1) re-run `rg '<key>'`, (2) check prod DB.
 
 ### Unused (SAFE_CANDIDATE) (4)
 
@@ -794,10 +801,11 @@ or getsentry (outside the `register()` call itself). They are dead code.
 |--------|------|---------|--------|------|
 | `workflow_engine.scheduler.use_conditional_delete` | Bool | `True` | 0 |  |
 
-## Credentials (secrets management) (29 options)
+## Credentials (secrets management) (31 options)
 
-Options containing secrets (API keys, client secrets, tokens). These should stay
-in secrets management (env vars, vault, etc.), not in sentry-options ConfigMaps.
+Secrets that should stay in env vars / vault, not in sentry-options ConfigMaps.
+
+### Credential (FLAG_CREDENTIAL) (29)
 
 | Option | Type | Default | Usages | DISK |
 |--------|------|---------|--------|------|
@@ -830,3 +838,10 @@ in secrets management (env vars, vault, etc.), not in sentry-options ConfigMaps.
 | `vsts-limited.client-secret` | inferred | `` | 4 | DISK |
 | `vsts.client-secret` | inferred | `` | 3 | DISK |
 | `vsts_new.client-secret` | inferred | `` | 2 | DISK |
+
+### Credential (reclassified) (2)
+
+| Option | Type | Default | Usages | DISK |
+|--------|------|---------|--------|------|
+| `aws-lambda.access-key-id` | inferred | `` | 3 | DISK |
+| `mail.mailgun-api-key` | inferred | `""` | 10 | DISK |
