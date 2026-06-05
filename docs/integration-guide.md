@@ -143,7 +143,7 @@ The CI enforces these rules when you modify schemas:
 |--------|---------|
 | Add new options | ✅ |
 | Add new namespaces | ✅ |
-| Remove options | ✅ (CI blocks if still in use in automator) |
+| Remove options | ✅ (CI warns if still in use in automator) |
 | Remove namespaces | ❌ |
 | Change option types | ❌ |
 | Change default values | ❌ |
