@@ -9,7 +9,9 @@ use crate::Result;
 #[serde(deny_unknown_fields)]
 pub struct RepoSchemaConfig {
     pub url: String,
-    pub sha: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub sha: Option<String>,
     pub path: String,
 }
 
@@ -60,12 +62,12 @@ mod tests {
 
         let sentry = config.repos.get("sentry").unwrap();
         assert_eq!(sentry.url, "https://github.com/getsentry/sentry");
-        assert_eq!(sentry.sha, "abc123");
+        assert_eq!(sentry.sha, Some("abc123".to_string()));
         assert_eq!(sentry.path, "schemas/");
 
         let getsentry = config.repos.get("getsentry").unwrap();
         assert_eq!(getsentry.url, "https://github.com/getsentry/getsentry");
-        assert_eq!(getsentry.sha, "def456");
+        assert_eq!(getsentry.sha, Some("def456".to_string()));
         assert_eq!(getsentry.path, "schemas/");
     }
 

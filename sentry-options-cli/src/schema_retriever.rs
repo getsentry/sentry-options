@@ -126,7 +126,18 @@ fn try_fetch_repo_schemas(
         Some(&repo_path),
         repo_name,
     )?;
-    git(&["checkout", &source.sha], Some(&repo_path), repo_name)?;
+
+    // Log the resolved HEAD SHA for traceability
+    let rev_output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&repo_path)
+        .output()?;
+    if rev_output.status.success() {
+        let sha = String::from_utf8_lossy(&rev_output.stdout)
+            .trim()
+            .to_string();
+        eprintln!("  {} cloned at sha: {}", repo_name, sha);
+    }
 
     copy_schemas(&repo_path.join(&source.path), out_dir)?;
     Ok(())
