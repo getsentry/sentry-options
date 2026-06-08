@@ -746,10 +746,10 @@ impl ValuesStore {
         // Reversing the order opens a window where the timestamp says "fresh"
         // but the ArcSwap still holds the previous snapshot on weakly ordered
         // architectures.
-        match result {
-            Ok((new_values, new_generated_at)) => {
+        let new_generated_at = match result {
+            Ok((new_values, generated_at)) => {
                 self.values.store(Arc::new(new_values));
-                self.emit_propagation_events(new_generated_at);
+                Some(generated_at)
             }
             Err(e) => {
                 eprintln!(
@@ -757,8 +757,9 @@ impl ValuesStore {
                     self.values_dir.display(),
                     e
                 );
+                None
             }
-        }
+        };
 
         // Bump the timestamp regardless of success. On failure, the bumped
         // timestamp keeps subsequent reads from hammering the filesystem until
@@ -770,36 +771,46 @@ impl ValuesStore {
             Ordering::AcqRel,
             Ordering::Relaxed,
         );
+
+        // Fire the propagation callback after the CAS so other threads see a
+        // fresh timestamp and don't redundantly re-read from disk while a
+        // potentially slow callback (e.g. Python/GIL) executes.
+        if let Some(generated_at) = new_generated_at {
+            self.emit_propagation_events(generated_at);
+        }
     }
 
-    /// Compare new `generated_at` timestamps against the last known ones.
-    /// For each namespace where the timestamp changed, invoke the callback
-    /// with the propagation delay. Uses ArcSwap for fork-safe, lock-free access.
+    /// Invoke the propagation callback for each namespace whose `generated_at`
+    /// changed since the last refresh. Skips entirely when no callback is
+    /// registered or when nothing changed (avoids an Arc allocation every cycle).
     fn emit_propagation_events(&self, new_generated_at: HashMap<String, String>) {
-        let callback = match &self.on_propagation {
-            Some(cb) => cb,
-            None => {
-                // Still update the stored timestamps so a callback added later
-                // doesn't see stale state.
-                self.last_generated_at.store(Arc::new(new_generated_at));
-                return;
-            }
-        };
-
-        let applied_at = Utc::now();
         let last = self.last_generated_at.load();
+        if *last.as_ref() == new_generated_at {
+            return;
+        }
 
-        for (namespace, new_ts) in &new_generated_at {
-            let changed = last.get(namespace).is_none_or(|old_ts| old_ts != new_ts);
-            if !changed {
-                continue;
-            }
+        if let Some(callback) = &self.on_propagation {
+            let applied_at = Utc::now();
+            for (namespace, new_ts) in &new_generated_at {
+                let changed = last.get(namespace).is_none_or(|old_ts| old_ts != new_ts);
+                if !changed {
+                    continue;
+                }
 
-            if let Ok(generated_time) = DateTime::parse_from_rfc3339(new_ts) {
-                let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
-                    .num_milliseconds() as f64
-                    / 1000.0;
-                callback(namespace, delay_secs.max(0.0));
+                match DateTime::parse_from_rfc3339(new_ts) {
+                    Ok(generated_time) => {
+                        let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
+                            .num_milliseconds() as f64
+                            / 1000.0;
+                        callback(namespace, delay_secs.max(0.0));
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Failed to parse generated_at for namespace {}: {} ({})",
+                            namespace, new_ts, e
+                        );
+                    }
+                }
             }
         }
 

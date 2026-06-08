@@ -19,7 +19,11 @@ struct PyPropagationCallback {
     callback: PyObject,
 }
 
-// SAFETY: The PyObject is only accessed while holding the GIL (inside `call`).
+// SAFETY: The `PyObject` is only accessed inside `Python::with_gil`, which
+// acquires the GIL before touching the reference-counted pointer. `Send` is
+// safe because moving the wrapper to another thread does not access the
+// `PyObject`. `Sync` is safe because concurrent calls to `call()` each
+// independently acquire the GIL, so no unsynchronized access occurs.
 unsafe impl Send for PyPropagationCallback {}
 unsafe impl Sync for PyPropagationCallback {}
 

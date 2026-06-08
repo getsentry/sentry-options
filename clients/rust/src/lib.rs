@@ -53,35 +53,33 @@ impl Options {
     pub fn new_with_propagation_callback(callback: PropagationCallback) -> Result<Self> {
         let dir = resolve_options_dir();
         let registry = SchemaRegistry::from_directory(&dir.join("schemas"))?;
-        Self::with_registry_values_and_callback(registry, &dir.join("values"), callback)
+        Self::with_registry_and_values(registry, &dir.join("values"), Some(callback))
     }
 
     /// Load options from a specific directory (useful for testing).
     /// Expects `{base_dir}/schemas/` and `{base_dir}/values/` subdirectories.
     pub fn from_directory(base_dir: &Path) -> Result<Self> {
         let registry = SchemaRegistry::from_directory(&base_dir.join("schemas"))?;
-        Self::with_registry_and_values(registry, &base_dir.join("values"))
+        Self::with_registry_and_values(registry, &base_dir.join("values"), None)
     }
 
     /// Load options with schemas provided as in-memory JSON strings.
     /// Values are loaded from disk using the standard fallback chain.
     pub fn from_schemas(schemas: &[(&str, &str)]) -> Result<Self> {
         let registry = SchemaRegistry::from_schemas(schemas)?;
-        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"))
+        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"), None)
     }
 
-    fn with_registry_and_values(registry: SchemaRegistry, values_dir: &Path) -> Result<Self> {
-        let store = ValuesStore::new(Arc::new(registry), values_dir)?;
-        Ok(Self { store })
-    }
-
-    fn with_registry_values_and_callback(
+    fn with_registry_and_values(
         registry: SchemaRegistry,
         values_dir: &Path,
-        callback: PropagationCallback,
+        callback: Option<PropagationCallback>,
     ) -> Result<Self> {
-        let store =
-            ValuesStore::with_propagation_callback(Arc::new(registry), values_dir, callback)?;
+        let registry = Arc::new(registry);
+        let store = match callback {
+            Some(cb) => ValuesStore::with_propagation_callback(registry, values_dir, cb)?,
+            None => ValuesStore::new(registry, values_dir)?,
+        };
         Ok(Self { store })
     }
 
@@ -176,9 +174,7 @@ pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<(
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
-    let dir = resolve_options_dir();
-    let registry = SchemaRegistry::from_directory(&dir.join("schemas"))?;
-    let opts = Options::with_registry_values_and_callback(registry, &dir.join("values"), callback)?;
+    let opts = Options::new_with_propagation_callback(callback)?;
     let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }
