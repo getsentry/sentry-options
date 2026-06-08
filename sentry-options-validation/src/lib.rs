@@ -767,47 +767,40 @@ impl ValuesStore {
         // Fire the propagation callback after the CAS so other threads see a
         // fresh timestamp and don't redundantly re-read from disk while a
         // potentially slow callback (e.g. Python/GIL) executes.
-        if let Some(generated_at) = new_generated_at {
-            self.emit_propagation_events(generated_at);
-        }
-    }
-
-    /// Invoke the propagation callback for each namespace whose `generated_at`
-    /// changed since the last refresh. Skips entirely when no callback is
-    /// registered or when nothing changed.
-    fn emit_propagation_events(&self, new_generated_at: HashMap<String, String>) {
-        let last = self.last_generated_at.load();
-        if *last.as_ref() == new_generated_at {
-            return;
-        }
-
-        if let Some(callback) = &self.on_propagation {
-            let applied_at = Utc::now();
-            for (namespace, new_ts) in &new_generated_at {
-                let changed = last.get(namespace).is_none_or(|old_ts| old_ts != new_ts);
-                if !changed {
-                    continue;
-                }
-
-                match DateTime::parse_from_rfc3339(new_ts) {
-                    Ok(generated_time) => {
-                        let delay_secs = (applied_at - generated_time.with_timezone(&Utc))
-                            .num_milliseconds() as f64
-                            / 1000.0;
-                        callback(namespace, delay_secs.max(0.0));
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Failed to parse generated_at for namespace {}: {} ({})",
-                            namespace, new_ts, e
-                        );
+        if let Some(new_generated_at) = new_generated_at {
+            let last = self.last_generated_at.load();
+            if *last.as_ref() != new_generated_at {
+                if let Some(callback) = &self.on_propagation {
+                    let applied_at = Utc::now();
+                    for (ns, ts) in &new_generated_at {
+                        if last.get(ns).is_some_and(|old| old == ts) {
+                            continue;
+                        }
+                        match propagation_delay_secs(&applied_at, ts) {
+                            Some(delay) => {
+                                if let Err(e) =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        callback(ns, delay)
+                                    }))
+                                {
+                                    eprintln!("Propagation callback panicked for {ns}: {:?}", e);
+                                }
+                            }
+                            None => eprintln!("Bad generated_at for {ns}: {ts}"),
+                        }
                     }
                 }
+                self.last_generated_at.store(Arc::new(new_generated_at));
             }
         }
-
-        self.last_generated_at.store(Arc::new(new_generated_at));
     }
+}
+
+/// Parse an RFC3339 timestamp and return the delay in seconds from then to `now`.
+fn propagation_delay_secs(now: &DateTime<Utc>, generated_at: &str) -> Option<f64> {
+    let generated = DateTime::parse_from_rfc3339(generated_at).ok()?;
+    let delay = (*now - generated.with_timezone(&Utc)).num_milliseconds() as f64 / 1000.0;
+    Some(delay.max(0.0))
 }
 
 /// Per-call jitter in `[0, 1s)` nanoseconds, derived from the address of a
