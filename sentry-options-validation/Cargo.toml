@@ -14,6 +14,7 @@ thiserror.workspace = true
 jsonschema.workspace = true
 tempfile.workspace = true
 arc-swap.workspace = true
+chrono = { version = "0.4.45", features = ["clock"] }
 
 [dev-dependencies]
 tempfile.workspace = true

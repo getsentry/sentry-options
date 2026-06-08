@@ -12,6 +12,27 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
 
+/// Wrapper that lets a Python callable be invoked from the Rust propagation
+/// callback (which runs on the thread that triggers a values refresh).
+/// The GIL is acquired only for the duration of the call.
+struct PyPropagationCallback {
+    callback: PyObject,
+}
+
+// SAFETY: The PyObject is only accessed while holding the GIL (inside `call`).
+unsafe impl Send for PyPropagationCallback {}
+unsafe impl Sync for PyPropagationCallback {}
+
+impl PyPropagationCallback {
+    fn call(&self, namespace: &str, delay_secs: f64) {
+        Python::with_gil(|py| {
+            if let Err(e) = self.callback.call1(py, (namespace, delay_secs)) {
+                e.print(py);
+            }
+        });
+    }
+}
+
 // Global options instance
 static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 
@@ -186,12 +207,26 @@ impl PyFeatureChecker {
 
 /// Initialize global options using fallback chain: SENTRY_OPTIONS_DIR env var,
 /// then /etc/sentry-options if it exists, otherwise sentry-options/.
+///
+/// Optionally accepts an `on_propagation` callback that fires whenever values
+/// are refreshed with a new `generated_at` timestamp. The callback receives
+/// `(namespace: str, delay_secs: float)`.
 #[pyfunction]
-fn init() -> PyResult<()> {
+#[pyo3(signature = (on_propagation=None))]
+fn init(on_propagation: Option<PyObject>) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
-    let opts = RustOptions::new().map_err(options_err)?;
+    let opts = match on_propagation {
+        Some(cb) => {
+            let wrapper = PyPropagationCallback { callback: cb };
+            RustOptions::new_with_propagation_callback(Box::new(move |ns, delay| {
+                wrapper.call(ns, delay);
+            }))
+            .map_err(options_err)?
+        }
+        None => RustOptions::new().map_err(options_err)?,
+    };
     let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }
