@@ -655,7 +655,7 @@ pub struct ValuesStore {
 impl ValuesStore {
     /// Build a store and perform the initial values load synchronously.
     pub fn new(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValidationResult<Self> {
-        Self::with_threshold(registry, values_dir, REFRESH_THRESHOLD)
+        Self::build(registry, values_dir, REFRESH_THRESHOLD, None)
     }
 
     /// Build a store with a callback that fires whenever new values are detected.
@@ -668,16 +668,8 @@ impl ValuesStore {
         Self::build(registry, values_dir, REFRESH_THRESHOLD, Some(callback))
     }
 
-    /// Test-only constructor that lets the caller pick the refresh threshold.
-    /// `Duration::ZERO` makes every `load()` perform a refresh attempt.
-    pub(crate) fn with_threshold(
-        registry: Arc<SchemaRegistry>,
-        values_dir: &Path,
-        refresh_threshold: Duration,
-    ) -> ValidationResult<Self> {
-        Self::build(registry, values_dir, refresh_threshold, None)
-    }
-
+    /// Internal constructor. `Duration::ZERO` threshold makes every `load()`
+    /// refresh, which is useful for tests.
     fn build(
         registry: Arc<SchemaRegistry>,
         values_dir: &Path,
@@ -782,7 +774,7 @@ impl ValuesStore {
 
     /// Invoke the propagation callback for each namespace whose `generated_at`
     /// changed since the last refresh. Skips entirely when no callback is
-    /// registered or when nothing changed (avoids an Arc allocation every cycle).
+    /// registered or when nothing changed.
     fn emit_propagation_events(&self, new_generated_at: HashMap<String, String>) {
         let last = self.last_generated_at.load();
         if *last.as_ref() == new_generated_at {
@@ -1684,7 +1676,7 @@ Error: \"version\" is a required property"
 
         let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
         // No callback — should not panic or error.
-        let store = ValuesStore::with_threshold(registry, &values_dir, Duration::ZERO).unwrap();
+        let store = ValuesStore::build(registry, &values_dir, Duration::ZERO, None).unwrap();
         let _ = store.load();
         // Just verify it doesn't crash.
     }
@@ -2052,7 +2044,7 @@ Error: \"version\" is a required property"
 
         fn store_with_zero_threshold(schemas_dir: &Path, values_dir: &Path) -> ValuesStore {
             let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir).unwrap());
-            ValuesStore::with_threshold(registry, values_dir, Duration::ZERO).unwrap()
+            ValuesStore::build(registry, values_dir, Duration::ZERO, None).unwrap()
         }
 
         #[test]
