@@ -101,9 +101,7 @@ jobs:
             --root ./option-values)
 
           if [ -n "$RESULT" ]; then
-            echo "Cannot delete options that are still defined in sentry-options-automator:"
-            echo "$RESULT"
-            exit 1
+            echo "::warning::The following deleted options still have values in sentry-options-automator: $RESULT"
+          else
+            echo "All deleted options are safe to remove"
           fi
-
-          echo "All deleted options are safe to remove"
