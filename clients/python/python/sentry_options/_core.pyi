@@ -1,15 +1,21 @@
 from __future__ import annotations
 
-from typing import Union
+from typing import Callable, Union
 
 _Primitive = Union[str, int, float, bool]
 _Object = dict[str, _Primitive]
 OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 
-def init() -> None: ...
+def init(on_propagation: Callable[[str, float], None] | None = None) -> None: ...
 """
 Initialize the options extension with schema and
 values defined in environment variables or production paths.
+
+Parameters
+----------
+on_propagation : callable, optional
+    Callback invoked when values are refreshed with a new ``generated_at``
+    timestamp. Receives ``(namespace: str, delay_secs: float)``.
 """
 
 def options(namespace: str) -> NamespaceOptions: ...

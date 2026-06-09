@@ -186,12 +186,29 @@ impl PyFeatureChecker {
 
 /// Initialize global options using fallback chain: SENTRY_OPTIONS_DIR env var,
 /// then /etc/sentry-options if it exists, otherwise sentry-options/.
+///
+/// Optionally accepts an `on_propagation` callback that fires whenever values
+/// are refreshed with a new `generated_at` timestamp. The callback receives
+/// `(namespace: str, delay_secs: float)`.
 #[pyfunction]
-fn init() -> PyResult<()> {
+#[pyo3(signature = (on_propagation=None))]
+fn init(on_propagation: Option<Py<PyAny>>) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
-    let opts = RustOptions::new().map_err(options_err)?;
+    let opts = match on_propagation {
+        // `Py<PyAny>` is `Send + Sync`; the closure re-acquires the GIL for the
+        // call, so the callback can run on whichever thread triggers a refresh.
+        Some(cb) => RustOptions::new_with_propagation_callback(Box::new(move |ns, delay| {
+            Python::attach(|py| {
+                if let Err(e) = cb.call1(py, (ns, delay)) {
+                    e.print(py);
+                }
+            });
+        }))
+        .map_err(options_err)?,
+        None => RustOptions::new().map_err(options_err)?,
+    };
     let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }

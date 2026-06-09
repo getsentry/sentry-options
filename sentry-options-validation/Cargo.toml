@@ -14,6 +14,7 @@ thiserror.workspace = true
 jsonschema.workspace = true
 tempfile.workspace = true
 arc-swap.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -7,6 +7,7 @@ pub use features::{FeatureChecker, FeatureContext, features};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+pub use sentry_options_validation::PropagationCallback;
 use sentry_options_validation::{
     SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
 };
@@ -47,22 +48,38 @@ impl Options {
         Self::from_directory(&resolve_options_dir())
     }
 
+    /// Like [`new`], but with a propagation callback that fires `(namespace, delay_secs)`
+    /// whenever values are refreshed with a new `generated_at` timestamp.
+    pub fn new_with_propagation_callback(callback: PropagationCallback) -> Result<Self> {
+        let dir = resolve_options_dir();
+        let registry = SchemaRegistry::from_directory(&dir.join("schemas"))?;
+        Self::with_registry_and_values(registry, &dir.join("values"), Some(callback))
+    }
+
     /// Load options from a specific directory (useful for testing).
     /// Expects `{base_dir}/schemas/` and `{base_dir}/values/` subdirectories.
     pub fn from_directory(base_dir: &Path) -> Result<Self> {
         let registry = SchemaRegistry::from_directory(&base_dir.join("schemas"))?;
-        Self::with_registry_and_values(registry, &base_dir.join("values"))
+        Self::with_registry_and_values(registry, &base_dir.join("values"), None)
     }
 
     /// Load options with schemas provided as in-memory JSON strings.
     /// Values are loaded from disk using the standard fallback chain.
     pub fn from_schemas(schemas: &[(&str, &str)]) -> Result<Self> {
         let registry = SchemaRegistry::from_schemas(schemas)?;
-        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"))
+        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"), None)
     }
 
-    fn with_registry_and_values(registry: SchemaRegistry, values_dir: &Path) -> Result<Self> {
-        let store = ValuesStore::new(Arc::new(registry), values_dir)?;
+    fn with_registry_and_values(
+        registry: SchemaRegistry,
+        values_dir: &Path,
+        callback: Option<PropagationCallback>,
+    ) -> Result<Self> {
+        let registry = Arc::new(registry);
+        let store = match callback {
+            Some(cb) => ValuesStore::with_propagation_callback(registry, values_dir, cb)?,
+            None => ValuesStore::new(registry, values_dir)?,
+        };
         Ok(Self { store })
     }
 
@@ -146,6 +163,18 @@ pub fn init() -> Result<()> {
         return Ok(());
     }
     let opts = Options::new()?;
+    let _ = GLOBAL_OPTIONS.set(opts);
+    Ok(())
+}
+
+/// Like [`init`], but with a callback that fires whenever values are refreshed
+/// from disk with a new `generated_at` timestamp. The callback receives
+/// `(namespace, delay_secs)`.
+pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<()> {
+    if GLOBAL_OPTIONS.get().is_some() {
+        return Ok(());
+    }
+    let opts = Options::new_with_propagation_callback(callback)?;
     let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
 }

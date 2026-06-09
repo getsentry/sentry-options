@@ -38,6 +38,7 @@
 //! not turn into an I/O storm.
 
 use arc_swap::ArcSwap;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -632,6 +633,11 @@ impl Default for SchemaRegistry {
 ///
 /// Replaces the polling watcher thread: idle processes do no work, and
 /// concurrent readers coordinate through the timestamp CAS.
+/// Callback invoked when a namespace's values are updated.
+/// Arguments: `(namespace, delay_secs)` where `delay_secs` is the propagation
+/// delay from ConfigMap generation to the app reading the new values.
+pub type PropagationCallback = Box<dyn Fn(&str, f64) + Send + Sync>;
+
 pub struct ValuesStore {
     registry: Arc<SchemaRegistry>,
     values_dir: PathBuf,
@@ -639,27 +645,43 @@ pub struct ValuesStore {
     baseline: Instant,
     last_refresh_offset_ns: AtomicU64,
     refresh_threshold: Duration,
+    /// Last known `generated_at` per namespace, used to detect value changes.
+    /// Uses ArcSwap for lock-free, fork-safe access.
+    last_generated_at: ArcSwap<HashMap<String, String>>,
+    /// Optional callback invoked when propagation delay is measured.
+    on_propagation: Option<PropagationCallback>,
 }
 
 impl ValuesStore {
     /// Build a store and perform the initial values load synchronously.
     pub fn new(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValidationResult<Self> {
-        Self::with_threshold(registry, values_dir, REFRESH_THRESHOLD)
+        Self::build(registry, values_dir, REFRESH_THRESHOLD, None)
     }
 
-    /// Test-only constructor that lets the caller pick the refresh threshold.
-    /// `Duration::ZERO` makes every `load()` perform a refresh attempt.
-    pub(crate) fn with_threshold(
+    /// Build a store with a callback that fires whenever new values are detected.
+    /// The callback receives `(namespace, delay_secs)` on each value change.
+    pub fn with_propagation_callback(
+        registry: Arc<SchemaRegistry>,
+        values_dir: &Path,
+        callback: PropagationCallback,
+    ) -> ValidationResult<Self> {
+        Self::build(registry, values_dir, REFRESH_THRESHOLD, Some(callback))
+    }
+
+    /// Internal constructor. `Duration::ZERO` threshold makes every `load()`
+    /// refresh, which is useful for tests.
+    fn build(
         registry: Arc<SchemaRegistry>,
         values_dir: &Path,
         refresh_threshold: Duration,
+        on_propagation: Option<PropagationCallback>,
     ) -> ValidationResult<Self> {
         if !should_suppress_missing_dir_errors() && fs::metadata(values_dir).is_err() {
             eprintln!("Values directory does not exist: {}", values_dir.display());
         }
 
         let baseline = Instant::now();
-        let (initial, _) = registry.load_values_json(values_dir)?;
+        let (initial, generated_at_by_namespace) = registry.load_values_json(values_dir)?;
         let last_refresh_offset_ns = AtomicU64::new(baseline.elapsed().as_nanos() as u64);
 
         Ok(Self {
@@ -669,6 +691,8 @@ impl ValuesStore {
             baseline,
             last_refresh_offset_ns,
             refresh_threshold,
+            last_generated_at: ArcSwap::from_pointee(generated_at_by_namespace),
+            on_propagation,
         })
     }
 
@@ -714,9 +738,10 @@ impl ValuesStore {
         // Reversing the order opens a window where the timestamp says "fresh"
         // but the ArcSwap still holds the previous snapshot on weakly ordered
         // architectures.
-        match result {
-            Ok((new_values, _)) => {
+        let new_generated_at = match result {
+            Ok((new_values, generated_at)) => {
                 self.values.store(Arc::new(new_values));
+                Some(generated_at)
             }
             Err(e) => {
                 eprintln!(
@@ -724,8 +749,9 @@ impl ValuesStore {
                     self.values_dir.display(),
                     e
                 );
+                None
             }
-        }
+        };
 
         // Bump the timestamp regardless of success. On failure, the bumped
         // timestamp keeps subsequent reads from hammering the filesystem until
@@ -737,7 +763,44 @@ impl ValuesStore {
             Ordering::AcqRel,
             Ordering::Relaxed,
         );
+
+        // Fire the propagation callback after the CAS so other threads see a
+        // fresh timestamp and don't redundantly re-read from disk while a
+        // potentially slow callback (e.g. Python/GIL) executes.
+        if let Some(new_generated_at) = new_generated_at {
+            let last = self.last_generated_at.load();
+            if *last.as_ref() != new_generated_at {
+                if let Some(callback) = &self.on_propagation {
+                    let applied_at = Utc::now();
+                    for (ns, ts) in &new_generated_at {
+                        if last.get(ns).is_some_and(|old| old == ts) {
+                            continue;
+                        }
+                        match propagation_delay_secs(&applied_at, ts) {
+                            Some(delay) => {
+                                if let Err(e) =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        callback(ns, delay)
+                                    }))
+                                {
+                                    eprintln!("Propagation callback panicked for {ns}: {:?}", e);
+                                }
+                            }
+                            None => eprintln!("Bad generated_at for {ns}: {ts}"),
+                        }
+                    }
+                }
+                self.last_generated_at.store(Arc::new(new_generated_at));
+            }
+        }
     }
+}
+
+/// Parse an RFC3339 timestamp and return the delay in seconds from then to `now`.
+fn propagation_delay_secs(now: &DateTime<Utc>, generated_at: &str) -> Option<f64> {
+    let generated = DateTime::parse_from_rfc3339(generated_at).ok()?;
+    let delay = (*now - generated.with_timezone(&Utc)).num_milliseconds() as f64 / 1000.0;
+    Some(delay.max(0.0))
 }
 
 /// Per-call jitter in `[0, 1s)` nanoseconds, derived from the address of a
@@ -753,6 +816,7 @@ fn stack_jitter_ns() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
 
     fn create_test_schema(temp_dir: &TempDir, namespace: &str, schema_json: &str) -> PathBuf {
@@ -1513,6 +1577,245 @@ Error: \"version\" is a required property"
     }
 
     #[test]
+    fn test_propagation_event_emitted_on_generated_at_change() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T18:30:00+00:00"}"#,
+        )
+        .unwrap();
+
+        let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+
+        let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &values_dir,
+            Duration::ZERO,
+            Some(Box::new(move |ns, delay| {
+                events_clone.lock().unwrap().push((ns.to_string(), delay));
+            })),
+        )
+        .unwrap();
+
+        // Initial load doesn't emit (generated_at set during construction).
+        assert!(events.lock().unwrap().is_empty());
+
+        // Same generated_at — no event on reload.
+        let _ = store.load();
+        assert!(events.lock().unwrap().is_empty());
+
+        // Update the generated_at timestamp — should emit on next load.
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+
+        let _ = store.load();
+        let captured = events.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].0, "test");
+        assert!(captured[0].1 > 0.0);
+    }
+
+    #[test]
+    fn test_propagation_event_not_emitted_without_callback() {
+        let temp_dir = TempDir::new().unwrap();
+        let schemas_dir = temp_dir.path().join("schemas");
+        let values_dir = temp_dir.path().join("values");
+
+        let schema_dir = schemas_dir.join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let test_values_dir = values_dir.join("test");
+        fs::create_dir_all(&test_values_dir).unwrap();
+        fs::write(
+            test_values_dir.join("values.json"),
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T18:30:00+00:00"}"#,
+        )
+        .unwrap();
+
+        let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+        // No callback — should not panic or error.
+        let store = ValuesStore::build(registry, &values_dir, Duration::ZERO, None).unwrap();
+        let _ = store.load();
+        // Just verify it doesn't crash.
+    }
+
+    /// Write a boolean-only schema and a values file for `namespace` under
+    /// `base`, returning the path of the written `values.json`.
+    fn write_ns(base: &Path, namespace: &str, generated_at: &str) -> PathBuf {
+        let schema_dir = base.join("schemas").join(namespace);
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let ns_values_dir = base.join("values").join(namespace);
+        fs::create_dir_all(&ns_values_dir).unwrap();
+        let values_file = ns_values_dir.join("values.json");
+        fs::write(
+            &values_file,
+            format!(
+                r#"{{"options": {{"enabled": true}}, "generated_at": "{generated_at}"}}"#
+            ),
+        )
+        .unwrap();
+        values_file
+    }
+
+    #[test]
+    fn test_propagation_delay_secs_parsing() {
+        let now: DateTime<Utc> = "2024-01-21T19:00:00+00:00".parse().unwrap();
+
+        // Normal case: 30 minutes elapsed.
+        assert_eq!(
+            propagation_delay_secs(&now, "2024-01-21T18:30:00+00:00"),
+            Some(1800.0)
+        );
+        // Clock skew (generated_at in the future) clamps to 0 rather than going negative.
+        assert_eq!(
+            propagation_delay_secs(&now, "2024-01-21T19:05:00+00:00"),
+            Some(0.0)
+        );
+        // Malformed timestamp returns None.
+        assert_eq!(propagation_delay_secs(&now, "not-a-timestamp"), None);
+    }
+
+    #[test]
+    fn test_propagation_callback_panic_is_caught() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &base.join("values"),
+            Duration::ZERO,
+            Some(Box::new(|_ns, _delay| panic!("callback boom"))),
+        )
+        .unwrap();
+
+        // Trigger a change so the panicking callback fires; load() must not unwind.
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": false}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        let _ = store.load();
+
+        // The values refresh still applied despite the callback panic.
+        assert_eq!(
+            store.values.load().get("test").unwrap().get("enabled"),
+            Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn test_propagation_malformed_generated_at_does_not_emit() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+
+        let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &base.join("values"),
+            Duration::ZERO,
+            Some(Box::new(move |ns, delay| {
+                events_clone.lock().unwrap().push((ns.to_string(), delay));
+            })),
+        )
+        .unwrap();
+
+        // Change generated_at to a malformed value: detected as a change, but
+        // unparseable, so no event is emitted.
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": true}, "generated_at": "garbage"}"#,
+        )
+        .unwrap();
+        let _ = store.load();
+        assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_propagation_only_changed_namespace_emits() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        write_ns(base, "alpha", "2024-01-21T18:00:00+00:00");
+        let beta_values = write_ns(base, "beta", "2024-01-21T18:00:00+00:00");
+
+        let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &base.join("values"),
+            Duration::ZERO,
+            Some(Box::new(move |ns, delay| {
+                events_clone.lock().unwrap().push((ns.to_string(), delay));
+            })),
+        )
+        .unwrap();
+
+        // Only beta's generated_at changes; alpha is untouched.
+        fs::write(
+            &beta_values,
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        let _ = store.load();
+
+        let captured = events.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].0, "beta");
+    }
+
+    #[test]
     fn test_load_values_json_rejects_wrong_type() {
         let temp_dir = TempDir::new().unwrap();
         let schemas_dir = temp_dir.path().join("schemas");
@@ -1875,7 +2178,7 @@ Error: \"version\" is a required property"
 
         fn store_with_zero_threshold(schemas_dir: &Path, values_dir: &Path) -> ValuesStore {
             let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir).unwrap());
-            ValuesStore::with_threshold(registry, values_dir, Duration::ZERO).unwrap()
+            ValuesStore::build(registry, values_dir, Duration::ZERO, None).unwrap()
         }
 
         #[test]
