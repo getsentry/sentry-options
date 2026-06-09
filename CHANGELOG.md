@@ -1,4 +1,38 @@
 # Changelog
+## 1.1.0
+
+### New Features ✨
+
+#### Ci
+
+- Removes mandatory SHA bumping by @kenzoengineer in [#135](https://github.com/getsentry/sentry-options/pull/135)
+- Warn instead of fail when values are orphaned by @kenzoengineer in [#136](https://github.com/getsentry/sentry-options/pull/136)
+- Create auto-bump SHA script by @kenzoengineer in [#131](https://github.com/getsentry/sentry-options/pull/131)
+
+#### Profiling
+
+- Benchmark gets when a refresh occurs by @kenzoengineer in [#130](https://github.com/getsentry/sentry-options/pull/130)
+- Adds `isset()` and `has()` by @kenzoengineer in [#129](https://github.com/getsentry/sentry-options/pull/129)
+
+#### Other
+
+- (metrics) Allow clients to hook into propagation time metrics by @kenzoengineer in [#137](https://github.com/getsentry/sentry-options/pull/137)
+
+### Bug Fixes 🐛
+
+- (ci) Delete missed bump-sha references by @kenzoengineer in [#138](https://github.com/getsentry/sentry-options/pull/138)
+
+### Internal Changes 🔧
+
+#### Ci
+
+- Run SHA bumping on main for testing purposes by @kenzoengineer in [#133](https://github.com/getsentry/sentry-options/pull/133)
+- Add new option to test bump by @kenzoengineer in [#132](https://github.com/getsentry/sentry-options/pull/132)
+
+### Other
+
+- release: 1.0.13 by @Abdkhan14 in [#128](https://github.com/getsentry/sentry-options/pull/128)
+
 ## 1.0.13
 
 ### New Features ✨
