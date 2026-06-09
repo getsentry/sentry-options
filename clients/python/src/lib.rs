@@ -192,7 +192,7 @@ impl PyFeatureChecker {
 /// `(namespace: str, delay_secs: float)`.
 #[pyfunction]
 #[pyo3(signature = (on_propagation=None))]
-fn init(on_propagation: Option<PyObject>) -> PyResult<()> {
+fn init(on_propagation: Option<Py<PyAny>>) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
@@ -200,7 +200,7 @@ fn init(on_propagation: Option<PyObject>) -> PyResult<()> {
         // `Py<PyAny>` is `Send + Sync`; the closure re-acquires the GIL for the
         // call, so the callback can run on whichever thread triggers a refresh.
         Some(cb) => RustOptions::new_with_propagation_callback(Box::new(move |ns, delay| {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 if let Err(e) = cb.call1(py, (ns, delay)) {
                     e.print(py);
                 }
