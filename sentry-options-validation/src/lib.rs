@@ -1674,6 +1674,147 @@ Error: \"version\" is a required property"
         // Just verify it doesn't crash.
     }
 
+    /// Write a boolean-only schema and a values file for `namespace` under
+    /// `base`, returning the path of the written `values.json`.
+    fn write_ns(base: &Path, namespace: &str, generated_at: &str) -> PathBuf {
+        let schema_dir = base.join("schemas").join(namespace);
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "Enabled"}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let ns_values_dir = base.join("values").join(namespace);
+        fs::create_dir_all(&ns_values_dir).unwrap();
+        let values_file = ns_values_dir.join("values.json");
+        fs::write(
+            &values_file,
+            format!(
+                r#"{{"options": {{"enabled": true}}, "generated_at": "{generated_at}"}}"#
+            ),
+        )
+        .unwrap();
+        values_file
+    }
+
+    #[test]
+    fn test_propagation_delay_secs_parsing() {
+        let now: DateTime<Utc> = "2024-01-21T19:00:00+00:00".parse().unwrap();
+
+        // Normal case: 30 minutes elapsed.
+        assert_eq!(
+            propagation_delay_secs(&now, "2024-01-21T18:30:00+00:00"),
+            Some(1800.0)
+        );
+        // Clock skew (generated_at in the future) clamps to 0 rather than going negative.
+        assert_eq!(
+            propagation_delay_secs(&now, "2024-01-21T19:05:00+00:00"),
+            Some(0.0)
+        );
+        // Malformed timestamp returns None.
+        assert_eq!(propagation_delay_secs(&now, "not-a-timestamp"), None);
+    }
+
+    #[test]
+    fn test_propagation_callback_panic_is_caught() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &base.join("values"),
+            Duration::ZERO,
+            Some(Box::new(|_ns, _delay| panic!("callback boom"))),
+        )
+        .unwrap();
+
+        // Trigger a change so the panicking callback fires; load() must not unwind.
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": false}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        let _ = store.load();
+
+        // The values refresh still applied despite the callback panic.
+        assert_eq!(
+            store.values.load().get("test").unwrap().get("enabled"),
+            Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn test_propagation_malformed_generated_at_does_not_emit() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+
+        let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &base.join("values"),
+            Duration::ZERO,
+            Some(Box::new(move |ns, delay| {
+                events_clone.lock().unwrap().push((ns.to_string(), delay));
+            })),
+        )
+        .unwrap();
+
+        // Change generated_at to a malformed value: detected as a change, but
+        // unparseable, so no event is emitted.
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": true}, "generated_at": "garbage"}"#,
+        )
+        .unwrap();
+        let _ = store.load();
+        assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_propagation_only_changed_namespace_emits() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        write_ns(base, "alpha", "2024-01-21T18:00:00+00:00");
+        let beta_values = write_ns(base, "beta", "2024-01-21T18:00:00+00:00");
+
+        let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::build(
+            registry,
+            &base.join("values"),
+            Duration::ZERO,
+            Some(Box::new(move |ns, delay| {
+                events_clone.lock().unwrap().push((ns.to_string(), delay));
+            })),
+        )
+        .unwrap();
+
+        // Only beta's generated_at changes; alpha is untouched.
+        fs::write(
+            &beta_values,
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        let _ = store.load();
+
+        let captured = events.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].0, "beta");
+    }
+
     #[test]
     fn test_load_values_json_rejects_wrong_type() {
         let temp_dir = TempDir::new().unwrap();

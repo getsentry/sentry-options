@@ -12,31 +12,6 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
 
-/// Wrapper that lets a Python callable be invoked from the Rust propagation
-/// callback (which runs on the thread that triggers a values refresh).
-/// The GIL is acquired only for the duration of the call.
-struct PyPropagationCallback {
-    callback: PyObject,
-}
-
-// SAFETY: The `PyObject` is only accessed inside `Python::with_gil`, which
-// acquires the GIL before touching the reference-counted pointer. `Send` is
-// safe because moving the wrapper to another thread does not access the
-// `PyObject`. `Sync` is safe because concurrent calls to `call()` each
-// independently acquire the GIL, so no unsynchronized access occurs.
-unsafe impl Send for PyPropagationCallback {}
-unsafe impl Sync for PyPropagationCallback {}
-
-impl PyPropagationCallback {
-    fn call(&self, namespace: &str, delay_secs: f64) {
-        Python::with_gil(|py| {
-            if let Err(e) = self.callback.call1(py, (namespace, delay_secs)) {
-                e.print(py);
-            }
-        });
-    }
-}
-
 // Global options instance
 static GLOBAL_OPTIONS: OnceLock<RustOptions> = OnceLock::new();
 
@@ -222,13 +197,16 @@ fn init(on_propagation: Option<PyObject>) -> PyResult<()> {
         return Ok(());
     }
     let opts = match on_propagation {
-        Some(cb) => {
-            let wrapper = PyPropagationCallback { callback: cb };
-            RustOptions::new_with_propagation_callback(Box::new(move |ns, delay| {
-                wrapper.call(ns, delay);
-            }))
-            .map_err(options_err)?
-        }
+        // `Py<PyAny>` is `Send + Sync`; the closure re-acquires the GIL for the
+        // call, so the callback can run on whichever thread triggers a refresh.
+        Some(cb) => RustOptions::new_with_propagation_callback(Box::new(move |ns, delay| {
+            Python::with_gil(|py| {
+                if let Err(e) = cb.call1(py, (ns, delay)) {
+                    e.print(py);
+                }
+            });
+        }))
+        .map_err(options_err)?,
         None => RustOptions::new().map_err(options_err)?,
     };
     let _ = GLOBAL_OPTIONS.set(opts);
