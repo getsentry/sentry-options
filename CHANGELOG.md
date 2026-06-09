@@ -1,4 +1,10 @@
 # Changelog
+## 1.1.1
+
+### Bug Fixes 🐛
+
+- (cli) Strip unknown keys on the validation by @kenzoengineer in [#139](https://github.com/getsentry/sentry-options/pull/139)
+
 ## 1.1.0
 
 ### New Features ✨
