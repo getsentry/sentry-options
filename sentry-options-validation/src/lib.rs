@@ -580,7 +580,7 @@ impl SchemaRegistry {
 
     /// Remove keys from values that are not defined in the namespace schema.
     /// Logs a warning for each removed key. Returns the filtered values object.
-    fn strip_unknown_keys(&self, namespace: &str, values: &Value) -> Value {
+    pub fn strip_unknown_keys(&self, namespace: &str, values: &Value) -> Value {
         let schema = match self.schemas.get(namespace) {
             Some(s) => s,
             None => return values.clone(),
