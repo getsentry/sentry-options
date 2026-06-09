@@ -1696,9 +1696,7 @@ Error: \"version\" is a required property"
         let values_file = ns_values_dir.join("values.json");
         fs::write(
             &values_file,
-            format!(
-                r#"{{"options": {{"enabled": true}}, "generated_at": "{generated_at}"}}"#
-            ),
+            format!(r#"{{"options": {{"enabled": true}}, "generated_at": "{generated_at}"}}"#),
         )
         .unwrap();
         values_file
