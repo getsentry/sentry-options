@@ -167,6 +167,7 @@ fn validate_and_parse(
     }
 
     let values_json = serde_json::to_value(&result)?;
+    let values_json = schema_registry.strip_unknown_keys(namespace, &values_json);
     schema_registry
         .validate_values(namespace, &values_json)
         .map_err(|e| AppError::Validation(format!("In file {}: {}", path, e)))?;
