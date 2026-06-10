@@ -718,10 +718,10 @@ impl ValuesStore {
         let mut mtimes = HashMap::new();
         for namespace in registry.schemas().keys() {
             let path = values_dir.join(namespace).join(VALUES_FILE_NAME);
-            if let Ok(metadata) = fs::metadata(&path) {
-                if let Ok(mtime) = metadata.modified() {
-                    mtimes.insert(namespace.clone(), mtime);
-                }
+            if let Ok(metadata) = fs::metadata(&path)
+                && let Ok(mtime) = metadata.modified()
+            {
+                mtimes.insert(namespace.clone(), mtime);
             }
         }
         mtimes
