@@ -690,9 +690,9 @@ impl ValuesStore {
         }
 
         let baseline = Instant::now();
+        let initial_mtimes = Self::collect_mtimes(&registry, values_dir);
         let (initial, generated_at_by_namespace) = registry.load_values_json(values_dir)?;
         let last_refresh_offset_ns = AtomicU64::new(baseline.elapsed().as_nanos() as u64);
-        let initial_mtimes = Self::collect_mtimes(&registry, values_dir);
 
         Ok(Self {
             registry,
