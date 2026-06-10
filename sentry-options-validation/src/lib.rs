@@ -19,23 +19,29 @@
 //!    differs across threads. No `thread_local` is involved.
 //! 3. If `now - last_updated < threshold + jitter`, return the current
 //!    snapshot. Otherwise:
-//!    a. Read all values files from disk and build the new map.
-//!    b. On success, publish the new map into the `ArcSwap`
-//!    (last-writer-wins under contention).
-//!    c. `compare_exchange` `last_updated` from the previously-observed
+//!    a. Stat each namespace's `values.json` and compare modification
+//!    times against the last successful reload. If no file has been
+//!    touched, bump the timestamp and return — skipping the expensive
+//!    read/parse/validate cycle.
+//!    b. Read all values files from disk and build the new map.
+//!    c. On success, publish the new map into the `ArcSwap`
+//!    (last-writer-wins under contention) and store the new mtimes.
+//!    d. `compare_exchange` `last_updated` from the previously-observed
 //!    value to `now` with `AcqRel`. The Release on the timestamp
 //!    publishes the prior `ArcSwap::store`: any reader that
 //!    Acquire-loads the bumped timestamp and short-circuits the
 //!    refresh is guaranteed to subsequently load the new snapshot.
-//!    d. On a parse/validation failure, leave the old map in place — the
-//!    bumped timestamp makes other threads back off until the next
-//!    window.
+//!    e. On a parse/validation failure, leave the old map and old
+//!    mtimes in place — the bumped timestamp makes other threads
+//!    back off until the next window, and the stale mtimes ensure
+//!    the reload is retried.
 //!
-//! Multiple threads racing through the stale window will redundantly read
-//! files and publish; the last `ArcSwap::store` wins. The jitter spreads
-//! the threshold boundary so that the herd doesn't cross it together. On
-//! error the timestamp is still bumped so a broken values directory does
-//! not turn into an I/O storm.
+//! Multiple threads racing through the stale window will redundantly stat
+//! (and, when mtimes differ, read) files and publish; the last
+//! `ArcSwap::store` wins. The jitter spreads the threshold boundary so
+//! that the herd doesn't cross it together. On error the timestamp is
+//! still bumped so a broken values directory does not turn into an I/O
+//! storm.
 
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
@@ -48,7 +54,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
@@ -650,6 +656,9 @@ pub struct ValuesStore {
     last_generated_at: ArcSwap<HashMap<String, String>>,
     /// Optional callback invoked when propagation delay is measured.
     on_propagation: Option<PropagationCallback>,
+    /// Last known modification times of values files, used to skip
+    /// redundant reloads when nothing has changed on disk.
+    last_mtimes: ArcSwap<HashMap<String, SystemTime>>,
 }
 
 impl ValuesStore {
@@ -683,6 +692,7 @@ impl ValuesStore {
         let baseline = Instant::now();
         let (initial, generated_at_by_namespace) = registry.load_values_json(values_dir)?;
         let last_refresh_offset_ns = AtomicU64::new(baseline.elapsed().as_nanos() as u64);
+        let initial_mtimes = Self::collect_mtimes(&registry, values_dir);
 
         Ok(Self {
             registry,
@@ -693,12 +703,28 @@ impl ValuesStore {
             refresh_threshold,
             last_generated_at: ArcSwap::from_pointee(generated_at_by_namespace),
             on_propagation,
+            last_mtimes: ArcSwap::from_pointee(initial_mtimes),
         })
     }
 
     /// The registry the store was constructed with.
     pub fn registry(&self) -> &Arc<SchemaRegistry> {
         &self.registry
+    }
+
+    /// Stat each `{values_dir}/{namespace}/values.json` and return a map of
+    /// namespace → modification time. Missing files are omitted.
+    fn collect_mtimes(registry: &SchemaRegistry, values_dir: &Path) -> HashMap<String, SystemTime> {
+        let mut mtimes = HashMap::new();
+        for namespace in registry.schemas().keys() {
+            let path = values_dir.join(namespace).join(VALUES_FILE_NAME);
+            if let Ok(metadata) = fs::metadata(&path) {
+                if let Ok(mtime) = metadata.modified() {
+                    mtimes.insert(namespace.clone(), mtime);
+                }
+            }
+        }
+        mtimes
     }
 
     /// Returns a guard onto the current values snapshot, refreshing first if
@@ -729,6 +755,17 @@ impl ValuesStore {
     }
 
     fn refresh(&self, observed_last_ns: u64, now_ns: u64) {
+        let current_mtimes = Self::collect_mtimes(&self.registry, &self.values_dir);
+        if *self.last_mtimes.load().as_ref() == current_mtimes {
+            let _ = self.last_refresh_offset_ns.compare_exchange(
+                observed_last_ns,
+                now_ns,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            );
+            return;
+        }
+
         let result = self.registry.load_values_json(&self.values_dir);
 
         // Publish the new snapshot before bumping the timestamp. The CAS below
@@ -741,6 +778,7 @@ impl ValuesStore {
         let new_generated_at = match result {
             Ok((new_values, generated_at)) => {
                 self.values.store(Arc::new(new_values));
+                self.last_mtimes.store(Arc::new(current_mtimes));
                 Some(generated_at)
             }
             Err(e) => {
