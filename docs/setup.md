@@ -3,7 +3,7 @@
 ## Preamble
 
 Setting up `sentry-options` from scratch will require a couple PRs in three repos.
-Once set up, refer to [Working with options](./options.md) for adding/deleting options and setting values.
+Once set up, refer to [Working with options](./options.md) for anything related to *using* the library (adding/removing options, testing, setting values, etc.).
 
 ```text
 Phase 1: Your repo (aka "Service Repo") (e.g. `seer`, `snuba`)
@@ -90,27 +90,29 @@ Check the [releases page](https://github.com/getsentry/sentry-options/releases) 
 
 ### 4. Initialize `sentry-options`
 
-As early as possible in your program, similar to where you would initialize Sentry, call the init function *once*.
+Call `init()` once, as early in startup as possible (e.g. right where you initialize Sentry).
 
-In Python:
+#### Python
 
-#### `init(on_propagation: Callable | None)`
+```python
+from sentry_options import init
 
-`init()` optionally accepts a parameter called `on_propagation`. This is a function that is called whenever option values are updated, mainly useful for metrics.
+init()  # optional: init(on_propagation=Callback)
+```
 
-In Rust, we have several other methods that are all equally viable (mainly because there are no optional parameters in rust):
+`on_propagation` is a callback fired whenever values reload, useful for collecting metrics.
 
-#### `init()`
+#### Rust
 
-This will load schemas from a specified fallback path: `SENTRY_OPTIONS_DIR` -> `/etc/sentry-options` -> `./sentry-options/`. This is the most basic usage and will `Err` if the directory cannot be found.
+Rust doesn't support optional params, so the variants are separate functions:
 
-#### `init_with_schemas(schemas: &[(&str, &str)])`
+| Function                             | Use when                                                                                                                                      |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init()`                             | Load schemas from the fallback path (`SENTRY_OPTIONS_DIR` → `/etc/sentry-options` → `./sentry-options/`). `Err`s if the directory is missing. |
+| `init_with_schemas(&[(ns, json)])`   | Embed schemas in the binary via `include_str!` so there's no disk dependency for schemas. Values are still read from disk and hot-reloaded.   |
+| `init_with_propagation_callback(cb)` | Like `init()`, plus the same on_propogation callback                                                                                          |
 
-Instead of loading schemas from the directory, you can use something like `include_str!("/path/")` to directly load them in memory. This gives you some compile time safety and removes the dependency on the disk. **Values** will still be read from the disk and hot reloaded.
-
-#### `init_with_propagation_callback(callback: PropagationCallback)`
-
-Just like the Python example above, this allows you to include a function to be called whenever the values are reloaded. Schemas are still loaded like in `init()`.
+More details about the `init()` and `propogation_callback` signature and usage can be found in the function documentation and [architecture doc]('./architecture.md').
 
 ### 5. Copy schemas folder and set `SENTRY_OPTIONS_DIR`
 
