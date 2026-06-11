@@ -484,6 +484,20 @@ Reject unknown options, fail fast on type mismatches.
 | Override | `SENTRY_OPTIONS_DIR` environment variable |
 | Local dev | `./sentry-options/values/{namespace}/values.json` |
 
+## Benchmarks
+
+Rust:
+```bash
+cargo bench --package sentry-options
+```
+
+Python:
+```bash
+python clients/python/benches/bench_get.py
+python clients/python/benches/bench_has.py
+python clients/python/benches/bench_isset.py
+```
+
 ## Open Questions
 
 ### Async Rust Support
