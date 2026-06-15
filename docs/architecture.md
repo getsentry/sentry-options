@@ -1,509 +1,232 @@
 # Architecture
 
-## Overview
+`sentry-options` is a file-based configuration and feature-flag platform for Sentry services. Options and feature flags are declared in a JSON **schema** (checked into the service's own repo), their **values** are set in `sentry-options-automator`, and a CLI compiles the two into a Kubernetes **ConfigMap** that is mounted into the pod and read at runtime by a Rust or Python client.
 
-Multi-language configuration system for Sentry with JSON schemas as the source of truth.
+There is no database and no network call on the read path: values are validated against the schema, served from memory, and refreshed from disk on read. The schema ships inside the service image, so a pod can validate values and serve defaults even before any ConfigMap exists.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Component Flow                           │
-│                                                             │
-│  schemas/{namespace}/schema.json (source of truth)          │
-│       ↓                                                     │
-│       └─→ Loaded at runtime by clients                      │
-│                                                             │
-│  Rust client library                                        │
-│       ├─→ Load schemas at startup (disk or embedded)        │
-│       ├─→ Validate values against schemas                   │
-│       ├─→ Background file watching + atomic refresh         │
-│       └─→ Simple API: options(namespace)?.get(key)          │
-│                                                             │
-│  Python client library                                      │
-│       ├─→ Load schemas at startup                           │
-│       ├─→ Validate values against schemas                   │
-│       └─→ Simple API: option_group(namespace).get(key)      │
-│                                                             │
-│  Write tool (Rust CLI)                                      │
-│       ├─→ Validates against schemas                         │
-│       └─→ YAML → JSON conversion                            │
-└─────────────────────────────────────────────────────────────┘
-```
+## System Overview
 
-## Repository Structure
+The system spans three repos and three stages:
 
 ```
-sentry-options/
-├── Cargo.toml                       # Root Cargo workspace
-├── schemas/                         # JSON schemas (source of truth)
-│   ├── getsentry/
-│   │   └── schema.json
-│   ├── relay/
-│   │   └── schema.json
-│   └── sentry/
-│       └── schema.json
-│
-├── clients/                         # All language clients
-│   ├── rust/
-│   │   └── sentry-options/          # Rust client library
-│   │       ├── Cargo.toml
-│   │       └── src/lib.rs
-│   │
-│   └── python/
-│       ├── sentry_options/
-│       │   ├── __init__.py
-│       │   └── testing.py
-│       ├── src/                     # Pyo3 extension
-│       └── tests/                   # tests for the python client
-│
-├── sentry-options-cli/              # CLI tool
-│   ├── Cargo.toml
-│   └── src/main.rs
-│
-├── sentry-options-validation/       # Shared validation library (Rust)
-│   ├── Cargo.toml
-│   └── src/lib.rs
-│
-└── .github/workflows/               # CI/CD
+Build time — service repo (e.g. seer)
+  sentry-options/schemas/{ns}/schema.json ──COPY──▶ image (/etc/sentry-options/schemas)
+
+CI / CD — sentry-options-automator
+  option-values/{ns}/{target}/values.yaml
+        │  sentry-options-cli write   (validate values vs schema, merge default + target)
+        ▼
+  ConfigMap  sentry-options-{ns}      ──applied once per region──▶ cluster
+
+Runtime — Kubernetes pod
+  envoy-injector mounts the ConfigMap at /etc/sentry-options/values/{ns}/values.json
+        ▼
+  sentry_options client  ── validate, serve defaults when missing, refresh on read ──▶ your code
 ```
+
+## Components
+
+| Component | Location | Role |
+|-----------|----------|------|
+| Schemas | service repo, `sentry-options/schemas/{ns}/schema.json` | Declare options & feature flags with types and defaults (source of truth) |
+| Values | `sentry-options-automator`, `option-values/{ns}/{target}/values.yaml` | Per-target option values |
+| `sentry-options-cli` | this repo | Validate schemas/values, merge targets, emit ConfigMaps / JSON |
+| `sentry-options-validation` | this repo | Shared library: meta-schema validation, value validation, and the runtime value store the clients use |
+| Clients | `clients/rust`, `clients/python` | `sentry-options` (Rust crate) and `sentry_options` (Python, PyO3 bindings over the Rust core) |
+| `validate-schema` | `.github/workflows/` | Reusable workflow enforcing the evolution rules on PRs |
+| `sentry-options-gen-stubs` | this repo | Pre-commit hook that generates typed Python stubs from schemas |
+| `envoy-injector` | ops repo | Mutating admission webhook that mounts the ConfigMap into annotated pods |
 
 ## Schema Format
 
-JSON schemas define available options with types and defaults:
+A schema is a JSON file at `sentry-options/schemas/{namespace}/schema.json`:
 
 ```json
-{
-  "version": "1.0",
-  "type": "object",
-  "properties": {
-    "system.url-prefix": {
-      "type": "string",
-      "default": "https://sentry.io",
-      "description": "Base URL for the Sentry instance"
-    },
-    "traces.sample-rate": {
-      "type": "number",
-      "default": 0.0,
-      "description": "Sample rate for traces (0.0-1.0)"
-    }
-  }
-}
+{ "version": "1.0", "type": "object", "properties": { } }
 ```
 
-### Supported Types
+- `version` — a `MAJOR.MINOR` string (meta-schema pattern `^[0-9]+\.[0-9]+$`); full three-part semver is rejected.
+- `type` — always `"object"`.
+- `properties` — map of option name → definition.
 
-| Type    | JSON Schema                       | Example                               |
-|---------|-----------------------------------|---------------------------------------|
-| String  | `"type": "string"`                | `"hello"`                             |
-| Integer | `"type": "integer"`               | `42`                                  |
-| Float   | `"type": "number"`                | `3.14`                                |
-| Boolean | `"type": "boolean"`               | `true`                                |
-| Array   | `"type": "array"`                 | `[1,2,3]`                             |
-| Object  | `"type": "object"`                | `{"host": "localhost", "port": 8080}` |
-| Feature | `"$ref": "#/definitions/Feature"` |                                       |
+The meta-schema that enforces all of this is `sentry-options-validation/src/namespace-schema.json`.
 
-> Array items can be primitives (`string`, `integer`, `number`, `boolean`) or `object`.
+### Option types
 
-#### Object Type
+Each non-feature option requires `type`, `default`, and `description`.
 
-Objects require a `properties` field that defines the shape. Each field in `properties`
-must have a `type` (one of: `string`, `integer`, `number`, `boolean`). By default all
-fields are required — partial objects are not allowed unless fields are marked optional.
+**Primitives** — `string`, `integer`, `number`, `boolean`:
 
 ```json
-{
-  "my-config": {
+"inference.timeout": { "type": "integer", "default": 100, "description": "Inference timeout (s)" }
+```
+
+**Arrays** — homogeneous; require an `items` type:
+
+```json
+"allowed.ids": { "type": "array", "items": {"type": "integer"}, "default": [], "description": "Allowed IDs" }
+```
+
+**Objects** come in two forms:
+
+- **Struct** — fixed named fields under `properties`. Fields are required unless marked `"optional": true`. A field may be a primitive or a primitive-valued map; it may **not** be an array or another struct.
+
+  ```json
+  "db.config": {
     "type": "object",
     "properties": {
-      "host": { "type": "string" },
-      "port": { "type": "integer" }
+      "host": {"type": "string"},
+      "port": {"type": "integer"},
+      "label": {"type": "string", "optional": true}
     },
-    "default": { "host": "localhost", "port": 8080 },
-    "description": "Service configuration"
+    "default": {"host": "localhost", "port": 8080},
+    "description": "Database config"
   }
-}
-```
+  ```
 
-#### Optional Fields
+- **Dict (map)** — arbitrary string keys, a single primitive value type, declared with `additionalProperties`:
 
-Individual fields within an object (or array-of-objects item) can be marked as optional
-by adding `"optional": true`. Optional fields may be omitted from defaults and values.
-When omitted, no default is auto-populated — callers must handle the absence.
+  ```json
+  "service.tags": { "type": "object", "additionalProperties": {"type": "string"}, "default": {}, "description": "String tags" }
+  ```
+
+**Arrays of structs** — `items.type: "object"` with its own `properties`:
 
 ```json
-{
-  "my-config": {
-    "type": "object",
-    "properties": {
-      "host": { "type": "string" },
-      "port": { "type": "integer" },
-      "label": { "type": "string", "optional": true }
-    },
-    "default": { "host": "localhost", "port": 8080 },
-    "description": "Service configuration with optional label"
-  }
+"endpoints": {
+  "type": "array",
+  "items": { "type": "object", "properties": { "url": {"type": "string"}, "weight": {"type": "integer"} } },
+  "default": [],
+  "description": "Weighted endpoints"
 }
 ```
 
-In this example, `host` and `port` are required, while `label` can be omitted.
-If provided, `label` must still be a `string` — type validation still applies.
+### Feature flags
 
-Schema evolution treats any change to the `properties` shape (including adding or
-removing `"optional"`) as a breaking change (`ShapeChanged`).
-
-#### Array of Objects
-
-Arrays of objects define the item shape in `items.properties`. All items must
-follow the same shape (homogeneous).
+A feature flag is an option whose name begins with `feature.` and whose definition is a reference to the built-in `Feature` schema:
 
 ```json
-{
-  "endpoints": {
-    "type": "array",
-    "items": {
-      "type": "object",
-      "properties": {
-        "url": { "type": "string" },
-        "weight": { "type": "integer" }
-      }
-    },
-    "default": [],
-    "description": "Weighted endpoints"
-  }
-}
+"feature.red-bar": { "$ref": "#/definitions/Feature" }
 ```
 
-Nested objects (objects within objects) are not supported — object fields must be primitives.
+The `Feature` definition (`sentry-options-validation/src/feature-schema-defs.json`) is spliced into the namespace schema when the schema is loaded, so feature values are validated against it. A `Feature` value:
 
-### Schema Requirements
-
-Each schema file must have:
-
-- `version` - Semver string (e.g., `"1.0"`)
-- `type` - Must be `"object"`
-- `properties` - Map of option definitions
-
-Each property must have:
-
-- `type` - One of: `string`, `integer`, `number`, `boolean`, `array`, `object`,
-  or is a feature flag.
-- `default` - Default value (must match declared type)
-- `description` - Human-readable description
-- `items` - Required when `type` is `array`. An object with `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, `boolean`, or `object`. When items type is `object`, a `properties` field defining the item shape is also required.
-- `properties` - Required when `type` is `object`. An object mapping field names to `{"type": "TYPE"}` where `TYPE` is `string`, `integer`, `number`, or `boolean`. Fields may include `"optional": true` to allow omission.
-
-`additionalProperties: false` is auto-injected to reject unknown options and unknown object fields.
-
-In schema files, feature flags should have their option names begin with `feature.` and point to an object reference:
-
-```json
-{
-  "version": "0.1",
-  "type": "object",
-  "properties": {
-    "feature.organizations:red-bar": {
-        "$ref": "#/definitions/Feature"
-    }
-  }
-}
+```yaml
+owner:
+  team: "my-team"          # required (email optional)
+created_at: "2026-01-01"   # required
+enabled: true              # optional, defaults to true
+segments:                  # required
+  - name: "internal"
+    rollout: 100           # optional, defaults to 100
+    conditions:
+      - { property: "organization_id", operator: "in", value: [123] }
 ```
 
-The `Feature` definition is spliced into the namespace schema during `init()`. The schema
-for features can be found in `sentry-options-validation/src/feature-schema-defs.json`.
+Condition operators: `in`, `not_in`, `contains`, `not_contains`, `equals`, `not_equals`, `matches`, `not_matches`.
 
-## Values Format
+### Validation internals
 
-### Input: YAML Files
+When a schema is loaded, `sentry-options-validation` compiles a JSON-Schema validator from it and injects two constraints (`inject_object_constraints`):
 
-Configuration values are written as YAML files organized by namespace and target:
+- `additionalProperties: false` is added to the top-level options object and to every struct, so unknown keys are rejected — **except** when the schema explicitly declares `additionalProperties` (the dict form), which is left open to arbitrary keys.
+- For each struct, a `required` array is derived from the fields that are *not* marked `"optional": true`.
 
-```
-configs/
-├── getsentry/
-│   ├── default/           # Base values (required)
-│   │   ├── core.yaml
-│   │   └── features.yaml
-│   └── s4s/               # Target-specific overrides
-│       └── overrides.yaml
-└── relay/
-    └── default/
-        └── settings.yaml
-```
+`integer` rejects fractional values while `number` accepts both, and each option's `default` is validated against that option's own type at load time.
 
-Each YAML file has a single `options` key:
+## Values & Targets
+
+Values are YAML files under `option-values/{namespace}/{target}/`, each with a single `options:` key:
 
 ```yaml
 options:
-  system.url-prefix: "https://custom.sentry.io"
-  traces.sample-rate: 0.5
-  webhook.delivery-enabled: true
-  feature.organizations:red-bar:
-      enabled: true
-      owner:
-        - team: "test-team"
-      created_at: "2024-01-01"
-      segments:
-        - name: "org-segment"
-          rollout: 100
-          conditions:
-            - property: "organization_id"
-              operator: "in"
-              value: [123, 456]
+  inference.timeout: 200
 ```
 
-### Target Override System
+Every namespace has a mandatory `default` target (the base) plus one directory per region target (`us`, `de`, `s4s2`, …). A target's values are merged on top of `default`, with target keys overriding. A namespace is only deployed to a region that has its own target directory — `default` alone deploys nowhere.
 
-- Every namespace requires a `default` target
-- Non-default targets (e.g., `s4s`, `production`) inherit from `default`
-- Target-specific values override defaults
+`sentry-options-cli write` compiles one namespace/target into output in one of two formats:
 
-### Output: JSON Files
+- `--output-format configmap` → a `ConfigMap` named `sentry-options-{namespace}` (the target is *not* in the name; each region's cluster gets its own copy). It carries a `generated_at` value plus optional `commit_sha` / `commit_timestamp` annotations.
+- `--output-format json` → a file `sentry-options-{namespace}-{target}.json` shaped `{"options": {...}, "generated_at": "..."}`.
 
-The write tool generates merged JSON files per namespace/target:
+Generated ConfigMaps are capped just under 1 MiB; the CLI errors if a namespace exceeds it. The CD pipeline runs `write` once per namespace/target and applies per region — a namespace with no directory for a region is skipped for that region.
 
-```
-dist/
-├── sentry-options-getsentry-default.json
-├── sentry-options-getsentry-s4s.json
-└── sentry-options-relay-default.json
-```
+## Runtime Model
 
-Output format:
-```json
-{
-  "options": {
-    "system.url-prefix": "https://custom.sentry.io",
-    "traces.sample-rate": 0.5
-  }
-}
-```
+The client resolves its base directory as: the `SENTRY_OPTIONS_DIR` env var → `/etc/sentry-options` if it exists → `./sentry-options/`. Within it:
 
-## Usage
+- schemas at `{dir}/schemas/{ns}/schema.json`
+- values at `{dir}/values/{ns}/values.json` (shape `{"options": {...}, "generated_at": "..."}`)
 
-### Python
+A read — `options(ns).get(key)` — validates the loaded values against the schema and returns the value, or the schema **default** when the key is absent from the values file. Unknown keys in a values file are **stripped with a warning**, not errored; this tolerates the deploy-time race where a ConfigMap is updated before the new schema ships.
 
-```python
-from sentry_options import init, options
+### Initialization
 
-init()
-opts = options('getsentry')
-url: str = opts.get('system.url-prefix')
-rate: float = opts.get('traces.sample-rate')
-```
+`init()` must be called once at startup. Rust exposes three variants (it has no optional parameters); Python folds them into one function:
 
-#### Typing
+| Function (Rust) | Behavior |
+|-----------------|----------|
+| `init()` | Resolve the directory and load schemas from disk |
+| `init_with_schemas(&[(ns, json)])` | Use schemas embedded in the binary via `include_str!`; values still load from disk |
+| `init_with_propagation_callback(cb)` | Like `init()`, plus a reload callback |
 
-The package ships with a `py.typed` marker and type stubs, so mypy, pyright,
-and ruff work out of the box — no `# type: ignore` needed.
+Python: `init(on_propagation=None)`. All forms are idempotent (guarded by a global `OnceLock`) — calling again is a no-op.
 
-`OptionValue` is exported for annotating your own code:
+### Refresh-on-read
 
-```python
-from sentry_options import OptionValue
+There is no background thread. Values are refreshed lazily, on the reading thread:
 
-def process(value: OptionValue) -> None: ...
-```
+- The current snapshot lives in an `ArcSwap`, so reads are lock-free.
+- On a read, if the snapshot is older than a **5-second threshold** (plus a small per-call jitter derived from the stack address, so threads don't all refresh on the same boundary), the reading thread re-stats and re-reads the files and publishes the new snapshot. Concurrent refreshers are harmless — last writer wins. On an I/O error the timestamp is still advanced to avoid hammering the disk.
 
-`OptionValue` is the union of all types an option can return:
+End to end, a value change propagates as: ConfigMap update → ~1–2 min kubelet sync to the mounted file → ≤5 s until the next read picks it up. No pod restart is required.
 
-| Schema type | Python type |
-|-------------|-------------|
-| `string` | `str` |
-| `integer` | `int` |
-| `number` | `float` |
-| `boolean` | `bool` |
-| `object` | `dict[str, str \| int \| float \| bool]` |
-| `array` | `list[str \| int \| float \| bool \| dict[...]]` |
+### Propagation metric
 
-#### Feature flags
+When a refresh observes a newer `generated_at` than the previous snapshot, the propagation callback (`init_with_propagation_callback` in Rust, `on_propagation` in Python) fires with the namespace and the delay between generation and load — useful for measuring deploy lag.
 
-```python
-from sentry_options import init, features, FeatureContext
+## Feature Flag Evaluation
 
-init()
+`features(ns).has(name, context)` returns a `bool`. The `name` omits the `feature.` prefix — `has` prepends it (so a `feature.red-bar` schema entry is checked as `has("red-bar", ...)`).
 
-context = FeatureContext(
-    {"org_id": 123, "user_id": 456, "user_email": "sal@example.org"},
-    identity_fields=["user_id"]
-)
+A `FeatureContext` carries arbitrary key→value data plus an optional set of `identity_fields`. Evaluation (`clients/rust/src/features.rs`):
 
-feature_checker = features("getsentry")
-if feature_checker.has("organizations:red-bar", context):
-    # User has the feature
-```
+- A feature's `segments` are tried in order; the **first** segment whose conditions all match (logical AND) decides the result via its rollout. If no segment matches, the feature is off. A feature with `enabled: false` is always off.
+- Rollout: `rollout: 0` → off, `>= 100` → on, otherwise the context is in the rollout iff `id % 100 < rollout`.
+- The context `id` is a SHA-1 hash built from the identity fields: each identity field present in the data, sorted, joined as `key:value:...`. If no `identity_fields` are set, **all** data keys are used (so the id — and the rollout bucket — changes whenever any field differs).
 
-#### Testing (Python)
+`identity_fields` therefore decide what a percentage rollout is bucketed by. Setting them to a stable entity such as `["organization_id"]` keeps a 50% rollout consistent per-org across requests and services; leaving them unset makes bucketing depend on the entire context. This mirrors flagpole's model — context fields are for *targeting*, identity fields are for stable *bucketing*.
 
-Use the `override_options` context manager to temporarily replace option values in tests.
-Overrides are validated against the schema (unknown keys and type mismatches raise errors).
-Requires `init()` to have been called first — use a `conftest.py` fixture:
+## Schema Evolution & Validation
 
-```python
-# conftest.py
-import pytest
-from sentry_options import init
+The `validate-schema` reusable workflow runs on schema PRs and enforces (`sentry-options-cli/src/schema_evolution.rs`):
 
-@pytest.fixture(scope='session', autouse=True)
-def _init_options() -> None:
-    init()
+| Change | Allowed |
+|--------|---------|
+| Add an option | ✅ |
+| Add a namespace | ✅ |
+| Remove an option | ✅ (warns if still referenced in automator values) |
+| Remove a namespace | ❌ |
+| Change an option's type | ❌ |
+| Change an option's default | ❌ |
+| Change an object / array-of-object shape | ❌ (`ShapeChanged`) |
+
+New namespaces must be named `{repo}` (exact) or `{repo}-*` (prefixed with `{repo}-`).
+
+Two CLI paths feed validation: `validate-schema-changes` diffs a schema between a base and head SHA (the PR), and `fetch-schemas` pulls each service's schema from the `url`/`path` declared in the automator's `repos.json` so values can be validated against it.
+
+## The Injector (ops)
+
+In production the ConfigMap is mounted by `envoy-injector`, a `MutatingWebhookConfiguration` (ops repo, `k8s/services/envoy-injector/webhook.yaml`) that intercepts pod creation. A pod opts in with annotations:
+
+```yaml
+options.sentry.io/inject: 'true'
+options.sentry.io/namespace: seer        # comma-separated for multiple namespaces
 ```
 
-```python
-from sentry_options import options
-from sentry_options.testing import override_options
+When present, the webhook patches the pod to add a volume backed by the `sentry-options-{namespace}` ConfigMap and a volumeMount at `/etc/sentry-options/values/{namespace}/`. Details worth knowing:
 
-def test_feature():
-    with override_options('getsentry', {'feature.enabled': True}):
-        assert options('getsentry').get('feature.enabled') is True
-
-# Nesting is supported — inner overrides restore to outer values
-def test_nested():
-    with override_options('getsentry', {'rate': 0.5}):
-        with override_options('getsentry', {'rate': 1.0}):
-            assert options('getsentry').get('rate') == 1.0
-        assert options('getsentry').get('rate') == 0.5
-```
-
-### Rust
-
-Use `init_with_schemas` to embed schemas in the binary at compile time via
-`include_str!`. Values still load from disk and hot-reload.
-
-```rust
-use sentry_options::{init_with_schemas, options};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_with_schemas(&[
-        ("getsentry", include_str!("sentry-options/schemas/getsentry/schema.json")),
-    ])?;
-
-    let opts = options("getsentry")?;
-    let url = opts.get("system.url-prefix")?;
-    let rate = opts.get("traces.sample-rate")?;
-    Ok(())
-}
-```
-
-For local development where schemas are on disk, `init()` can be used instead:
-
-```rust
-init()?; // loads schemas and values from disk
-```
-
-#### Feature flags (Rust)
-
-```rust
-use sentry_options::{init_with_schemas, features, FeatureContext};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_with_schemas(&[
-        ("getsentry", include_str!("sentry-options/schemas/getsentry/schema.json")),
-    ])?;
-    let mut context = FeatureContext::new();
-    context.insert("user_id", 123);
-    context.insert("org_id", 456);
-    context.insert("user_email", "sal@example.org");
-    context.identity_fields(vec!["user_id"]);
-
-    let feature_checker = features("getsentry");
-    if feature_checker.has("organizations:red-bar", &context) {
-        // User has feature.
-    }
-    Ok(())
-}
-```
-
-#### Testing (Rust)
-
-Use `override_options()` which returns a guard that restores values when dropped.
-Overrides are validated against the schema.
-
-```rust
-use sentry_options::testing::override_options;
-use sentry_options::{init, options};
-use serde_json::json;
-
-#[test]
-fn test_feature() {
-    init().unwrap();
-    let _guard = override_options(&[
-        ("getsentry", "feature.enabled", json!(true)),
-    ]).unwrap();
-
-    let opts = options("getsentry").unwrap();
-    assert_eq!(opts.get("feature.enabled").unwrap(), json!(true));
-    // guard dropped here — value restored
-}
-```
-
-Overrides are thread-local and won't apply to spawned threads.
-
-### Write Tool
-
-```bash
-sentry-options-cli --root configs/ --schemas schemas/ --out dist/
-```
-
-## Design Decisions
-
-### 1. Runtime Validation (No Codegen)
-
-Schemas loaded at runtime, values validated against them.
-
-**Rationale:**
-- No build-time dependencies
-- Can update schemas without rebuilding clients
-- Simple to understand and debug
-
-### 2. File Watching Strategy
-
-Background thread with interval polling (not inotify/FSEvents).
-
-**Rationale:**
-- Works reliably with Kubernetes ConfigMaps, NFS, virtual filesystems
-- Simple to implement and debug
-
-### 3. Strict Validation
-
-Reject unknown options, fail fast on type mismatches.
-
-**Behavior:**
-- Unknown keys in values file → Error (catches typos)
-- Type mismatch → Error
-- `null` values → Error (use defaults instead)
-
-### 4. JSON Number Handling
-
-- Schema says `integer` → Reject `5.5`, accept `5`
-- Schema says `number` → Accept both `5` and `5.5`
-
-## Config Paths
-
-| Environment | Path |
-|-------------|------|
-| Production | `/etc/sentry-options/values/{namespace}/values.json` |
-| Override | `SENTRY_OPTIONS_DIR` environment variable |
-| Local dev | `./sentry-options/values/{namespace}/values.json` |
-
-## Benchmarks
-
-Rust:
-```bash
-cargo bench --package sentry-options
-```
-
-Python:
-```bash
-python clients/python/benches/bench_get.py
-python clients/python/benches/bench_has.py
-python clients/python/benches/bench_isset.py
-```
-
-## Open Questions
-
-### Async Rust Support
-
-Start with sync, add async wrapper later if needed. File reads are fast (~1ms).
-
-### ConfigMap Sharding
-
-How to handle namespaces exceeding 1MB? Current approach: error and require manual splitting.
+- The webhook only fires in Kubernetes namespaces labeled `sentry-envoy-injection: enabled` (the `default` namespace carries this label, which is where most services run).
+- `failurePolicy: Fail` — if the injector is unreachable, pod creation in those namespaces fails rather than starting un-injected.
+- It runs on pod `CREATE` only, so annotation changes take effect on the next deploy/restart, and the patch exists on the running pod rather than in the committed manifest.
