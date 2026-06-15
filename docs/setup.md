@@ -44,7 +44,7 @@ In this new file, create the following schema:
 
 ### 2. Add workflows
 
-It is important to perform validation in your own repo to make sure sentry options doesn't break your service. This workflow will ensure there are no syntax errors and no [evolution rules](./options.md#schema-evolution-rules) are violated (changing the type of an option, changing the default of an option, etc.)
+It is important to perform validation in your own repo to make sure sentry-options doesn't break your service. This workflow will ensure there are no syntax errors and no [evolution rules](./options.md#schema-evolution-rules) are violated (changing the type of an option, changing the default of an option, etc.)
 
 In any workflow that runs in PRs and your main branch, add this reusable workflow:
 
@@ -57,7 +57,7 @@ jobs:
       schemas-path: sentry-options/schemas
 ```
 
-Additionally, if you are using the **Python** library. We recommend adding our precommit hook to autogenerate type stubs. This means you don't need to `cast(...)` options in your code to pass `mypy` or `ty` typechecking.
+Additionally, if you are using the **Python** library, we recommend adding our precommit hook to autogenerate type stubs. This means you don't need to `cast(...)` options in your code to pass `mypy` or `ty` typechecking.
 
 In `.pre-commit-config.yaml`
 
@@ -110,9 +110,9 @@ Rust doesn't support optional params, so the variants are separate functions:
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `init()`                             | Load schemas from the fallback path (`SENTRY_OPTIONS_DIR` → `/etc/sentry-options` → `./sentry-options/`). `Err`s if the directory is missing. |
 | `init_with_schemas(&[(ns, json)])`   | Embed schemas in the binary via `include_str!` so there's no disk dependency for schemas. Values are still read from disk and hot-reloaded.   |
-| `init_with_propagation_callback(cb)` | Like `init()`, plus the same on_propogation callback                                                                                          |
+| `init_with_propagation_callback(cb)` | Like `init()`, plus the same on_propagation callback                                                                                          |
 
-More details about the `init()` and `propogation_callback` signature and usage can be found in the function documentation and [architecture doc]('./architecture.md').
+More details about the `init()` and `propagation_callback` signature and usage can be found in the function documentation and [architecture doc](./architecture.md).
 
 ### 5. Copy schemas folder and set `SENTRY_OPTIONS_DIR`
 
