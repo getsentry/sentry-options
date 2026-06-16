@@ -1,35 +1,10 @@
 # sentry-options
 
-File-based configuration system for Sentry. Replaces database-stored options with git-managed, validated configs for faster reads and auditable changes.
+Sentry's internal option and feature-flag platform: schema-defined options, git-managed values, read at runtime — validated, hot-reloadable, and backed by Kubernetes ConfigMaps.
 
-## Key Concepts
+## Documentation
 
-- **Schemas** (`schemas/{ns}/schema.json`) - Define options with types/defaults (source of truth)
-- **Values** (YAML files) - Override defaults, organized by namespace and target (e.g., `default`, `s4s`)
-- **CLI** - Validates YAML against schemas, merges targets, outputs JSON for deployment
-- **Clients** (Python, Rust) - Load JSON values at runtime with schema validation
-
-## Project Structure
-
-```
-sentry-options/
-├── clients/
-│   ├── python/                  # Python client (PyO3 bindings)
-│   └── rust/sentry-options/     # Rust client library
-├── sentry-options-cli/          # Rust CLI (YAML→JSON)
-├── sentry-options-validation/   # Rust validation library
-└── schemas/                     # JSON schemas (source of truth)
-```
-
-## Development
-
-```bash
-devenv sync                      # Setup (Rust, Python, pre-commit)
-cargo test                       # Rust tests
-cd clients/python && pytest tests/  # Python client tests
-pre-commit run --all-files       # Lint/format
-```
-
-## Architecture
-
-@docs/architecture.md
+- [README](./README.md) — what it is and a code quickstart
+- [docs/setup.md](./docs/setup.md) — integrating sentry-options into a new repo
+- [docs/options.md](./docs/options.md) — adding/deleting options, setting values, testing
+- [docs/architecture.md](./docs/architecture.md) — how it works: schema format, runtime model, feature-flag evaluation

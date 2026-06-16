@@ -3,45 +3,11 @@
 //! Schemas are loaded once into a [`SchemaRegistry`] and shared via `Arc`.
 //! Values are validated against schemas as complete objects.
 //!
-//! # Refresh-on-read scheme
-//!
-//! Values are held in a [`ValuesStore`] that wraps an [`ArcSwap`] for
-//! lock-free reads. There is no background thread — every `load()` decides
-//! whether the cached snapshot is stale and, if so, the calling thread
-//! refreshes it.
-//!
-//! Each `load()` does:
-//!
-//! 1. Read `now` and `last_updated` (an `AtomicU64` of nanoseconds since a
-//!    monotonic baseline) with `Acquire`.
-//! 2. Compute a per-call jitter in `[0, 1s)` from the address of a stack
-//!    local — different threads have different stack bases, so the value
-//!    differs across threads. No `thread_local` is involved.
-//! 3. If `now - last_updated < threshold + jitter`, return the current
-//!    snapshot. Otherwise:
-//!    a. Stat each namespace's `values.json` and compare modification
-//!    times against the last successful reload. If no file has been
-//!    touched, bump the timestamp and return — skipping the expensive
-//!    read/parse/validate cycle.
-//!    b. Read all values files from disk and build the new map.
-//!    c. On success, publish the new map into the `ArcSwap`
-//!    (last-writer-wins under contention) and store the new mtimes.
-//!    d. `compare_exchange` `last_updated` from the previously-observed
-//!    value to `now` with `AcqRel`. The Release on the timestamp
-//!    publishes the prior `ArcSwap::store`: any reader that
-//!    Acquire-loads the bumped timestamp and short-circuits the
-//!    refresh is guaranteed to subsequently load the new snapshot.
-//!    e. On a parse/validation failure, leave the old map and old
-//!    mtimes in place — the bumped timestamp makes other threads
-//!    back off until the next window, and the stale mtimes ensure
-//!    the reload is retried.
-//!
-//! Multiple threads racing through the stale window will redundantly stat
-//! (and, when mtimes differ, read) files and publish; the last
-//! `ArcSwap::store` wins. The jitter spreads the threshold boundary so
-//! that the herd doesn't cross it together. On error the timestamp is
-//! still bumped so a broken values directory does not turn into an I/O
-//! storm.
+//! Values refresh lazily on read on the same thread. A read past
+//! the staleness window re-reads the values directory on the calling thread
+//! and publishes the new snapshot via `ArcSwap` (last-writer-wins). The full
+//! scheme is in `docs/architecture.md`; the memory-ordering invariants are
+//! documented inline in the `refresh` method below.
 
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
@@ -629,21 +595,14 @@ impl Default for SchemaRegistry {
     }
 }
 
-/// Lazily reloads values from disk when reads detect they are stale.
-///
-/// Holds the current `ValuesByNamespace` snapshot in an `ArcSwap` for
-/// lock-free reads. Every `load()` checks whether the snapshot is older than
-/// `refresh_threshold + jitter`; if so, the calling thread reads the values
-/// directory, then compare-and-swaps the timestamp. Whichever thread wins the
-/// CAS publishes its snapshot into the `ArcSwap`; losers discard their work.
-///
-/// Replaces the polling watcher thread: idle processes do no work, and
-/// concurrent readers coordinate through the timestamp CAS.
-/// Callback invoked when a namespace's values are updated.
-/// Arguments: `(namespace, delay_secs)` where `delay_secs` is the propagation
-/// delay from ConfigMap generation to the app reading the new values.
+/// Callback invoked when a namespace's values are updated. Receives
+/// `(namespace, delay_secs)` — the propagation delay from ConfigMap generation
+/// to the app reading the new values.
 pub type PropagationCallback = Box<dyn Fn(&str, f64) + Send + Sync>;
 
+/// Validates and serves option values, reloading them lazily on read and
+/// serving the current snapshot lock-free via `ArcSwap`. See `refresh` for the
+/// staleness window and memory-ordering details.
 pub struct ValuesStore {
     registry: Arc<SchemaRegistry>,
     values_dir: PathBuf,
