@@ -3,7 +3,7 @@
 //! Schemas are loaded once into a [`SchemaRegistry`] and shared via `Arc`.
 //! Values are validated against schemas as complete objects.
 //!
-//! Values refresh lazily on read — there is no background thread. A read past
+//! Values refresh lazily on read on the same thread. A read past
 //! the staleness window re-reads the values directory on the calling thread
 //! and publishes the new snapshot via `ArcSwap` (last-writer-wins). The full
 //! scheme is in `docs/architecture.md`; the memory-ordering invariants are
