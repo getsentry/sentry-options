@@ -44,7 +44,7 @@ In this new file, create the following schema:
 
 ### 2. Add workflows
 
-It is important to perform validation in your own repo to make sure sentry-options doesn't break your service. This workflow will ensure there are no syntax errors and no [evolution rules](./options.md#schema-evolution-rules) are violated (changing the type of an option, changing the default of an option, etc.)
+It is important to perform validation in your own repo to make sure sentry-options doesn't break your service. This workflow will ensure there are no syntax errors and no [evolution rules](./architecture.md#schema-evolution--validation) are violated (changing the type of an option, changing the default of an option, etc.)
 
 In any workflow that runs in PRs and your main branch, add this reusable workflow:
 
@@ -161,7 +161,7 @@ options: {}
 
 Every other `target` is synonymous with "region". **You must add a folder and corresponding `values.yaml` for every region you want to deploy to. Just having `/default/` will not deploy to any region**. However, values will inherit from `default` first, so if you want the same value in every region, just change `/default/` and leave all other targets as `options: {}`.
 
-Follow the directions in the [user guide](./options.md#setting-values) for more information on how to actually set the value of an option.
+Follow the directions in the [user guide](./options.md#setting-an-option-value) for more information on how to actually set the value of an option.
 
 ### Phase 2 Summary
 
