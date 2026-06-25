@@ -35,44 +35,14 @@
             "description": {
               "type": "string"
             },
-            "additionalProperties": {
-              "$ref": "#/$defs/map_value_type"
-            },
             "items": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "enum": ["string", "integer", "number", "boolean", "object"]
-                },
-                "properties": {
-                  "$ref": "#/$defs/shape"
-                },
-                "additionalProperties": {
-                  "$ref": "#/$defs/map_value_type"
-                }
-              },
-              "required": ["type"],
-              "additionalProperties": false,
-              "allOf": [
-                {
-                  "if": {
-                    "properties": {
-                      "type": {
-                        "const": "object"
-                      }
-                    },
-                    "not": {
-                      "required": ["additionalProperties"]
-                    }
-                  },
-                  "then": {
-                    "required": ["properties"]
-                  }
-                }
-              ]
+              "$ref": "#/$defs/value_type"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/value_type"
             },
             "properties": {
-              "$ref": "#/$defs/shape"
+              "$ref": "#/$defs/value_shape"
             }
           },
           "required": ["type", "default", "description"],
@@ -114,48 +84,62 @@
   "required": ["version", "type", "properties"],
   "additionalProperties": false,
   "$defs": {
-    "map_value_type": {
+    "value_type": {
       "type": "object",
       "properties": {
         "type": {
-          "enum": ["string", "integer", "number", "boolean"]
+          "enum": ["string", "integer", "number", "boolean", "array", "object"]
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "items": {
+          "$ref": "#/$defs/value_type"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/value_type"
+        },
+        "properties": {
+          "$ref": "#/$defs/value_shape"
         }
       },
       "required": ["type"],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            }
+          },
+          "then": {
+            "required": ["items"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "not": {
+              "required": ["additionalProperties"]
+            }
+          },
+          "then": {
+            "required": ["properties"]
+          }
+        }
+      ]
     },
-    "shape": {
+    "value_shape": {
       "type": "object",
       "patternProperties": {
         ".*": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "enum": ["string", "integer", "number", "boolean", "object"]
-            },
-            "optional": {
-              "type": "boolean"
-            },
-            "additionalProperties": {
-              "$ref": "#/$defs/map_value_type"
-            }
-          },
-          "required": ["type"],
-          "additionalProperties": false,
-          "allOf": [
-            {
-              "if": {
-                "properties": {
-                  "type": {
-                    "const": "object"
-                  }
-                }
-              },
-              "then": {
-                "required": ["additionalProperties"]
-              }
-            }
-          ]
+          "$ref": "#/$defs/value_type"
         }
       },
       "additionalProperties": false
