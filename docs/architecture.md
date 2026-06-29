@@ -69,7 +69,7 @@ Each non-feature option requires `type`, `default`, and `description`.
 
 **Objects** come in two forms:
 
-- **Struct** — fixed named fields under `properties`. Fields are required unless marked `"optional": true`. A field may be a primitive or a primitive-valued map; it may **not** be an array or another struct.
+- **Struct** — fixed named fields under `properties`. Fields are required unless marked `"optional": true`.
 
   ```json
   "db.config": {
@@ -84,13 +84,13 @@ Each non-feature option requires `type`, `default`, and `description`.
   }
   ```
 
-- **Dict (map)** — arbitrary string keys, a single primitive value type, declared with `additionalProperties`:
+- **Dict (map)** — arbitrary string keys, a single value type, declared with `additionalProperties`:
 
   ```json
   "service.tags": { "type": "object", "additionalProperties": {"type": "string"}, "default": {}, "description": "String tags" }
   ```
 
-**Arrays of structs** — `items.type: "object"` with its own `properties`:
+**Nested value types** — the value type of an array's `items`, a map's `additionalProperties`, or a struct field is recursive: it can be a primitive, an array, a map, or a struct, nested arbitrarily. So a map of structs, a map of arrays, or an array of structs are all expressible:
 
 ```json
 "endpoints": {
@@ -98,6 +98,12 @@ Each non-feature option requires `type`, `default`, and `description`.
   "items": { "type": "object", "properties": { "url": {"type": "string"}, "weight": {"type": "integer"} } },
   "default": [],
   "description": "Weighted endpoints"
+},
+"org.tweaks": {
+  "type": "object",
+  "additionalProperties": { "type": "object", "additionalProperties": {"type": "integer"} },
+  "default": {},
+  "description": "Per-org integer tweaks: {orgId: {setting: int}}"
 }
 ```
 
@@ -131,6 +137,8 @@ When a schema is loaded, `sentry-options-validation` compiles a JSON-Schema vali
 
 - `additionalProperties: false` is added to the top-level options object and to every struct, so unknown keys are rejected — **except** when the schema explicitly declares `additionalProperties` (the dict form), which is left open to arbitrary keys.
 - For each struct, a `required` array is derived from the fields that are *not* marked `"optional": true`.
+
+Both constraints are injected recursively, descending into `properties`, `additionalProperties`, and `items`, so a struct nested inside a map or array is validated as strictly as a top-level one.
 
 `integer` rejects fractional values while `number` accepts both, and each option's `default` is validated against that option's own type at load time.
 

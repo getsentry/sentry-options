@@ -176,7 +176,27 @@ We also support objects, in two flavors, either a **struct** with named fields u
 }
 ```
 
-A struct field can be a primitive or a primitive dictionary — **not** an array or another struct. Dicts can have arbitrary keys that match the value type, so be careful when doing validation in your code. The following are all valid `dict-option`s:
+Value types nest arbitrarily: a struct's `properties` fields, an array's `items`, or a dict's `additionalProperties` can itself be a primitive, an array, a struct, or another dict. So a dict of arrays, a dict of structs, or a struct field holding a dict are all valid:
+
+```json
+"webhook-logging": {
+  "type": "object",
+  "additionalProperties": {"type": "array", "items": {"type": "string"}},   // {key: [string]}
+  "default": {},
+  "description": "Per-key list of logged webhooks"
+},
+"org-tweaks": {
+  "type": "object",
+  "additionalProperties": {                                                 // {orgId: {setting: int}}
+    "type": "object",
+    "additionalProperties": {"type": "integer"}
+  },
+  "default": {},
+  "description": "Per-org integer tweaks"
+}
+```
+
+Dicts can have arbitrary keys that match the value type, so be careful when doing validation in your code. The following are all valid `dict-option`s:
 
 ```json
   {}                               // empty is fine
