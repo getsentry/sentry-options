@@ -39,72 +39,67 @@ def namespace_to_class(namespace: str) -> str:
     return 'NamespaceOptions_' + _ident(namespace)
 
 
-def _field_type(parent_key: str, field: str, prop: dict) -> str:
-    """Resolve a primitive field type inside an object/array-of-objects.
+def _resolve_type(
+    prop: dict,
+    class_name: str,
+    key: str,
+    typed_dicts: dict[str, list[tuple[str, str]]],
+    counter: list[int],
+    suffix: str = 'Dict',
+) -> str:
+    """Resolve a value-type schema to a Python type string, recursively.
 
-    If the field has "optional": true, wraps the type in NotRequired[...].
+    Scalars map to str/int/float/bool. Arrays resolve to list[T]. Maps
+    (objects with `additionalProperties` and no `properties`) resolve to
+    dict[str, V]. Fixed-shape objects (with `properties`) generate a TypedDict
+    collected into typed_dicts. Value types nest arbitrarily, so every
+    container recurses into its element/value schema.
+
+    TypedDicts use index-based names to avoid collisions and the functional
+    form to preserve original key names (e.g. hyphens). `suffix` names the
+    generated TypedDict: array items use `_Item`, every other object `_Dict`.
     """
     t = prop.get('type', '')
-    if t not in _SCHEMA_TO_PYTHON:
+    if t in _SCHEMA_TO_PYTHON:
+        return _SCHEMA_TO_PYTHON[t]
+    if t == 'array':
+        items = prop.get('items')
+        if not items:
+            raise ValueError(f'{key!r}: array has no items')
+        inner = _resolve_type(items, class_name, key, typed_dicts, counter, 'Item')
+        return f'list[{inner}]'
+    if t == 'object':
+        obj_props = prop.get('properties')
+        if obj_props:
+            td = f'_{class_name}_{counter[0]}_{suffix}'
+            counter[0] += 1
+            typed_dicts[td] = [
+                (k, _field_type(v, class_name, f'{key}.{k}', typed_dicts, counter))
+                for k, v in obj_props.items()
+            ]
+            return td
+        value_type = prop.get('additionalProperties')
+        if isinstance(value_type, dict):
+            inner = _resolve_type(value_type, class_name, key, typed_dicts, counter)
+            return f'dict[str, {inner}]'
         raise ValueError(
-            f'{parent_key!r}: field {field!r} has unknown type {t!r}',
+            f'{key!r}: object has neither properties nor additionalProperties',
         )
-    py_type = _SCHEMA_TO_PYTHON[t]
-    if prop.get('optional'):
-        return f'NotRequired[{py_type}]'
-    return py_type
+    raise ValueError(f'{key!r}: unknown type {t!r}')
 
 
-def _prop_to_type(
+def _field_type(
     prop: dict,
     class_name: str,
     key: str,
     typed_dicts: dict[str, list[tuple[str, str]]],
     counter: list[int],
 ) -> str:
-    """
-    Resolve a schema property to a Python type string.
-
-    Typed arrays (items.type) resolve to list[T].
-    Objects and array-of-objects with properties generate TypedDicts
-    collected into typed_dicts, keyed by their generated class name.
-    TypedDicts use index-based names to avoid collisions, and the
-    functional form to preserve original key names (e.g. hyphens).
-    """
-    t = prop.get('type', '')
-    if t in _SCHEMA_TO_PYTHON:
-        return _SCHEMA_TO_PYTHON[t]
-    if t == 'array':
-        items = prop.get('items', {})
-        item_t = items.get('type', '')
-        if item_t in _SCHEMA_TO_PYTHON:
-            return f'list[{_SCHEMA_TO_PYTHON[item_t]}]'
-        if item_t == 'object':
-            item_props = items.get('properties', {})
-            if not item_props:
-                raise ValueError(
-                    f'{key!r}: array[object] items has no properties',
-                )
-            td = f'_{class_name}_{counter[0]}_Item'
-            counter[0] += 1
-            typed_dicts[td] = [
-                (k, _field_type(key, k, v))
-                for k, v in item_props.items()
-            ]
-            return f'list[{td}]'
-        raise ValueError(f'{key!r}: unknown array item type {item_t!r}')
-    if t == 'object':
-        obj_props = prop.get('properties', {})
-        if not obj_props:
-            raise ValueError(f'{key!r}: object has no properties')
-        td = f'_{class_name}_{counter[0]}_Dict'
-        counter[0] += 1
-        typed_dicts[td] = [
-            (k, _field_type(key, k, v))
-            for k, v in obj_props.items()
-        ]
-        return td
-    raise ValueError(f'{key!r}: unknown type {t!r}')
+    """Resolve a TypedDict field type, wrapping optional fields in NotRequired."""
+    inner = _resolve_type(prop, class_name, key, typed_dicts, counter)
+    if prop.get('optional'):
+        return f'NotRequired[{inner}]'
+    return inner
 
 
 def generate(schemas_dir: Path) -> str:
@@ -138,7 +133,7 @@ def generate(schemas_dir: Path) -> str:
         try:
             counter = [0]
             key_types = {
-                key: _prop_to_type(prop, class_name, key, typed_dicts, counter)
+                key: _resolve_type(prop, class_name, key, typed_dicts, counter)
                 for key, prop in props.items()
                 if '$ref' not in prop
             }
