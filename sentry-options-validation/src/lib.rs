@@ -383,7 +383,14 @@ impl SchemaRegistry {
     ///     "description": "..."
     /// }
     fn inject_object_constraints(schema: &mut Value) {
-        if let Some(obj) = schema.as_object_mut() {
+        let Some(obj) = schema.as_object_mut() else {
+            return;
+        };
+
+        if obj.get("type").and_then(|t| t.as_str()) == Some("object") {
+            // Fixed-shape object: require every non-optional field. A dynamic map
+            // instead declares `additionalProperties` (a value schema) up front, so
+            // only inject `required` when there are declared `properties`.
             if let Some(props) = obj.get("properties").and_then(|p| p.as_object()) {
                 let required: Vec<Value> = props
                     .iter()
@@ -392,9 +399,27 @@ impl SchemaRegistry {
                     .collect();
                 obj.insert("required".to_string(), Value::Array(required));
             }
+            // Reject unknown keys unless the schema already declares an
+            // `additionalProperties` value type (i.e. it is a dynamic map).
             if !obj.contains_key("additionalProperties") {
                 obj.insert("additionalProperties".to_string(), json!(false));
             }
+        }
+
+        // Recurse so the same constraints apply at every level of a nested value
+        // schema: object-valued maps, arrays of objects, and nested fixed shapes.
+        if let Some(props) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
+            for field in props.values_mut() {
+                Self::inject_object_constraints(field);
+            }
+        }
+        if let Some(additional) = obj.get_mut("additionalProperties")
+            && additional.is_object()
+        {
+            Self::inject_object_constraints(additional);
+        }
+        if let Some(items) = obj.get_mut("items") {
+            Self::inject_object_constraints(items);
         }
     }
 
@@ -409,25 +434,11 @@ impl SchemaRegistry {
             obj.insert("additionalProperties".to_string(), json!(false));
         }
 
-        // Inject object constraints (required + additionalProperties) for object-typed options
-        // so that jsonschema validates the full shape of object values.
+        // Inject object constraints (required + additionalProperties) at every level
+        // of each option's value schema so jsonschema validates the full shape.
         if let Some(properties) = schema.get_mut("properties").and_then(|p| p.as_object_mut()) {
             for prop_value in properties.values_mut() {
-                let prop_type = prop_value
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
-
-                if prop_type == "object" {
-                    Self::inject_object_constraints(prop_value);
-                } else if prop_type == "array"
-                    && let Some(items) = prop_value.get_mut("items")
-                {
-                    let items_type = items.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                    if items_type == "object" {
-                        Self::inject_object_constraints(items);
-                    }
-                }
+                Self::inject_object_constraints(prop_value);
             }
         }
 
@@ -3266,5 +3277,283 @@ Error: \"version\" is a required property"
             let result = registry.load_values_json(&values_dir);
             assert!(result.is_ok());
         }
+    }
+
+    #[test]
+    fn test_object_valued_map_validates_nested_values() {
+        // {orgId: {max_candidates: int}} — a map whose values are objects, previously
+        // inexpressible because map values were scalar-only.
+        let registry = SchemaRegistry::from_schemas(&[(
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "org_tweaks": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": {"type": "integer"}
+                        },
+                        "default": {},
+                        "description": ""
+                    }
+                }
+            }"#,
+        )])
+        .unwrap();
+
+        assert!(
+            registry
+                .validate_values(
+                    "test",
+                    &json!({"org_tweaks": {"1": {"max_candidates": 20}}})
+                )
+                .is_ok()
+        );
+        assert!(
+            registry
+                .validate_values("test", &json!({"org_tweaks": {}}))
+                .is_ok()
+        );
+        // inner value of the wrong type
+        assert!(matches!(
+            registry.validate_values(
+                "test",
+                &json!({"org_tweaks": {"1": {"max_candidates": "x"}}})
+            ),
+            Err(ValidationError::ValueError { .. })
+        ));
+        // map value is not an object
+        assert!(matches!(
+            registry.validate_values("test", &json!({"org_tweaks": {"1": 20}})),
+            Err(ValidationError::ValueError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_array_valued_map_validates_nested_values() {
+        // {key: [string]} — a map whose values are arrays.
+        let registry = SchemaRegistry::from_schemas(&[(
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "webhook_logging": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "default": {},
+                        "description": ""
+                    }
+                }
+            }"#,
+        )])
+        .unwrap();
+
+        assert!(
+            registry
+                .validate_values(
+                    "test",
+                    &json!({"webhook_logging": {"a": [], "b": ["x", "y"]}})
+                )
+                .is_ok()
+        );
+        // array element of the wrong type
+        assert!(matches!(
+            registry.validate_values("test", &json!({"webhook_logging": {"a": [1]}})),
+            Err(ValidationError::ValueError { .. })
+        ));
+        // map value is not an array
+        assert!(matches!(
+            registry.validate_values("test", &json!({"webhook_logging": {"a": "x"}})),
+            Err(ValidationError::ValueError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_nested_fixed_object_enforces_required_and_rejects_unknown() {
+        // Map value is a fixed-shape object: `required` and `additionalProperties: false`
+        // must be injected at depth, not only at the top level.
+        let registry = SchemaRegistry::from_schemas(&[(
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "quotas": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                                "limit": {"type": "integer"},
+                                "window": {"type": "integer"}
+                            }
+                        },
+                        "default": {},
+                        "description": ""
+                    }
+                }
+            }"#,
+        )])
+        .unwrap();
+
+        assert!(
+            registry
+                .validate_values("test", &json!({"quotas": {"o": {"limit": 1, "window": 2}}}))
+                .is_ok()
+        );
+        // missing a required nested field
+        assert!(matches!(
+            registry.validate_values("test", &json!({"quotas": {"o": {"limit": 1}}})),
+            Err(ValidationError::ValueError { .. })
+        ));
+        // unknown nested field rejected (additionalProperties: false injected at depth)
+        assert!(matches!(
+            registry.validate_values(
+                "test",
+                &json!({"quotas": {"o": {"limit": 1, "window": 2, "x": 3}}})
+            ),
+            Err(ValidationError::ValueError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_optional_marker_works_at_depth() {
+        let registry = SchemaRegistry::from_schemas(&[(
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "items_map": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                                "url": {"type": "string"},
+                                "weight": {"type": "integer", "optional": true}
+                            }
+                        },
+                        "default": {},
+                        "description": ""
+                    }
+                }
+            }"#,
+        )])
+        .unwrap();
+
+        // optional field omitted -> ok
+        assert!(
+            registry
+                .validate_values("test", &json!({"items_map": {"a": {"url": "x"}}}))
+                .is_ok()
+        );
+        // required field omitted -> fail
+        assert!(matches!(
+            registry.validate_values("test", &json!({"items_map": {"a": {"weight": 1}}})),
+            Err(ValidationError::ValueError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_three_levels_of_nesting() {
+        // object -> array -> object -> scalar map
+        let registry = SchemaRegistry::from_schemas(&[(
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "deep": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": {"type": "integer"}
+                            }
+                        },
+                        "default": {},
+                        "description": ""
+                    }
+                }
+            }"#,
+        )])
+        .unwrap();
+
+        assert!(
+            registry
+                .validate_values("test", &json!({"deep": {"a": [{"x": 1}, {"y": 2}]}}))
+                .is_ok()
+        );
+        assert!(matches!(
+            registry.validate_values("test", &json!({"deep": {"a": [{"x": "no"}]}})),
+            Err(ValidationError::ValueError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_meta_schema_rejects_malformed_nested_value_types() {
+        // object value with neither `properties` nor `additionalProperties`
+        assert!(matches!(
+            SchemaRegistry::from_schemas(&[(
+                "test",
+                r#"{"version":"1.0","type":"object","properties":{
+                    "m":{"type":"object","additionalProperties":{"type":"object"},"default":{},"description":""}}}"#,
+            )]),
+            Err(ValidationError::SchemaError { .. })
+        ));
+        // array value without `items`
+        assert!(matches!(
+            SchemaRegistry::from_schemas(&[(
+                "test",
+                r#"{"version":"1.0","type":"object","properties":{
+                    "m":{"type":"object","additionalProperties":{"type":"array"},"default":{},"description":""}}}"#,
+            )]),
+            Err(ValidationError::SchemaError { .. })
+        ));
+        // unknown keyword inside a nested value type
+        assert!(matches!(
+            SchemaRegistry::from_schemas(&[(
+                "test",
+                r#"{"version":"1.0","type":"object","properties":{
+                    "m":{"type":"object","additionalProperties":{"type":"string","bogus":1},"default":{},"description":""}}}"#,
+            )]),
+            Err(ValidationError::SchemaError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_pre_existing_shapes_still_validate() {
+        // Scalar map and fixed-shape object (the only shapes allowed before) keep working.
+        let registry = SchemaRegistry::from_schemas(&[(
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "scopes": {"type": "object", "additionalProperties": {"type": "string"}, "default": {}, "description": ""},
+                    "config": {"type": "object", "properties": {"host": {"type": "string"}}, "default": {"host": "h"}, "description": ""}
+                }
+            }"#,
+        )])
+        .unwrap();
+
+        assert!(
+            registry
+                .validate_values(
+                    "test",
+                    &json!({"scopes": {"r": "1"}, "config": {"host": "x"}})
+                )
+                .is_ok()
+        );
+        assert!(matches!(
+            registry.validate_values("test", &json!({"config": {"host": "x", "extra": "y"}})),
+            Err(ValidationError::ValueError { .. })
+        ));
     }
 }

@@ -274,3 +274,103 @@ def test_generate_empty_namespace_no_overload(tmp_path: Path) -> None:
 
 def test_generate_is_deterministic(schemas_dir: Path) -> None:
     assert generate(schemas_dir) == generate(schemas_dir)
+
+
+def _single_key_schema(tmp_path: Path, prop: dict) -> Path:
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {'k': {**prop, 'default': None}},
+        }),
+    )
+    return tmp_path
+
+
+def test_generate_scalar_map(tmp_path: Path) -> None:
+    output = generate(
+        _single_key_schema(
+            tmp_path, {
+                'type': 'object',
+                'additionalProperties': {'type': 'string'},
+            },
+        ),
+    )
+    assert 'def get(self, key: Literal["k"]) -> dict[str, str]' in output
+
+
+def test_generate_array_valued_map(tmp_path: Path) -> None:
+    # {key: [string]} — sentry-apps.webhook-logging.enabled
+    output = generate(
+        _single_key_schema(
+            tmp_path, {
+                'type': 'object',
+                'additionalProperties': {'type': 'array', 'items': {'type': 'string'}},
+            },
+        ),
+    )
+    assert 'def get(self, key: Literal["k"]) -> dict[str, list[str]]' in output
+
+
+def test_generate_object_valued_map(tmp_path: Path) -> None:
+    # {orgId: {max_candidates: int}} — seer.night_shift.org_tweaks
+    output = generate(
+        _single_key_schema(
+            tmp_path, {
+                'type': 'object',
+                'additionalProperties': {
+                    'type': 'object',
+                    'additionalProperties': {'type': 'integer'},
+                },
+            },
+        ),
+    )
+    assert (
+        'def get(self, key: Literal["k"]) -> dict[str, dict[str, int]]'
+        in output
+    )
+
+
+def test_generate_map_of_typed_objects(tmp_path: Path) -> None:
+    output = generate(
+        _single_key_schema(
+            tmp_path, {
+                'type': 'object',
+                'additionalProperties': {
+                    'type': 'object',
+                    'properties': {
+                        'limit': {'type': 'integer'},
+                        'window': {'type': 'integer', 'optional': True},
+                    },
+                },
+            },
+        ),
+    )
+    td = '_NamespaceOptions_svc_0_Dict'
+    assert f"{td} = TypedDict('{td}'" in output
+    assert "    'limit': int," in output
+    assert "    'window': NotRequired[int]," in output
+    assert f'def get(self, key: Literal["k"]) -> dict[str, {td}]' in output
+
+
+def test_generate_nested_map_field_in_fixed_object(tmp_path: Path) -> None:
+    output = generate(
+        _single_key_schema(
+            tmp_path, {
+                'type': 'object',
+                'properties': {
+                    'scopes': {'type': 'object', 'additionalProperties': {'type': 'string'}},
+                },
+            },
+        ),
+    )
+    assert "    'scopes': dict[str, str]," in output
+
+
+def test_object_with_neither_properties_nor_additional_raises(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(SystemExit):
+        generate(_single_key_schema(tmp_path, {'type': 'object'}))
