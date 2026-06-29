@@ -1,4 +1,22 @@
 # Changelog
+## 1.1.2
+
+### New Features ✨
+
+- (validation) Allow nested value types in option schemas by @joshuarli in [#143](https://github.com/getsentry/sentry-options/pull/143)
+- (watcher) Add back `mtime` check to avoid unnecessary refreshes by @kenzoengineer in [#140](https://github.com/getsentry/sentry-options/pull/140)
+
+### Bug Fixes 🐛
+
+- (docs) Fix broken links in readme by @kenzoengineer in [#142](https://github.com/getsentry/sentry-options/pull/142)
+
+### Internal Changes 🔧
+
+#### Docs
+
+- Add docs for new nested properties by @kenzoengineer in [#144](https://github.com/getsentry/sentry-options/pull/144)
+- Update internal docs by @kenzoengineer in [#141](https://github.com/getsentry/sentry-options/pull/141)
+
 ## 1.1.1
 
 ### Bug Fixes 🐛
