@@ -154,6 +154,14 @@ impl Options {
     }
 }
 
+/// Builder for initializing the global options store.
+/// Define optional parameters with `with_*` methods, then finalize with `build()`
+///
+/// All settings are optional and independent:
+/// - `with_directory` overrides the base directory
+/// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
+/// - `with_callback` registers a callback that fires on every value refresh.
+/// ```
 #[derive(Default)]
 pub struct InitBuilder<'a> {
     directory: Option<PathBuf>,
@@ -166,21 +174,31 @@ impl<'a> InitBuilder<'a> {
         InitBuilder::default()
     }
 
+    /// Override the base directory. Expects `{directory}/schemas/` and `{directory}/values/` subdirectories.
+    /// Otherwise, defaults to the fallback chain: `SENTRY_OPTIONS_DIR` env var, then `/etc/sentry-options`
     pub fn with_directory(mut self, directory: impl Into<PathBuf>) -> Self {
         self.directory = Some(directory.into());
         self
     }
 
+    /// Provide schemas as in-memory `(namespace, json)` pairs instead of reading
+    /// them from `{dir}/schemas/`, intended to be used with `include_str!`
     pub fn with_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
         self.schemas = Some(schemas);
         self
     }
 
+    /// Register a callback that fires `(namespace, delay_secs)` whenever values
+    /// are refreshed with a new `generated_at` timestamp.
     pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
         self.callback = Some(callback);
         self
     }
 
+    /// Initialize the global options store from the inputs.
+    ///
+    /// Idempotent: if options are already initialized, returns `Ok(())` without
+    /// re-loading or applying any of this builder's settings.
     pub fn build(self) -> Result<()> {
         if GLOBAL_OPTIONS.get().is_some() {
             return Ok(());
@@ -203,6 +221,7 @@ impl<'a> InitBuilder<'a> {
 /// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 ///
 /// Idempotent: if already initialized, returns `Ok(())` without re-loading.
+#[deprecated(since = "1.3.0", note = "use `InitBuilder::new().build()`")]
 pub fn init() -> Result<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
@@ -215,6 +234,10 @@ pub fn init() -> Result<()> {
 /// Like [`init`], but with a callback that fires whenever values are refreshed
 /// from disk with a new `generated_at` timestamp. The callback receives
 /// `(namespace, delay_secs)`.
+#[deprecated(
+    since = "1.3.0",
+    note = "use `InitBuilder::new().with_callback(cb).build()`"
+)]
 pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
@@ -236,6 +259,10 @@ pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<(
 ///     ("snuba", include_str!("sentry-options/schemas/snuba/schema.json")),
 /// ])?;
 /// ```
+#[deprecated(
+    since = "1.3.0",
+    note = "use `InitBuilder::new().with_schemas(s).build()`"
+)]
 pub fn init_with_schemas(schemas: &[(&str, &str)]) -> Result<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
