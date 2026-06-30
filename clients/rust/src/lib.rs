@@ -4,7 +4,7 @@ pub mod features;
 
 pub use features::{FeatureChecker, FeatureContext, features};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 pub use sentry_options_validation::PropagationCallback;
@@ -156,7 +156,7 @@ impl Options {
 
 #[derive(Default)]
 pub struct InitBuilder<'a> {
-    directory: Option<&'a Path>,
+    directory: Option<PathBuf>,
     schemas: Option<&'a [(&'a str, &'a str)]>,
     callback: Option<PropagationCallback>,
 }
@@ -166,8 +166,8 @@ impl<'a> InitBuilder<'a> {
         InitBuilder::default()
     }
 
-    pub fn with_directory(mut self, directory: &'a Path) -> Self {
-        self.directory = Some(directory);
+    pub fn with_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.directory = Some(directory.into());
         self
     }
 
@@ -181,28 +181,18 @@ impl<'a> InitBuilder<'a> {
         self
     }
 
-    // If we can get away with not consuming the Builder here, that is an
-    // advantage. It means we can use the FooBuilder as a template for constructing
-    // many Foos.
     pub fn build(self) -> Result<()> {
-        // don't re-init
         if GLOBAL_OPTIONS.get().is_some() {
             return Ok(());
         }
 
-        // if directory is set, override it.
-        let mut dir = resolve_options_dir();
-        if let Some(d) = self.directory {
-            dir = d.to_path_buf();
-        }
+        let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
-        // if schema is set, use the schema one
-        let mut registry = SchemaRegistry::from_directory(&dir)?;
-        if let Some(s) = self.schemas {
-            registry = SchemaRegistry::from_schemas(s)?;
-        }
+        let registry = match self.schemas {
+            Some(s) => SchemaRegistry::from_schemas(s)?,
+            None => SchemaRegistry::from_directory(&dir.join("schemas"))?,
+        };
 
-        // if callback is set, add it
         let opts = Options::with_registry_and_values(registry, &dir.join("values"), self.callback)?;
         let _ = GLOBAL_OPTIONS.set(opts);
         Ok(())
