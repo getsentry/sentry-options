@@ -154,6 +154,61 @@ impl Options {
     }
 }
 
+#[derive(Default)]
+pub struct InitBuilder<'a> {
+    directory: Option<&'a Path>,
+    schemas: Option<&'a [(&'a str, &'a str)]>,
+    callback: Option<PropagationCallback>,
+}
+
+impl<'a> InitBuilder<'a> {
+    pub fn new() -> Self {
+        InitBuilder::default()
+    }
+
+    pub fn with_directory(mut self, directory: &'a Path) -> Self {
+        self.directory = Some(directory);
+        self
+    }
+
+    pub fn with_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
+        self.schemas = Some(schemas);
+        self
+    }
+
+    pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
+        self.callback = Some(callback);
+        self
+    }
+
+    // If we can get away with not consuming the Builder here, that is an
+    // advantage. It means we can use the FooBuilder as a template for constructing
+    // many Foos.
+    pub fn build(self) -> Result<()> {
+        // don't re-init
+        if GLOBAL_OPTIONS.get().is_some() {
+            return Ok(());
+        }
+
+        // if directory is set, override it.
+        let mut dir = resolve_options_dir();
+        if let Some(d) = self.directory {
+            dir = d.to_path_buf();
+        }
+
+        // if schema is set, use the schema one
+        let mut registry = SchemaRegistry::from_directory(&dir)?;
+        if let Some(s) = self.schemas {
+            registry = SchemaRegistry::from_schemas(s)?;
+        }
+
+        // if callback is set, add it
+        let opts = Options::with_registry_and_values(registry, &dir.join("values"), self.callback)?;
+        let _ = GLOBAL_OPTIONS.set(opts);
+        Ok(())
+    }
+}
+
 /// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
 /// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 ///
