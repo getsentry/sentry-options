@@ -51,11 +51,7 @@ In any workflow that runs in PRs and your main branch, add this reusable workflo
 ```yaml
 jobs:
   validate:
-<<<<<<< update-action-docs
-    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@d112815b36c4f3fe6b22ce79ca3ca0a4701eabb7
-=======
-    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
->>>>>>> main
+    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@5792fdd90e854b6aa4747e89d61df07bfa6beaa6
     secrets:
       SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
     with:
