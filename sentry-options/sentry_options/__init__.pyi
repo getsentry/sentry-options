@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Literal, NotRequired, TypedDict, overload
 
 from sentry_options._core import (
+    FeatureChecker,
+    FeatureContext,
     NotInitializedError,
     NamespaceOptions,
     OptionsError,
@@ -12,12 +14,16 @@ from sentry_options._core import (
     SchemaError,
     UnknownNamespaceError,
     UnknownOptionError,
+    features,
     init,
 )
 
 __all__ = [
     "init",
     "options",
+    "features",
+    "FeatureChecker",
+    "FeatureContext",
     "NotInitializedError",
     "NamespaceOptions",
     "OptionsError",

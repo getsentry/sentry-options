@@ -92,6 +92,38 @@ def test_generate_imports(schemas_dir: Path) -> None:
     assert 'from typing import Literal, NotRequired, TypedDict, overload' in output
 
 
+def test_generate_feature_api_exported(schemas_dir: Path) -> None:
+    """The namespace-independent feature API is re-exported from _core so
+    `sentry_options.features`/`FeatureChecker`/`FeatureContext` type-check."""
+    output = generate(schemas_dir)
+    for symbol in ('features', 'FeatureChecker', 'FeatureContext'):
+        assert f'    {symbol},' in output  # present in the _core import block
+        assert f'    "{symbol}",' in output  # present in __all__
+
+
+def test_feature_keys_do_not_emit_get_overloads(tmp_path: Path) -> None:
+    """`feature.`-prefixed entries are `{"$ref": "#/definitions/Feature"}` — they
+    are feature flags (read via features().has()), not options, so they must not
+    appear as get() overloads and must not break generation."""
+    ns_dir = tmp_path / 'svc'
+    ns_dir.mkdir()
+    (ns_dir / 'schema.json').write_text(
+        json.dumps({
+            'version': '1.0',
+            'type': 'object',
+            'properties': {
+                'real-option': {'type': 'boolean', 'default': False},
+                'feature.organizations:my-flag': {
+                    '$ref': '#/definitions/Feature',
+                },
+            },
+        }),
+    )
+    output = generate(tmp_path)
+    assert 'def get(self, key: Literal["real-option"]) -> bool' in output
+    assert 'feature.organizations:my-flag' not in output
+
+
 def test_unknown_type_raises(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
