@@ -50,12 +50,30 @@ In any workflow that runs in PRs and your main branch, add this reusable workflo
 
 ```yaml
 jobs:
+  # Very important to use the same options cli version for validation.
+  options-cli-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: uv.lock # or Cargo.lock; adapt the yq call as necessary
+          sparse-checkout-cone-mode: false
+      - name: Parse sentry-options version from lockfile
+        id: version
+        run: |
+          echo -n "version=" >> "$GITHUB_OUTPUT"
+          yq -p toml '.package[] | select(.name == "sentry-options") | .version' uv.lock >> "$GITHUB_OUTPUT"
+
   validate:
+    needs: cli-version
     uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
     secrets:
       SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
     with:
       schemas-path: sentry-options/schemas
+      cli-version: ${{ needs.cli-version.outputs.version }}
 ```
 
 Additionally, if you are using the **Python** library, we recommend adding our precommit hook to autogenerate type stubs. This means you don't need to `cast(...)` options in your code to pass `mypy` or `ty` typechecking.
