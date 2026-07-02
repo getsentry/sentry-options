@@ -70,7 +70,7 @@ jobs:
         id: version
         run: |
           echo -n "version=" >> "$GITHUB_OUTPUT"
-          yq -p toml '.package[] | select(.name == "sentry-options") | .version' uv.lock >> "$GITHUB_OUTPUT"
+          yq -p toml -oy '.package[] | select(.name == "sentry-options") | .version' uv.lock >> "$GITHUB_OUTPUT"
 
   validate:
     needs: cli-version
