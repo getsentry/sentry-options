@@ -50,13 +50,33 @@ In any workflow that runs in PRs and your main branch, add this reusable workflo
 
 ```yaml
 jobs:
+  files-changed:
+    name: files-changed
+    runs-on: ubuntu-latest
+    outputs:
+      schemas: ${{ steps.changes.outputs.schemas }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Check for relevant file changes
+        uses: getsentry/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
+        id: changes
+        with:
+          filters: |
+            schemas:
+              - 'sentry-options/**'
+
   # Very important to use the same options cli version for validation.
-  options-cli-version:
+  cli-version:
+    if: needs.files-changed.outputs.schemas == 'true'
+    needs: files-changed
+    name: Determine sentry-options CLI version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           sparse-checkout: uv.lock # or Cargo.lock; adapt the yq call as necessary
           sparse-checkout-cone-mode: false
@@ -67,7 +87,7 @@ jobs:
           yq -p toml '.package[] | select(.name == "sentry-options") | .version' uv.lock >> "$GITHUB_OUTPUT"
 
   validate:
-    needs: cli-version
+    needs: [files-changed, cli-version]
     uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
     secrets:
       SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
