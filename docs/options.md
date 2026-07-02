@@ -126,7 +126,9 @@ Just like in Python, use `get_forced()` to bypass the 5s cache threshold and see
 ```rust
 // import, create a values file, init(), etc...
 fs::write("sentry-options/values/seer/values.json", br#"{"options": {"autofix.enabled": false}}"#)?;
+// Cached get() still returns the old value within the 5s threshold.
 assert_eq!(options("seer").get("autofix.enabled").unwrap(), true);
+// get_forced() bypasses the cache and returns the updated value immediately.
 assert_eq!(options("seer").get_forced("autofix.enabled").unwrap(), false);
 ```
 
