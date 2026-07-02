@@ -258,6 +258,16 @@ impl NamespaceOptions {
         json_to_py(py, &value)
     }
 
+    /// Like `get`, but always refreshes. Refresh incurs a cost so this should
+    /// only be used in testing.
+    fn get_forced(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let value = self
+            .options
+            .get_forced(&self.namespace, key)
+            .map_err(options_err)?;
+        json_to_py(py, &value)
+    }
+
     /// Check if an option has a defined value.
     fn isset(&self, key: &str) -> PyResult<bool> {
         self.options

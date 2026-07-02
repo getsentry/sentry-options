@@ -91,6 +91,30 @@ def test_propagation_callback_fires_on_generated_at_change(tmp_path: Path) -> No
     )
 
 
+def test_get_forced_sees_change_without_waiting(tmp_path: Path) -> None:
+    options_dir = _make_options_dir(tmp_path)
+    values_file = options_dir / 'values' / 'test-ns' / 'values.json'
+    _run(
+        f"""\
+        import json
+        from sentry_options import init, options
+
+        init()
+        opts = options("test-ns")
+        assert opts.get("enabled") is True
+
+        with open("{values_file}", "w") as f:
+            json.dump({{"options": {{"enabled": False}}}}, f)
+
+        # Cached get() still returns the old value within the 5s threshold.
+        assert opts.get("enabled") is True
+        # get_forced() bypasses the threshold and sees the change, no sleep needed.
+        assert opts.get_forced("enabled") is False
+        """,
+        options_dir,
+    )
+
+
 def test_propagation_callback_not_called_without_generated_at(tmp_path: Path) -> None:
     _run(
         f"""\
