@@ -23,6 +23,9 @@ pub enum OptionsError {
     #[error("Options not initialized - call init() first")]
     NotInitialized,
 
+    #[error("Options already initialized")]
+    AlreadyInitialized,
+
     #[error("Unknown namespace: {0}")]
     UnknownNamespace(String),
 
@@ -155,7 +158,7 @@ impl Options {
 }
 
 /// Builder for initializing the global options store.
-/// Define optional parameters with `with_*` methods, then finalize with `build()`
+/// Define optional parameters with `with_*` methods, then finalize with `init()`
 ///
 /// All settings are optional and independent:
 /// - `with_directory` overrides the base directory
@@ -197,11 +200,12 @@ impl<'a> InitBuilder<'a> {
 
     /// Initialize the global options store from the inputs.
     ///
-    /// Idempotent: if options are already initialized, returns `Ok(())` without
-    /// re-loading or applying any of this builder's settings.
-    pub fn build(self) -> Result<()> {
+    /// Returns [`OptionsError::AlreadyInitialized`] if the store is already
+    /// initialized, leaving the existing configuration untouched. Callers that
+    /// want a no-op in that case can ignore the error with `.ok()`.
+    pub fn init(self) -> Result<()> {
         if GLOBAL_OPTIONS.get().is_some() {
-            return Ok(());
+            return Err(OptionsError::AlreadyInitialized);
         }
 
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
@@ -212,23 +216,20 @@ impl<'a> InitBuilder<'a> {
         };
 
         let opts = Options::with_registry_and_values(registry, &dir.join("values"), self.callback)?;
-        let _ = GLOBAL_OPTIONS.set(opts);
-        Ok(())
+        GLOBAL_OPTIONS
+            .set(opts)
+            .map_err(|_| OptionsError::AlreadyInitialized)
     }
 }
 
-/// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
-/// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
+/// Initialize global options using the fallback chain: `SENTRY_OPTIONS_DIR` env
+/// var, then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 ///
-/// Idempotent: if already initialized, returns `Ok(())` without re-loading.
-#[deprecated(since = "1.3.0", note = "use `InitBuilder::new().build()`")]
+/// Shorthand for `InitBuilder::new().init()`. Idempotent: if already
+/// initialized, returns `Ok(())` without re-loading. For directory, schema, or
+/// callback overrides, use [`InitBuilder`].
 pub fn init() -> Result<()> {
-    if GLOBAL_OPTIONS.get().is_some() {
-        return Ok(());
-    }
-    let opts = Options::new()?;
-    let _ = GLOBAL_OPTIONS.set(opts);
-    Ok(())
+    ignore_already_initialized(InitBuilder::new().init())
 }
 
 /// Like [`init`], but with a callback that fires whenever values are refreshed
@@ -236,15 +237,10 @@ pub fn init() -> Result<()> {
 /// `(namespace, delay_secs)`.
 #[deprecated(
     since = "1.3.0",
-    note = "use `InitBuilder::new().with_callback(cb).build()`"
+    note = "use `InitBuilder::new().with_callback(cb).init()`"
 )]
 pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<()> {
-    if GLOBAL_OPTIONS.get().is_some() {
-        return Ok(());
-    }
-    let opts = Options::new_with_propagation_callback(callback)?;
-    let _ = GLOBAL_OPTIONS.set(opts);
-    Ok(())
+    ignore_already_initialized(InitBuilder::new().with_callback(callback).init())
 }
 
 /// Initialize global options with schemas provided as in-memory JSON strings.
@@ -261,15 +257,18 @@ pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<(
 /// ```
 #[deprecated(
     since = "1.3.0",
-    note = "use `InitBuilder::new().with_schemas(s).build()`"
+    note = "use `InitBuilder::new().with_schemas(s).init()`"
 )]
 pub fn init_with_schemas(schemas: &[(&str, &str)]) -> Result<()> {
-    if GLOBAL_OPTIONS.get().is_some() {
-        return Ok(());
+    ignore_already_initialized(InitBuilder::new().with_schemas(schemas).init())
+}
+
+/// legacy, deprecated system was idempotent, this preserves the behaviour
+fn ignore_already_initialized(result: Result<()>) -> Result<()> {
+    match result {
+        Err(OptionsError::AlreadyInitialized) => Ok(()),
+        other => other,
     }
-    let opts = Options::from_schemas(schemas)?;
-    let _ = GLOBAL_OPTIONS.set(opts);
-    Ok(())
 }
 
 /// Get a namespace handle for accessing options.
