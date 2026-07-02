@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import pytest
+from sentry_options import FeatureContext
+from sentry_options import features
 from sentry_options import options
 from sentry_options import SchemaError
+from sentry_options.testing import always_on
 from sentry_options.testing import override_options
 
 
@@ -86,4 +89,33 @@ def test_override_wrong_type_raises() -> None:
     with pytest.raises(SchemaError, match='not of type'):
         overrides = {'int-option': 'not-an-int'}
         with override_options('sentry-options-testing', overrides):
+            pass
+
+
+def test_override_feature_flag() -> None:
+    """A feature flag can be forced on via override_options, and has() reads it."""
+    ctx = FeatureContext({'organization_id': 1}, identity_fields=['organization_id'])
+    checker = features('sentry-options-testing')
+
+    # disabled-feature is enabled=False in the test values.
+    assert checker.has('organizations:disabled-feature', ctx) is False
+
+    with override_options(
+        'sentry-options-testing',
+        {'feature.organizations:disabled-feature': always_on()},
+    ):
+        assert checker.has('organizations:disabled-feature', ctx) is True
+
+    assert checker.has('organizations:disabled-feature', ctx) is False
+
+
+def test_override_malformed_feature_raises() -> None:
+    """A known feature key with a value that isn't a valid Feature fails
+    validation (rather than passing silently or raising UnknownOption)."""
+    with pytest.raises(SchemaError):
+        # Missing the required owner/created_at fields.
+        with override_options(
+            'sentry-options-testing',
+            {'feature.organizations:disabled-feature': {'segments': []}},
+        ):
             pass
