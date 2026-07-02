@@ -1,6 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use sentry_options::{init, init_with_propagation_callback, init_with_schemas, options};
+use sentry_options::{init, options};
 
 /// An example usage of the Rust options client library
 /// Every 3 seconds, prints out the value of example-option, float-option, and bool-option
