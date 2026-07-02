@@ -207,7 +207,14 @@ impl<'a> InitBuilder<'a> {
         if GLOBAL_OPTIONS.get().is_some() {
             return Err(OptionsError::AlreadyInitialized);
         }
+        GLOBAL_OPTIONS
+            .set(self.build_options()?)
+            .map_err(|_| OptionsError::AlreadyInitialized)
+    }
 
+    /// Helper to return an `Options` with the configured inputs.
+    /// Does not touch the global `OnceLock`.
+    fn build_options(self) -> Result<Options> {
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
         let registry = match self.schemas {
@@ -215,10 +222,7 @@ impl<'a> InitBuilder<'a> {
             None => SchemaRegistry::from_directory(&dir.join("schemas"))?,
         };
 
-        let opts = Options::with_registry_and_values(registry, &dir.join("values"), self.callback)?;
-        GLOBAL_OPTIONS
-            .set(opts)
-            .map_err(|_| OptionsError::AlreadyInitialized)
+        Options::with_registry_and_values(registry, &dir.join("values"), self.callback)
     }
 }
 
@@ -523,5 +527,40 @@ mod tests {
     fn test_from_schemas_invalid_json() {
         let result = SchemaRegistry::from_schemas(&[("test", "not valid json")]);
         assert!(result.is_err());
+    }
+
+    const BOOL_SCHEMA: &str = r#"{
+        "version": "1.0",
+        "type": "object",
+        "properties": {
+            "enabled": {"type": "boolean", "default": false, "description": "x"}
+        }
+    }"#;
+
+    #[test]
+    fn builder_with_directory() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "test", BOOL_SCHEMA);
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
+
+        let options = InitBuilder::new()
+            // without this, schemas wouldn't be found and this test would fail
+            .with_directory(temp.path())
+            .build_options()
+            .unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+    }
+
+    #[test]
+    fn builder_with_schemas() {
+        let options = InitBuilder::new()
+            // without this, init would fail as schemas are never saved on disk
+            .with_schemas(&[("test", BOOL_SCHEMA)])
+            .build_options()
+            .unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
     }
 }
