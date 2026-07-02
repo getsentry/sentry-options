@@ -130,15 +130,28 @@ init()  # optional: init(on_propagation=Callback)
 
 #### Rust
 
-Rust doesn't support optional params, so the variants are separate functions:
+For the common case, the `init()` shorthand loads schemas from the fallback path:
 
-| Function                             | Use when                                                                                                                                      |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init()`                             | Load schemas from the fallback path (`SENTRY_OPTIONS_DIR` → `/etc/sentry-options` → `./sentry-options/`). `Err`s if the directory is missing. |
-| `init_with_schemas(&[(ns, json)])`   | Embed schemas in the binary via `include_str!` so there's no disk dependency for schemas. Values are still read from disk and hot-reloaded.   |
-| `init_with_propagation_callback(cb)` | Like `init()`, plus the same on_propagation callback                                                                                          |
+```rust
+use sentry_options::init;
 
-More details about the `init()` and `propagation_callback` signature and usage can be found in the function documentation and [architecture doc](./architecture.md).
+init()?; // shorthand for `InitBuilder::new().init()`
+```
+
+To override the directory, embed schemas, or register a propagation callback, use `InitBuilder` and chain any subset of the `with_*` methods before `.init()`:
+
+```rust
+use sentry_options::InitBuilder;
+
+InitBuilder::new()
+    .with_schemas(&[("seer", include_str!("../sentry-options/schemas/seer/schema.json"))])
+    .with_callback(on_propagation)
+    .init()?;
+```
+
+`.init()` returns `OptionsError::AlreadyInitialized` if options are already initialized; ignore it with `.ok()` if that's expected. The standalone `init_with_schemas()` and `init_with_propagation_callback()` functions are **deprecated** in favor of the builder.
+
+More details about `InitBuilder` and the `propagation_callback` signature can be found in the function documentation and [architecture doc](./architecture.md).
 
 ### 5. Copy schemas folder and set `SENTRY_OPTIONS_DIR`
 
@@ -151,7 +164,7 @@ COPY sentry-options/schemas /etc/sentry-options/schemas
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 ```
 
-The `COPY` step can be omitted if using Rust `init_with_schemas()` but explicitly setting `SENTRY_OPTIONS_DIR` is still recommended.
+The `COPY` step can be omitted if using Rust `InitBuilder::with_schemas()` but explicitly setting `SENTRY_OPTIONS_DIR` is still recommended.
 
 ### Phase 1 Summary
 

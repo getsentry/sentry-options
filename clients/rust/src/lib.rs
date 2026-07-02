@@ -4,7 +4,7 @@ pub mod features;
 
 pub use features::{FeatureChecker, FeatureContext, features};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 pub use sentry_options_validation::PropagationCallback;
@@ -22,6 +22,9 @@ static GLOBAL_OPTIONS: OnceLock<Options> = OnceLock::new();
 pub enum OptionsError {
     #[error("Options not initialized - call init() first")]
     NotInitialized,
+
+    #[error("Options already initialized")]
+    AlreadyInitialized,
 
     #[error("Unknown namespace: {0}")]
     UnknownNamespace(String),
@@ -169,29 +172,94 @@ impl Options {
     }
 }
 
-/// Initialize global options using fallback chain: `SENTRY_OPTIONS_DIR` env var,
-/// then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
+/// Builder for initializing the global options store.
+/// Define optional parameters with `with_*` methods, then finalize with `init()`
 ///
-/// Idempotent: if already initialized, returns `Ok(())` without re-loading.
-pub fn init() -> Result<()> {
-    if GLOBAL_OPTIONS.get().is_some() {
-        return Ok(());
+/// All settings are optional and independent:
+/// - `with_directory` overrides the base directory
+/// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
+/// - `with_callback` registers a callback that fires on every value refresh.
+///
+#[derive(Default)]
+pub struct InitBuilder<'a> {
+    directory: Option<PathBuf>,
+    schemas: Option<&'a [(&'a str, &'a str)]>,
+    callback: Option<PropagationCallback>,
+}
+
+impl<'a> InitBuilder<'a> {
+    pub fn new() -> Self {
+        InitBuilder::default()
     }
-    let opts = Options::new()?;
-    let _ = GLOBAL_OPTIONS.set(opts);
-    Ok(())
+
+    /// Override the base directory. Expects `{directory}/schemas/` and `{directory}/values/` subdirectories.
+    /// Otherwise, defaults to the fallback chain: `SENTRY_OPTIONS_DIR` env var, then `/etc/sentry-options`
+    pub fn with_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.directory = Some(directory.into());
+        self
+    }
+
+    /// Provide schemas as in-memory `(namespace, json)` pairs instead of reading
+    /// them from `{dir}/schemas/`, intended to be used with `include_str!`
+    pub fn with_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
+        self.schemas = Some(schemas);
+        self
+    }
+
+    /// Register a callback that fires `(namespace, delay_secs)` whenever values
+    /// are refreshed with a new `generated_at` timestamp.
+    pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
+        self.callback = Some(callback);
+        self
+    }
+
+    /// Initialize the global options store from the inputs.
+    ///
+    /// Returns [`OptionsError::AlreadyInitialized`] if the store is already
+    /// initialized, leaving the existing configuration untouched. Callers that
+    /// want a no-op in that case can ignore the error with `.ok()`.
+    pub fn init(self) -> Result<()> {
+        if GLOBAL_OPTIONS.get().is_some() {
+            return Err(OptionsError::AlreadyInitialized);
+        }
+        GLOBAL_OPTIONS
+            .set(self.build_options()?)
+            .map_err(|_| OptionsError::AlreadyInitialized)
+    }
+
+    /// Helper to return an `Options` with the configured inputs.
+    /// Does not touch the global `OnceLock`.
+    fn build_options(self) -> Result<Options> {
+        let dir = self.directory.unwrap_or_else(resolve_options_dir);
+
+        let registry = match self.schemas {
+            Some(s) => SchemaRegistry::from_schemas(s)?,
+            None => SchemaRegistry::from_directory(&dir.join("schemas"))?,
+        };
+
+        Options::with_registry_and_values(registry, &dir.join("values"), self.callback)
+    }
+}
+
+/// Initialize global options using the fallback chain: `SENTRY_OPTIONS_DIR` env
+/// var, then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
+///
+/// Shorthand for `InitBuilder::new().init()`. Idempotent: if already
+/// initialized, returns `Ok(())` without re-loading. For directory, schema, or
+/// callback overrides, use [`InitBuilder`].
+pub fn init() -> Result<()> {
+    ignore_already_initialized(InitBuilder::new().init())
 }
 
 /// Like [`init`], but with a callback that fires whenever values are refreshed
 /// from disk with a new `generated_at` timestamp. The callback receives
 /// `(namespace, delay_secs)`.
+#[deprecated(
+    since = "1.3.0",
+    note = "use `InitBuilder::new().with_callback(cb).init()`"
+)]
 pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<()> {
-    if GLOBAL_OPTIONS.get().is_some() {
-        return Ok(());
-    }
-    let opts = Options::new_with_propagation_callback(callback)?;
-    let _ = GLOBAL_OPTIONS.set(opts);
-    Ok(())
+    ignore_already_initialized(InitBuilder::new().with_callback(callback).init())
 }
 
 /// Initialize global options with schemas provided as in-memory JSON strings.
@@ -206,13 +274,20 @@ pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<(
 ///     ("snuba", include_str!("sentry-options/schemas/snuba/schema.json")),
 /// ])?;
 /// ```
+#[deprecated(
+    since = "1.3.0",
+    note = "use `InitBuilder::new().with_schemas(s).init()`"
+)]
 pub fn init_with_schemas(schemas: &[(&str, &str)]) -> Result<()> {
-    if GLOBAL_OPTIONS.get().is_some() {
-        return Ok(());
+    ignore_already_initialized(InitBuilder::new().with_schemas(schemas).init())
+}
+
+/// legacy, deprecated system was idempotent, this preserves the behaviour
+fn ignore_already_initialized(result: Result<()>) -> Result<()> {
+    match result {
+        Err(OptionsError::AlreadyInitialized) => Ok(()),
+        other => other,
     }
-    let opts = Options::from_schemas(schemas)?;
-    let _ = GLOBAL_OPTIONS.set(opts);
-    Ok(())
 }
 
 /// Get a namespace handle for accessing options.
@@ -482,23 +557,48 @@ mod tests {
         assert!(result.is_err());
     }
 
+    const BOOL_SCHEMA: &str = r#"{
+        "version": "1.0",
+        "type": "object",
+        "properties": {
+            "enabled": {"type": "boolean", "default": false, "description": "x"}
+        }
+    }"#;
+
+    #[test]
+    fn builder_with_directory() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "test", BOOL_SCHEMA);
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
+
+        let options = InitBuilder::new()
+            // without this, schemas wouldn't be found and this test would fail
+            .with_directory(temp.path())
+            .build_options()
+            .unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+    }
+
+    #[test]
+    fn builder_with_schemas() {
+        let options = InitBuilder::new()
+            // without this, init would fail as schemas are never saved on disk
+            .with_schemas(&[("test", BOOL_SCHEMA)])
+            .build_options()
+            .unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
+    }
+
     #[test]
     fn get_forced_sees_change() {
         let temp = TempDir::new().unwrap();
         let schemas = temp.path().join("schemas");
         let values = temp.path().join("values");
         fs::create_dir_all(&schemas).unwrap();
-        create_schema(
-            &schemas,
-            "test",
-            r#"{
-                "version": "1.0",
-                "type": "object",
-                "properties": {
-                    "enabled": {"type": "boolean", "default": false, "description": "x"}
-                }
-            }"#,
-        );
+        create_schema(&schemas, "test", BOOL_SCHEMA);
         create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
 
         let options = Options::from_directory(temp.path()).unwrap();
