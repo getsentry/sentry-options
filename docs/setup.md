@@ -51,6 +51,7 @@ on:
   pull_request:
     paths:
       - 'sentry-options/**'
+      - 'uv.lock' # or Cargo.lock
       - '.github/workflows/validate-sentry-options.yml'
   merge_group:
 
