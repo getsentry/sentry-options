@@ -85,6 +85,16 @@ impl Options {
 
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, namespace: &str, key: &str) -> Result<Value> {
+        self.get_inner(namespace, key, false)
+    }
+
+    /// Like [`get`](Self::get), but always refreshes. Refresh incurs a cost
+    /// so this should only be used in testing.
+    pub fn get_forced(&self, namespace: &str, key: &str) -> Result<Value> {
+        self.get_inner(namespace, key, true)
+    }
+
+    fn get_inner(&self, namespace: &str, key: &str, force_reload: bool) -> Result<Value> {
         if let Some(value) = testing::get_override(namespace, key) {
             return Ok(value);
         }
@@ -95,7 +105,12 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        let values_guard = self.store.load();
+        let values_guard = if force_reload {
+            self.store.force_load()
+        } else {
+            self.store.load()
+        };
+
         if let Some(ns_values) = values_guard.get(namespace)
             && let Some(value) = ns_values.get(key)
         {
@@ -221,6 +236,12 @@ impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
         self.options.get(&self.namespace, key)
+    }
+
+    /// Like [`get`](Self::get), but always refreshes. Refresh incurs a cost
+    /// so this should only be used in testing.
+    pub fn get_forced(&self, key: &str) -> Result<Value> {
+        self.options.get_forced(&self.namespace, key)
     }
 
     /// Check if an option has a key defined, or if the default is being used.
@@ -459,5 +480,35 @@ mod tests {
     fn test_from_schemas_invalid_json() {
         let result = SchemaRegistry::from_schemas(&[("test", "not valid json")]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_forced_sees_change() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(
+            &schemas,
+            "test",
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "x"}
+                }
+            }"#,
+        );
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
+
+        let options = Options::from_directory(temp.path()).unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+
+        create_values(&values, "test", r#"{"options": {"enabled": false}}"#);
+
+        // Cached read still returns the old value
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+        // Forced read picks up the change
+        assert_eq!(options.get_forced("test", "enabled").unwrap(), json!(false));
     }
 }

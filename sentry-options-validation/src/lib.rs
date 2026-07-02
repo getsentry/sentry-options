@@ -717,6 +717,16 @@ impl ValuesStore {
         self.values.load()
     }
 
+    /// Like [`load`](Self::load), but always refreshes, ignoring the staleness
+    /// threshold. The mtime check still applies, so unchanged files are not
+    /// re-read from disk.
+    pub fn force_load(&self) -> arc_swap::Guard<Arc<ValuesByNamespace>> {
+        let now_ns = self.baseline.elapsed().as_nanos() as u64;
+        let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
+        self.refresh(last_ns, now_ns);
+        self.values.load()
+    }
+
     fn maybe_refresh(&self) {
         let now_ns = self.baseline.elapsed().as_nanos() as u64;
         let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
