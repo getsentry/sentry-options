@@ -28,6 +28,9 @@ class NamespaceOptions:
     def get(self, key: str) -> OptionValue: ...
     """Get the value for a named option. If no value is defined the default will be returned"""
 
+    def get_forced(self, key: str) -> OptionValue: ...
+    """Like get, but always refreshes. Refresh incurs a cost so this should only be used in testing."""
+
     def isset(self, key: str) -> bool: ...
     """See if an option is defined and has a value set."""
 

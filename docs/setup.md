@@ -46,15 +46,41 @@ In this new file, create the following schema:
 
 It is important to perform validation in your own repo to make sure sentry-options doesn't break your service. This workflow will ensure there are no syntax errors and no [evolution rules](./architecture.md#schema-evolution--validation) are violated (changing the type of an option, changing the default of an option, etc.)
 
-In any workflow that runs in PRs and your main branch, add this reusable workflow:
-
 ```yaml
+on:
+  pull_request:
+    paths:
+      - 'sentry-options/**'
+      - 'uv.lock' # or Cargo.lock
+      - '.github/workflows/validate-sentry-options.yml'
+  merge_group:
+
 jobs:
+  # Very important to use the same options cli version for validation.
+  cli-version:
+    name: Determine sentry-options CLI version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: uv.lock # or Cargo.lock; adapt the yq call as necessary
+          sparse-checkout-cone-mode: false
+      - name: Parse sentry-options version from lockfile
+        id: version
+        run: |
+          echo -n "version=" >> "$GITHUB_OUTPUT"
+          yq -p toml -oy '.package[] | select(.name == "sentry-options") | .version' uv.lock >> "$GITHUB_OUTPUT"
+
   validate:
+    needs: cli-version
     uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
-    secrets: inherit
+    secrets:
+      SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
     with:
       schemas-path: sentry-options/schemas
+      cli-version: ${{ needs.cli-version.outputs.version }}
 ```
 
 Additionally, if you are using the **Python** library, we recommend adding our precommit hook to autogenerate type stubs. This means you don't need to `cast(...)` options in your code to pass `mypy` or `ty` typechecking.

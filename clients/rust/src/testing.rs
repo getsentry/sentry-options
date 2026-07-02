@@ -138,6 +138,37 @@ pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGua
     Ok(OverrideGuard { previous })
 }
 
+/// A feature value that is enabled for every context.
+///
+/// Use with [`override_options`] to force a flag on in tests:
+///
+/// ```rust,ignore
+/// let _guard = override_options(&[(
+///     "seer",
+///     "feature.my-flag",
+///     always_on(),
+/// )]).unwrap();
+/// ```
+pub fn always_on() -> Value {
+    serde_json::json!({
+        "owner": {"team": "testing"},
+        "created_at": "1970-01-01",
+        "segments": [{"name": "always-on", "rollout": 100, "conditions": []}]
+    })
+}
+
+/// A feature value that is disabled for every context.
+///
+/// Use with [`override_options`] to force a flag off in tests.
+pub fn always_off() -> Value {
+    serde_json::json!({
+        "owner": {"team": "testing"},
+        "created_at": "1970-01-01",
+        "enabled": false,
+        "segments": []
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,5 +249,65 @@ mod tests {
         }
 
         assert_eq!(get_override("sentry-options-testing", "int-option"), None);
+    }
+
+    #[test]
+    fn test_override_feature_flag() {
+        crate::init().unwrap();
+
+        let mut ctx = crate::FeatureContext::new();
+        ctx.insert("organization_id", json!(1));
+        ctx.identity_fields(vec!["organization_id"]);
+
+        // Baseline: no value in the store -> feature is off.
+        assert!(
+            !crate::features("sentry-options-testing").has("organizations:enabled-feature", &ctx)
+        );
+
+        {
+            let _guard = override_options(&[(
+                "sentry-options-testing",
+                "feature.organizations:enabled-feature",
+                always_on(),
+            )])
+            .unwrap();
+
+            assert!(
+                crate::features("sentry-options-testing")
+                    .has("organizations:enabled-feature", &ctx)
+            );
+        }
+
+        // Override removed when the guard drops.
+        assert!(
+            !crate::features("sentry-options-testing").has("organizations:enabled-feature", &ctx)
+        );
+    }
+
+    #[test]
+    fn test_always_off_forces_feature_off() {
+        crate::init().unwrap();
+
+        // enabled-feature matches org 123 in the test values.
+        let mut ctx = crate::FeatureContext::new();
+        ctx.insert("organization_id", json!(123));
+        ctx.identity_fields(vec!["organization_id"]);
+        assert!(
+            crate::features("sentry-options-testing").has("organizations:enabled-feature", &ctx)
+        );
+
+        {
+            let _guard = override_options(&[(
+                "sentry-options-testing",
+                "feature.organizations:enabled-feature",
+                always_off(),
+            )])
+            .unwrap();
+
+            assert!(
+                !crate::features("sentry-options-testing")
+                    .has("organizations:enabled-feature", &ctx)
+            );
+        }
     }
 }

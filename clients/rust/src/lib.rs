@@ -88,6 +88,16 @@ impl Options {
 
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, namespace: &str, key: &str) -> Result<Value> {
+        self.get_inner(namespace, key, false)
+    }
+
+    /// Like [`get`](Self::get), but always refreshes. Refresh incurs a cost
+    /// so this should only be used in testing.
+    pub fn get_forced(&self, namespace: &str, key: &str) -> Result<Value> {
+        self.get_inner(namespace, key, true)
+    }
+
+    fn get_inner(&self, namespace: &str, key: &str, force_reload: bool) -> Result<Value> {
         if let Some(value) = testing::get_override(namespace, key) {
             return Ok(value);
         }
@@ -98,7 +108,12 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        let values_guard = self.store.load();
+        let values_guard = if force_reload {
+            self.store.force_load()
+        } else {
+            self.store.load()
+        };
+
         if let Some(ns_values) = values_guard.get(namespace)
             && let Some(value) = ns_values.get(key)
         {
@@ -141,7 +156,7 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        if !schema.options.contains_key(key) {
+        if !schema.is_known_key(key) {
             return Err(OptionsError::UnknownOption {
                 namespace: namespace.into(),
                 key: key.into(),
@@ -296,6 +311,12 @@ impl NamespaceOptions {
     /// Get an option value, returning the schema default if not set.
     pub fn get(&self, key: &str) -> Result<Value> {
         self.options.get(&self.namespace, key)
+    }
+
+    /// Like [`get`](Self::get), but always refreshes. Refresh incurs a cost
+    /// so this should only be used in testing.
+    pub fn get_forced(&self, key: &str) -> Result<Value> {
+        self.options.get_forced(&self.namespace, key)
     }
 
     /// Check if an option has a key defined, or if the default is being used.
@@ -461,20 +482,27 @@ mod tests {
         create_schema(
             &schemas,
             "test",
-            r#"{
+            r##"{
                 "version": "1.0",
                 "type": "object",
                 "properties": {
                     "has-value": {"type": "string", "default": "", "description": ""},
-                    "defined-with-default": {"type": "string", "default": "default_val", "description": "Opt"}
+                    "defined-with-default": {"type": "string", "default": "default_val", "description": "Opt"},
+                    "feature.organizations:my-flag": {"$ref": "#/definitions/Feature"}
                 }
-            }"#,
+            }"##,
         );
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert!(options.isset("test", "not-defined").is_err());
         assert!(!options.isset("test", "defined-with-default").unwrap());
         assert!(options.isset("test", "has-value").unwrap());
+        // Feature keys are known (no UnknownOption error) but unset -> false.
+        assert!(
+            !options
+                .isset("test", "feature.organizations:my-flag")
+                .unwrap()
+        );
     }
 
     #[test]
@@ -562,5 +590,25 @@ mod tests {
             .build_options()
             .unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
+    }
+
+    #[test]
+    fn get_forced_sees_change() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "test", BOOL_SCHEMA);
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
+
+        let options = Options::from_directory(temp.path()).unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+
+        create_values(&values, "test", r#"{"options": {"enabled": false}}"#);
+
+        // Cached read still returns the old value
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+        // Forced read picks up the change
+        assert_eq!(options.get_forced("test", "enabled").unwrap(), json!(false));
     }
 }

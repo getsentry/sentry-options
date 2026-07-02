@@ -15,6 +15,10 @@ on:
         description: "Build CLI from source instead of downloading release binary"
         type: boolean
         default: false
+    secrets:
+      SENTRY_INTERNAL_APP_PRIVATE_KEY:
+        description: "Private key for the sentry-options-automator GitHub App. Only used when a schema deletion is detected, to check out sentry-options-automator."
+        required: false
 
 permissions:
   contents: read

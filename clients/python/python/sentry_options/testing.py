@@ -12,11 +12,44 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Generator
+from typing import Any
 
 from sentry_options import OptionValue
 from sentry_options._core import _clear_override
 from sentry_options._core import _set_override
 from sentry_options._core import _validate_option
+
+# A feature flag value (the `Feature` object: owner/created_at/enabled/segments).
+# Deeply nested arbitrary JSON, so it's typed loosely rather than as OptionValue.
+Feature = dict[str, Any]
+
+
+def always_on() -> Feature:
+    """A feature value that is enabled for every context.
+
+    Use with :func:`override_options` to force a flag on in tests::
+
+        with override_options('seer', {'feature.my-flag': always_on()}):
+            assert features('seer').has('my-flag', ctx)
+    """
+    return {
+        'owner': {'team': 'testing'},
+        'created_at': '1970-01-01',
+        'segments': [{'name': 'always-on', 'rollout': 100, 'conditions': []}],
+    }
+
+
+def always_off() -> Feature:
+    """A feature value that is disabled for every context.
+
+    Use with :func:`override_options` to force a flag off in tests.
+    """
+    return {
+        'owner': {'team': 'testing'},
+        'created_at': '1970-01-01',
+        'enabled': False,
+        'segments': [],
+    }
 
 
 @contextlib.contextmanager
@@ -60,4 +93,4 @@ def override_options(
                 _set_override(namespace, key, prev)
 
 
-__all__ = ['override_options']
+__all__ = ['Feature', 'always_off', 'always_on', 'override_options']
