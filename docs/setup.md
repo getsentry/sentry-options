@@ -52,7 +52,8 @@ In any workflow that runs in PRs and your main branch, add this reusable workflo
 jobs:
   validate:
     uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
-    secrets: inherit
+    secrets:
+      SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
     with:
       schemas-path: sentry-options/schemas
 ```
