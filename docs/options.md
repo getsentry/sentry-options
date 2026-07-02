@@ -90,6 +90,20 @@ def test_timeout():
     assert options('seer').get('autofix.enabled')
 ```
 
+If you want to test option values changing, use `get_forced()` instead of `get()`. Even in tests,
+`get()` will not refresh if it already did so <5 seconds ago. `get_forced()` will always refresh.
+
+```python
+# import, create values_file, init(), etc...
+# {enabled: True} by default.
+with open(values_file, "w") as f:
+    json.dump({"options": {"enabled": False}}, f)
+# Cached get() still returns the old value within the 5s threshold.
+assert opts.get("enabled") is True
+# get_forced() bypasses the threshold and sees the change, no sleep needed.
+assert opts.get_forced("enabled") is False
+```
+
 ### Rust
 
 A little bit different with Rust, pass in a static array of `(namespace, option, value)` tuples.
@@ -106,6 +120,14 @@ fn test_timeout() {
   let _guard = override_options(&[("seer", "autofix.enabled", true.into())]).unwrap();
   assert_eq!(options("seer").get("autofix.enabled").unwrap(), true);
 }
+```
+
+Just like in Python, use `get_forced()` to bypass the 5s cache threshold and see the updated value immediately.
+```rust
+// import, create a values file, init(), etc...
+fs::write("sentry-options/values/seer/values.json", br#"{"options": {"autofix.enabled": false}}"#)?;
+assert_eq!(options("seer").get("autofix.enabled").unwrap(), true);
+assert_eq!(options("seer").get_forced("autofix.enabled").unwrap(), false);
 ```
 
 ## Setting an option value locally
