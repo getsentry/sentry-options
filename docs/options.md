@@ -73,7 +73,7 @@ let cfg: IPAddress = serde_json::from_value(opts.get("database.config")?)?;
 
 To override a value locally in a test, use the corresponding guard.
 
-**Make sure to call `init()` at some point before the guard is reached**, e.g. in a setup function.
+**Make sure to initialize options at some point before the guard is reached**, e.g. in a startup function. In Python that's `init()`. In Rust use `init()` or [`InitBuilder`](./setup.md#4-initialize-sentry-options) for a custom directory or embedded schemas.
 
 ### Python
 
