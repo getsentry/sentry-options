@@ -51,6 +51,7 @@ on:
   pull_request:
     paths:
       - 'sentry-options/**'
+      - '.github/workflows/validate-sentry-options.yml'
   merge_group:
 
 jobs:
