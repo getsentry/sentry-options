@@ -7,7 +7,7 @@ use ::sentry_options::{
     FeatureChecker as RustFeatureChecker, FeatureContext as RustFeatureContext,
     Options as RustOptions, OptionsError as RustOptionsError,
 };
-use pyo3::exceptions::{PyException, PyValueError};
+use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::Value;
@@ -116,6 +116,9 @@ fn options_err(err: RustOptionsError) -> PyErr {
     match err {
         RustOptionsError::NotInitialized => {
             NotInitializedError::new_err("Options not initialized - call init() first")
+        }
+        RustOptionsError::AlreadyInitialized => {
+            PyRuntimeError::new_err("Options already initialized")
         }
         RustOptionsError::UnknownNamespace(ns) => {
             UnknownNamespaceError::new_err(format!("Unknown namespace: {}", ns))
