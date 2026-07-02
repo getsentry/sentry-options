@@ -46,31 +46,16 @@ In this new file, create the following schema:
 
 It is important to perform validation in your own repo to make sure sentry-options doesn't break your service. This workflow will ensure there are no syntax errors and no [evolution rules](./architecture.md#schema-evolution--validation) are violated (changing the type of an option, changing the default of an option, etc.)
 
-In any workflow that runs in PRs and your main branch, add this reusable workflow:
-
 ```yaml
-jobs:
-  files-changed:
-    name: files-changed
-    runs-on: ubuntu-latest
-    outputs:
-      schemas: ${{ steps.changes.outputs.schemas }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-      - name: Check for relevant file changes
-        uses: getsentry/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
-        id: changes
-        with:
-          filters: |
-            schemas:
-              - 'sentry-options/**'
+on:
+  pull_request:
+    paths:
+      - 'sentry-options/**'
+  merge_group:
 
+jobs:
   # Very important to use the same options cli version for validation.
   cli-version:
-    if: needs.files-changed.outputs.schemas == 'true'
-    needs: files-changed
     name: Determine sentry-options CLI version
     runs-on: ubuntu-latest
     outputs:
@@ -87,7 +72,7 @@ jobs:
           yq -p toml '.package[] | select(.name == "sentry-options") | .version' uv.lock >> "$GITHUB_OUTPUT"
 
   validate:
-    needs: [files-changed, cli-version]
+    needs: cli-version
     uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
     secrets:
       SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
