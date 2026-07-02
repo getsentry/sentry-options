@@ -152,6 +152,9 @@ pub struct OptionMetadata {
 pub struct NamespaceSchema {
     pub namespace: String,
     pub options: HashMap<String, OptionMetadata>,
+    /// `feature.`-prefixed keys. Kept separate from `options`
+    /// so they aren't involved in schema-evolution checks
+    feature_keys: HashSet<String>,
     /// All property keys from the schema, including feature flags that aren't in `options`.
     all_keys: HashSet<String>,
     validator: jsonschema::Validator,
@@ -193,12 +196,18 @@ impl NamespaceSchema {
         self.options.get(key).map(|meta| &meta.default)
     }
 
+    /// Whether `key` is a known key in this namespace, runtime
+    /// option or feature flag.
+    pub fn is_known_key(&self, key: &str) -> bool {
+        self.options.contains_key(key) || self.feature_keys.contains(key)
+    }
+
     /// Validate a single key-value pair against the schema.
     ///
     /// # Errors
     /// Returns error if the key doesn't exist or the value doesn't match the expected type.
     pub fn validate_option(&self, key: &str, value: &Value) -> ValidationResult<()> {
-        if !self.options.contains_key(key) {
+        if !self.is_known_key(key) {
             return Err(ValidationError::UnknownOption {
                 namespace: self.namespace.clone(),
                 key: key.to_string(),
@@ -444,14 +453,17 @@ impl SchemaRegistry {
 
         // Extract option metadata and validate types.
         let mut options = HashMap::new();
+        let mut feature_keys = HashSet::new();
         let mut all_keys = HashSet::new();
         let mut has_feature_keys = false;
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 all_keys.insert(prop_name.clone());
                 // Detect feature flags so that we can augment the schema with defs.
+                // They're tracked separately from `options` (see NamespaceSchema).
                 if prop_name.starts_with("feature.") {
                     has_feature_keys = true;
+                    feature_keys.insert(prop_name.clone());
                 }
                 if let (Some(prop_type), Some(default_value)) = (
                     prop_value.get("type").and_then(|t| t.as_str()),
@@ -496,6 +508,7 @@ impl SchemaRegistry {
         Ok(Arc::new(NamespaceSchema {
             namespace: namespace.to_string(),
             options,
+            feature_keys,
             all_keys,
             validator,
         }))
@@ -2123,6 +2136,58 @@ Error: \"version\" is a required property"
                 }),
             );
             assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_feature_flag_is_known_key() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            let schema = registry.get("test").unwrap();
+            // make sure it's known...
+            assert!(schema.is_known_key("feature.organizations:fury-mode"));
+            // ...but not a runtime option
+            assert!(
+                !schema
+                    .options
+                    .contains_key("feature.organizations:fury-mode")
+            );
+            assert!(!schema.is_known_key("feature.organizations:does-not-exist"));
+        }
+
+        #[test]
+        fn test_validate_option_accepts_valid_feature() {
+            // Enables override_options(ns, {"feature.x": <Feature>}) with only the
+            // schema present (no value in the store).
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            let schema = registry.get("test").unwrap();
+
+            let result = schema.validate_option(
+                "feature.organizations:fury-mode",
+                &json!({
+                    "owner": {"team": "hybrid-cloud"},
+                    "segments": [{"name": "all", "rollout": 100, "conditions": []}],
+                    "created_at": "2024-01-01"
+                }),
+            );
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_validate_option_rejects_malformed_feature() {
+            // A known feature key with a value that isn't a valid Feature must fail
+            // validation (ValueError), not slip through as UnknownOption.
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            let schema = registry.get("test").unwrap();
+
+            // Missing required `owner` and `created_at`.
+            let result =
+                schema.validate_option("feature.organizations:fury-mode", &json!({"segments": []}));
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
         }
     }
 

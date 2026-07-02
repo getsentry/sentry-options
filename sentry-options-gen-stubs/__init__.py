@@ -150,6 +150,8 @@ def generate(schemas_dir: Path) -> str:
         'from typing import Literal, NotRequired, TypedDict, overload',
         '',
         'from sentry_options._core import ('
+        '\n    FeatureChecker,'
+        '\n    FeatureContext,'
         '\n    NotInitializedError,'
         '\n    NamespaceOptions,'
         '\n    OptionsError,'
@@ -157,12 +159,16 @@ def generate(schemas_dir: Path) -> str:
         '\n    SchemaError,'
         '\n    UnknownNamespaceError,'
         '\n    UnknownOptionError,'
+        '\n    features,'
         '\n    init,'
         '\n)',
         '',
         '__all__ = [',
         '    "init",',
         '    "options",',
+        '    "features",',
+        '    "FeatureChecker",',
+        '    "FeatureContext",',
         '    "NotInitializedError",',
         '    "NamespaceOptions",',
         '    "OptionsError",',

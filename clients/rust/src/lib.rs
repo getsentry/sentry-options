@@ -138,7 +138,7 @@ impl Options {
             .get(namespace)
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
-        if !schema.options.contains_key(key) {
+        if !schema.is_known_key(key) {
             return Err(OptionsError::UnknownOption {
                 namespace: namespace.into(),
                 key: key.into(),
@@ -386,20 +386,27 @@ mod tests {
         create_schema(
             &schemas,
             "test",
-            r#"{
+            r##"{
                 "version": "1.0",
                 "type": "object",
                 "properties": {
                     "has-value": {"type": "string", "default": "", "description": ""},
-                    "defined-with-default": {"type": "string", "default": "default_val", "description": "Opt"}
+                    "defined-with-default": {"type": "string", "default": "default_val", "description": "Opt"},
+                    "feature.organizations:my-flag": {"$ref": "#/definitions/Feature"}
                 }
-            }"#,
+            }"##,
         );
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert!(options.isset("test", "not-defined").is_err());
         assert!(!options.isset("test", "defined-with-default").unwrap());
         assert!(options.isset("test", "has-value").unwrap());
+        // Feature keys are known (no UnknownOption error) but unset -> false.
+        assert!(
+            !options
+                .isset("test", "feature.organizations:my-flag")
+                .unwrap()
+        );
     }
 
     #[test]
