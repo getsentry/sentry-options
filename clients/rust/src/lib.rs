@@ -164,7 +164,7 @@ impl Options {
 /// - `with_directory` overrides the base directory
 /// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
 /// - `with_callback` registers a callback that fires on every value refresh.
-/// ```
+///
 #[derive(Default)]
 pub struct InitBuilder<'a> {
     directory: Option<PathBuf>,
