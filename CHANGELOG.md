@@ -1,4 +1,26 @@
 # Changelog
+## 1.2.0
+
+### New Features ✨
+
+#### Client
+
+- Use builder for rust `init()` by @kenzoengineer in [#146](https://github.com/getsentry/sentry-options/pull/146)
+- Add a `get_forced` function to bypass the 5s staleness window by @kenzoengineer in [#151](https://github.com/getsentry/sentry-options/pull/151)
+
+#### Other
+
+- (flags) Feature flag testing improvements by @kenzoengineer in [#150](https://github.com/getsentry/sentry-options/pull/150)
+
+### Bug Fixes 🐛
+
+- (ci) Instead of inheriting, explicitly include secret by @kenzoengineer in [#148](https://github.com/getsentry/sentry-options/pull/148)
+- (stubs) Fix missing feature flag definitions by @kenzoengineer in [#149](https://github.com/getsentry/sentry-options/pull/149)
+
+### Documentation 📚
+
+- Update workflow setup by @joshuarli in [#152](https://github.com/getsentry/sentry-options/pull/152)
+
 ## 1.1.2
 
 ### New Features ✨
