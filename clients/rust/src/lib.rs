@@ -208,8 +208,8 @@ impl<'a> InitBuilder<'a> {
 
     /// Register a callback that fires `(namespace, delay_secs)` whenever values
     /// are refreshed with a new `generated_at` timestamp.
-    pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
-        self.callback = Some(callback);
+    pub fn with_callback(mut self, callback: impl Fn(&str, f64) + Send + Sync + 'static) -> Self {
+        self.callback = Some(Box::new(callback));
         self
     }
 
