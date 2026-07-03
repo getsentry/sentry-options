@@ -223,13 +223,20 @@ impl<'a> InitBuilder<'a> {
             return Err(OptionsError::AlreadyInitialized);
         }
         GLOBAL_OPTIONS
-            .set(self.build_options()?)
+            .set(self.build()?)
             .map_err(|_| OptionsError::AlreadyInitialized)
     }
 
-    /// Helper to return an `Options` with the configured inputs.
-    /// Does not touch the global `OnceLock`.
-    fn build_options(self) -> Result<Options> {
+    /// Builds an [`Options`] instance from the inputs, without initializing
+    /// the global store.
+    ///
+    /// Use this when you want to manage the lifetime of the options store yourself, or
+    /// when you want to have multiple independent options stores in the same process.
+    ///
+    /// Use [`init`] if you want to initialize the global store.
+    ///
+    /// Returns an error if the schemas are invalid or the values cannot be loaded.
+    pub fn build(self) -> Result<Options> {
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
         let registry = match self.schemas {
@@ -577,7 +584,7 @@ mod tests {
         let options = InitBuilder::new()
             // without this, schemas wouldn't be found and this test would fail
             .with_directory(temp.path())
-            .build_options()
+            .build()
             .unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
     }
@@ -587,7 +594,7 @@ mod tests {
         let options = InitBuilder::new()
             // without this, init would fail as schemas are never saved on disk
             .with_schemas(&[("test", BOOL_SCHEMA)])
-            .build_options()
+            .build()
             .unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
     }
