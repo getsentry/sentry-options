@@ -44,6 +44,16 @@ pub struct Options {
 }
 
 impl Options {
+    /// Returns a builder for constructing an [`Options`] instance or
+    /// initializing the global store.
+    ///
+    /// Configure optional parameters with the `with_*` methods, then finalize
+    /// with [`InitBuilder::build`] for a standalone instance or
+    /// [`InitBuilder::init`] for the global store.
+    pub fn builder<'a>() -> InitBuilder<'a> {
+        InitBuilder::new()
+    }
+
     /// Load options using fallback chain: `SENTRY_OPTIONS_DIR` env var, then `/etc/sentry-options`
     /// if it exists, otherwise `sentry-options/`.
     /// Expects `{dir}/schemas/` and `{dir}/values/` subdirectories.
@@ -251,9 +261,9 @@ impl<'a> InitBuilder<'a> {
 /// Initialize global options using the fallback chain: `SENTRY_OPTIONS_DIR` env
 /// var, then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 ///
-/// Shorthand for `InitBuilder::new().init()`. Idempotent: if already
+/// Shorthand for `Options::builder().init()`. Idempotent: if already
 /// initialized, returns `Ok(())` without re-loading. For directory, schema, or
-/// callback overrides, use [`InitBuilder`].
+/// callback overrides, use [`Options::builder`].
 pub fn init() -> Result<()> {
     ignore_already_initialized(InitBuilder::new().init())
 }
@@ -263,7 +273,7 @@ pub fn init() -> Result<()> {
 /// `(namespace, delay_secs)`.
 #[deprecated(
     since = "1.3.0",
-    note = "use `InitBuilder::new().with_callback(cb).init()`"
+    note = "use `Options::builder().with_callback(cb).init()`"
 )]
 pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<()> {
     ignore_already_initialized(InitBuilder::new().with_callback(callback).init())
@@ -283,7 +293,7 @@ pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<(
 /// ```
 #[deprecated(
     since = "1.3.0",
-    note = "use `InitBuilder::new().with_schemas(s).init()`"
+    note = "use `Options::builder().with_schemas(s).init()`"
 )]
 pub fn init_with_schemas(schemas: &[(&str, &str)]) -> Result<()> {
     ignore_already_initialized(InitBuilder::new().with_schemas(schemas).init())
@@ -581,7 +591,7 @@ mod tests {
         create_schema(&schemas, "test", BOOL_SCHEMA);
         create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
 
-        let options = InitBuilder::new()
+        let options = Options::builder()
             // without this, schemas wouldn't be found and this test would fail
             .with_directory(temp.path())
             .build()
@@ -591,7 +601,7 @@ mod tests {
 
     #[test]
     fn builder_with_schemas() {
-        let options = InitBuilder::new()
+        let options = Options::builder()
             // without this, init would fail as schemas are never saved on disk
             .with_schemas(&[("test", BOOL_SCHEMA)])
             .build()

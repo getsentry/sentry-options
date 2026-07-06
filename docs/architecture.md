@@ -171,16 +171,16 @@ A read — `options(ns).get(key)` — validates the loaded values against the sc
 
 ### Initialization
 
-Options must be initialized once at startup, guarded by a global `OnceLock`. Rust uses a builder, `InitBuilder`. Python folds the options into one function. In Rust, chain any subset of the `with_*` methods, then call `.init()`:
+Options must be initialized once at startup, guarded by a global `OnceLock`. Rust uses a builder obtained from `Options::builder()`. Python folds the options into one function. In Rust, chain any subset of the `with_*` methods, then call `.init()`:
 
-| `InitBuilder` method | Behavior |
+| Builder method | Behavior |
 |----------------------|----------|
 | _(no overrides)_ | Resolve the directory and load schemas from disk |
 | `.with_directory(path)` | Load schemas and values from a specific base directory |
 | `.with_schemas(&[(ns, json)])` | Use schemas embedded in the binary via `include_str!`. values still load from disk |
 | `.with_callback(cb)` | Register a reload callback |
 
-`init()` is a shorthand for `InitBuilder::new().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None)`.
+`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None)`.
 
 The `init()` shorthand and Python's `init()` are idempotent — calling again is a no-op. The builder's `.init()` instead returns `OptionsError::AlreadyInitialized` when options are already initialized, so re-initializing with different settings is a loud error rather than a silent no-op.
 
@@ -195,7 +195,7 @@ End to end, a value change propagates as: ConfigMap update → ~1–2 min kubele
 
 ### Propagation metric
 
-When a refresh observes a newer `generated_at` than the previous snapshot, the propagation callback (`InitBuilder::with_callback` in Rust, `on_propagation` in Python) fires with the namespace and the delay between generation and load — useful for measuring deploy lag.
+When a refresh observes a newer `generated_at` than the previous snapshot, the propagation callback (`Options::builder().with_callback` in Rust, `on_propagation` in Python) fires with the namespace and the delay between generation and load — useful for measuring deploy lag.
 
 ## Feature Flag Evaluation
 
