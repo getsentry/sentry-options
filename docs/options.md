@@ -334,33 +334,28 @@ There are two things you might want to test:
 - **Your branching logic** — build different `FeatureContext`s and assert what `has()` returns against the flag as it's defined in your local/test values (this is how the client's own tests work).
 - **Force a flag on or off** — override its value with a `Feature` using the same `override_options` guard from [Testing with options](#testing-with-options). An always-on flag is a single segment with `rollout: 100` and no conditions.
 
+You can use our `always_on()` and `always_off()` helpers from the testing sub library to override a feature flag to always be on or off.
+
 **Make sure to call `init()` at some point before the guard is reached**, e.g. in a setup function.
 
 ### Python
 
 ```python
 from sentry_options import features, FeatureContext
-from sentry_options.testing import override_options
-
-ALWAYS_ON = {
-    "owner": {"team": "seer"},
-    "created_at": "2026-01-01",
-    "segments": [{"name": "all", "rollout": 100, "conditions": []}],
-}
+from sentry_options.testing import override_options, always_on
 
 def test_explorer_enabled():
-    with override_options('seer', {'feature.seer-explorer': ALWAYS_ON}):
+    with override_options('seer', {'feature.seer-explorer': always_on()}):
         assert features('seer').has('seer-explorer', FeatureContext({}))
 ```
 
 ### Rust
 
-The `Feature` value is a `serde_json::Value`; `json!` is the cleanest way to build one.
+`always_on()` / `always_off()` return the `serde_json::Value` for you; build a `Feature` by hand with `json!` if you need a custom rollout or conditions.
 
 ```rust
-use sentry_options::testing::override_options;
+use sentry_options::testing::{override_options, always_on};
 use sentry_options::{features, FeatureContext};
-use serde_json::json;
 
 // call init() somewhere early
 #[test]
@@ -368,11 +363,7 @@ fn test_explorer_enabled() {
     let _guard = override_options(&[(
         "seer",
         "feature.seer-explorer",
-        json!({
-            "owner": {"team": "seer"},
-            "created_at": "2026-01-01",
-            "segments": [{"name": "all", "rollout": 100, "conditions": []}],
-        }),
+        always_on(),
     )]).unwrap();
 
     assert!(features("seer").has("seer-explorer", &FeatureContext::new()));
