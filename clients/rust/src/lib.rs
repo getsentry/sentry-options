@@ -44,6 +44,16 @@ pub struct Options {
 }
 
 impl Options {
+    /// Returns a builder for constructing an [`Options`] instance or
+    /// initializing the global store.
+    ///
+    /// Configure optional parameters with the `with_*` methods, then finalize
+    /// with [`InitBuilder::build`] for a standalone instance or
+    /// [`InitBuilder::init`] for the global store.
+    pub fn builder<'a>() -> InitBuilder<'a> {
+        InitBuilder::new()
+    }
+
     /// Load options using fallback chain: `SENTRY_OPTIONS_DIR` env var, then `/etc/sentry-options`
     /// if it exists, otherwise `sentry-options/`.
     /// Expects `{dir}/schemas/` and `{dir}/values/` subdirectories.
@@ -208,8 +218,8 @@ impl<'a> InitBuilder<'a> {
 
     /// Register a callback that fires `(namespace, delay_secs)` whenever values
     /// are refreshed with a new `generated_at` timestamp.
-    pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
-        self.callback = Some(callback);
+    pub fn with_callback(mut self, callback: impl Fn(&str, f64) + Send + Sync + 'static) -> Self {
+        self.callback = Some(Box::new(callback));
         self
     }
 
@@ -223,13 +233,20 @@ impl<'a> InitBuilder<'a> {
             return Err(OptionsError::AlreadyInitialized);
         }
         GLOBAL_OPTIONS
-            .set(self.build_options()?)
+            .set(self.build()?)
             .map_err(|_| OptionsError::AlreadyInitialized)
     }
 
-    /// Helper to return an `Options` with the configured inputs.
-    /// Does not touch the global `OnceLock`.
-    fn build_options(self) -> Result<Options> {
+    /// Builds an [`Options`] instance from the inputs, without initializing
+    /// the global store.
+    ///
+    /// Use this when you want to manage the lifetime of the options store yourself, or
+    /// when you want to have multiple independent options stores in the same process.
+    ///
+    /// Use [`init`] if you want to initialize the global store.
+    ///
+    /// Returns an error if the schemas are invalid or the values cannot be loaded.
+    pub fn build(self) -> Result<Options> {
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
         let registry = match self.schemas {
@@ -244,9 +261,9 @@ impl<'a> InitBuilder<'a> {
 /// Initialize global options using the fallback chain: `SENTRY_OPTIONS_DIR` env
 /// var, then `/etc/sentry-options` if it exists, otherwise `sentry-options/`.
 ///
-/// Shorthand for `InitBuilder::new().init()`. Idempotent: if already
+/// Shorthand for `Options::builder().init()`. Idempotent: if already
 /// initialized, returns `Ok(())` without re-loading. For directory, schema, or
-/// callback overrides, use [`InitBuilder`].
+/// callback overrides, use [`Options::builder`].
 pub fn init() -> Result<()> {
     ignore_already_initialized(InitBuilder::new().init())
 }
@@ -256,7 +273,7 @@ pub fn init() -> Result<()> {
 /// `(namespace, delay_secs)`.
 #[deprecated(
     since = "1.3.0",
-    note = "use `InitBuilder::new().with_callback(cb).init()`"
+    note = "use `Options::builder().with_callback(cb).init()`"
 )]
 pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<()> {
     ignore_already_initialized(InitBuilder::new().with_callback(callback).init())
@@ -276,7 +293,7 @@ pub fn init_with_propagation_callback(callback: PropagationCallback) -> Result<(
 /// ```
 #[deprecated(
     since = "1.3.0",
-    note = "use `InitBuilder::new().with_schemas(s).init()`"
+    note = "use `Options::builder().with_schemas(s).init()`"
 )]
 pub fn init_with_schemas(schemas: &[(&str, &str)]) -> Result<()> {
     ignore_already_initialized(InitBuilder::new().with_schemas(schemas).init())
@@ -574,20 +591,20 @@ mod tests {
         create_schema(&schemas, "test", BOOL_SCHEMA);
         create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
 
-        let options = InitBuilder::new()
+        let options = Options::builder()
             // without this, schemas wouldn't be found and this test would fail
             .with_directory(temp.path())
-            .build_options()
+            .build()
             .unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
     }
 
     #[test]
     fn builder_with_schemas() {
-        let options = InitBuilder::new()
+        let options = Options::builder()
             // without this, init would fail as schemas are never saved on disk
             .with_schemas(&[("test", BOOL_SCHEMA)])
-            .build_options()
+            .build()
             .unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
     }
