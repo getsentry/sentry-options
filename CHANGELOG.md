@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.1
+
+### New Features ✨
+
+- (client) Improve the Options builder interface by @jan-auer in [#153](https://github.com/getsentry/sentry-options/pull/153)
+
 ## 1.2.0
 
 ### New Features ✨
