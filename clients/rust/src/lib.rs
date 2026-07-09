@@ -6,8 +6,9 @@ pub use features::{FeatureChecker, FeatureContext, features};
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
-pub use sentry_options_validation::PropagationCallback;
+pub use sentry_options_validation::{DEFAULT_REFRESH_THRESHOLD, PropagationCallback};
 use sentry_options_validation::{
     SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
 };
@@ -66,34 +67,52 @@ impl Options {
     pub fn new_with_propagation_callback(callback: PropagationCallback) -> Result<Self> {
         let dir = resolve_options_dir();
         let registry = SchemaRegistry::from_directory(&dir.join("schemas"))?;
-        Self::with_registry_and_values(registry, &dir.join("values"), Some(callback))
+        Self::with_registry_and_values(
+            registry,
+            &dir.join("values"),
+            Some(DEFAULT_REFRESH_THRESHOLD),
+            Some(callback),
+        )
     }
 
     /// Load options from a specific directory (useful for testing).
     /// Expects `{base_dir}/schemas/` and `{base_dir}/values/` subdirectories.
     pub fn from_directory(base_dir: &Path) -> Result<Self> {
         let registry = SchemaRegistry::from_directory(&base_dir.join("schemas"))?;
-        Self::with_registry_and_values(registry, &base_dir.join("values"), None)
+        Self::with_registry_and_values(
+            registry,
+            &base_dir.join("values"),
+            Some(DEFAULT_REFRESH_THRESHOLD),
+            None,
+        )
     }
 
     /// Load options with schemas provided as in-memory JSON strings.
     /// Values are loaded from disk using the standard fallback chain.
     pub fn from_schemas(schemas: &[(&str, &str)]) -> Result<Self> {
         let registry = SchemaRegistry::from_schemas(schemas)?;
-        Self::with_registry_and_values(registry, &resolve_options_dir().join("values"), None)
+        Self::with_registry_and_values(
+            registry,
+            &resolve_options_dir().join("values"),
+            Some(DEFAULT_REFRESH_THRESHOLD),
+            None,
+        )
     }
 
     fn with_registry_and_values(
         registry: SchemaRegistry,
         values_dir: &Path,
+        refresh_threshold: Option<Duration>,
         callback: Option<PropagationCallback>,
     ) -> Result<Self> {
-        let registry = Arc::new(registry);
-        let store = match callback {
-            Some(cb) => ValuesStore::with_propagation_callback(registry, values_dir, cb)?,
-            None => ValuesStore::new(registry, values_dir)?,
-        };
-        Ok(Self { store })
+        let mut builder = ValuesStore::builder(Arc::new(registry), values_dir)
+            .with_refresh_threshold(refresh_threshold);
+        if let Some(cb) = callback {
+            builder = builder.with_callback(cb);
+        }
+        Ok(Self {
+            store: builder.build()?,
+        })
     }
 
     /// Get an option value, returning the schema default if not set.
@@ -102,9 +121,24 @@ impl Options {
     }
 
     /// Like [`get`](Self::get), but always refreshes. Refresh incurs a cost
-    /// so this should only be used in testing.
+    /// so this should only be used in testing; use [`refresh`](Self::refresh)
+    /// to drive refreshes in production.
     pub fn get_forced(&self, namespace: &str, key: &str) -> Result<Value> {
         self.get_inner(namespace, key, true)
+    }
+
+    /// Refreshes values from disk, ignoring the staleness threshold.
+    ///
+    /// Returns whether a new snapshot was published, i.e. the files changed
+    /// on disk (by mtime) and reloaded successfully. On error the previous
+    /// snapshot is retained and served. Callbacks registered with
+    /// [`InitBuilder::with_callback`] fire on the calling thread before this
+    /// returns.
+    ///
+    /// Any call resets the refresh-on-read timer, so calling this more often
+    /// than the staleness threshold guarantees reads never refresh inline.
+    pub fn refresh(&self) -> Result<bool> {
+        Ok(self.store.refresh()?)
     }
 
     fn get_inner(&self, namespace: &str, key: &str, force_reload: bool) -> Result<Value> {
@@ -189,12 +223,15 @@ impl Options {
 /// - `with_directory` overrides the base directory
 /// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
 /// - `with_callback` registers a callback that fires on every value refresh.
+/// - `with_refresh_threshold` overrides or disables the staleness threshold
+///   for refresh-on-read.
 ///
 #[derive(Default)]
 pub struct InitBuilder<'a> {
     directory: Option<PathBuf>,
     schemas: Option<&'a [(&'a str, &'a str)]>,
     callback: Option<PropagationCallback>,
+    refresh_threshold: Option<Option<Duration>>,
 }
 
 impl<'a> InitBuilder<'a> {
@@ -220,6 +257,16 @@ impl<'a> InitBuilder<'a> {
     /// are refreshed with a new `generated_at` timestamp.
     pub fn with_callback(mut self, callback: impl Fn(&str, f64) + Send + Sync + 'static) -> Self {
         self.callback = Some(Box::new(callback));
+        self
+    }
+
+    /// Overrides the staleness threshold for refresh-on-read.
+    ///
+    /// Defaults to [`DEFAULT_REFRESH_THRESHOLD`] (5 seconds). Pass `None` to
+    /// disable refresh-on-read entirely; values then only change via
+    /// [`Options::refresh`].
+    pub fn with_refresh_threshold(mut self, threshold: impl Into<Option<Duration>>) -> Self {
+        self.refresh_threshold = Some(threshold.into());
         self
     }
 
@@ -254,7 +301,15 @@ impl<'a> InitBuilder<'a> {
             None => SchemaRegistry::from_directory(&dir.join("schemas"))?,
         };
 
-        Options::with_registry_and_values(registry, &dir.join("values"), self.callback)
+        let refresh_threshold = self
+            .refresh_threshold
+            .unwrap_or(Some(DEFAULT_REFRESH_THRESHOLD));
+        Options::with_registry_and_values(
+            registry,
+            &dir.join("values"),
+            refresh_threshold,
+            self.callback,
+        )
     }
 }
 
@@ -627,5 +682,54 @@ mod tests {
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
         // Forced read picks up the change
         assert_eq!(options.get_forced("test", "enabled").unwrap(), json!(false));
+    }
+
+    #[test]
+    fn builder_refresh_threshold_none_with_manual_refresh() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "test", BOOL_SCHEMA);
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
+
+        let options = Options::builder()
+            .with_directory(temp.path())
+            .with_refresh_threshold(None)
+            .build()
+            .unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+
+        create_values(&values, "test", r#"{"options": {"enabled": false}}"#);
+
+        // With refresh-on-read disabled, reads never pick up the change.
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+        // A manual refresh does.
+        assert!(options.refresh().unwrap());
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
+        // Nothing changed since the last refresh.
+        assert!(!options.refresh().unwrap());
+    }
+
+    #[test]
+    fn builder_refresh_threshold_custom() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "test", BOOL_SCHEMA);
+        create_values(&values, "test", r#"{"options": {"enabled": true}}"#);
+
+        let options = Options::builder()
+            .with_directory(temp.path())
+            .with_refresh_threshold(Duration::ZERO)
+            .build()
+            .unwrap();
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+
+        create_values(&values, "test", r#"{"options": {"enabled": false}}"#);
+
+        // A zero threshold refreshes on every read.
+        assert_eq!(options.get("test", "enabled").unwrap(), json!(false));
     }
 }

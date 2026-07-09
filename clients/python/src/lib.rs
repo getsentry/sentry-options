@@ -2,10 +2,11 @@
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use ::sentry_options::{
-    FeatureChecker as RustFeatureChecker, FeatureContext as RustFeatureContext,
-    Options as RustOptions, OptionsError as RustOptionsError,
+    DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
+    FeatureContext as RustFeatureContext, Options as RustOptions, OptionsError as RustOptionsError,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -193,27 +194,60 @@ impl PyFeatureChecker {
 /// Optionally accepts an `on_propagation` callback that fires whenever values
 /// are refreshed with a new `generated_at` timestamp. The callback receives
 /// `(namespace: str, delay_secs: float)`.
+///
+/// `refresh_threshold` is the staleness threshold in seconds for
+/// refresh-on-read (default: 5.0). Pass `None` to disable refresh-on-read
+/// entirely; values then only change via `refresh()`.
 #[pyfunction]
-#[pyo3(signature = (on_propagation=None))]
-fn init(on_propagation: Option<Py<PyAny>>) -> PyResult<()> {
+#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64())))]
+fn init(on_propagation: Option<Py<PyAny>>, refresh_threshold: Option<f64>) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
-    let opts = match on_propagation {
+
+    let refresh_threshold = match refresh_threshold {
+        Some(secs) if !secs.is_finite() || secs < 0.0 => {
+            return Err(PyValueError::new_err(
+                "refresh_threshold must be a non-negative number or None",
+            ));
+        }
+        Some(secs) => Some(Duration::from_secs_f64(secs)),
+        None => None,
+    };
+
+    let mut builder = RustOptions::builder().with_refresh_threshold(refresh_threshold);
+    if let Some(cb) = on_propagation {
         // `Py<PyAny>` is `Send + Sync`; the closure re-acquires the GIL for the
         // call, so the callback can run on whichever thread triggers a refresh.
-        Some(cb) => RustOptions::new_with_propagation_callback(Box::new(move |ns, delay| {
+        builder = builder.with_callback(move |ns, delay| {
             Python::attach(|py| {
                 if let Err(e) = cb.call1(py, (ns, delay)) {
                     e.print(py);
                 }
             });
-        }))
-        .map_err(options_err)?,
-        None => RustOptions::new().map_err(options_err)?,
-    };
+        });
+    }
+    let opts = builder.build().map_err(options_err)?;
     let _ = GLOBAL_OPTIONS.set(opts);
     Ok(())
+}
+
+/// Refresh values from disk, ignoring the staleness threshold.
+///
+/// Returns whether a new snapshot was published, i.e. the files changed on
+/// disk and reloaded successfully. On error the previous snapshot is retained
+/// and served. Calling this more often than the threshold guarantees reads
+/// never refresh inline.
+///
+/// Raises NotInitializedError if init() has not been called.
+#[pyfunction]
+fn refresh(py: Python<'_>) -> PyResult<bool> {
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
+    // Release the GIL: the reload does file IO, and the propagation callback
+    // re-acquires the GIL itself.
+    py.detach(|| opts.refresh()).map_err(options_err)
 }
 
 /// Get a namespace handle for accessing options.
@@ -327,6 +361,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
     m.add_function(wrap_pyfunction!(features, m)?)?;
+    m.add_function(wrap_pyfunction!(refresh, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
     m.add_class::<PyFeatureContext>()?;

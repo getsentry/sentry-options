@@ -34,7 +34,7 @@ const VALUES_FILE_NAME: &str = "values.json";
 /// Default minimum age of a cached values snapshot before a read triggers a
 /// refresh. A per-thread jitter of up to 1 s is added on top to spread the
 /// reload across threads.
-const REFRESH_THRESHOLD: Duration = Duration::from_secs(5);
+pub const DEFAULT_REFRESH_THRESHOLD: Duration = Duration::from_secs(5);
 
 /// Production path where options are deployed via config map
 pub const PRODUCTION_OPTIONS_DIR: &str = "/etc/sentry-options";
@@ -633,7 +633,9 @@ pub struct ValuesStore {
     values: ArcSwap<ValuesByNamespace>,
     baseline: Instant,
     last_refresh_offset_ns: AtomicU64,
-    refresh_threshold: Duration,
+    /// Staleness threshold for refresh-on-read; `None` disables it, so values
+    /// only change via [`refresh`](Self::refresh).
+    refresh_threshold: Option<Duration>,
     /// Last known `generated_at` per namespace, used to detect value changes.
     /// Uses ArcSwap for lock-free, fork-safe access.
     last_generated_at: ArcSwap<HashMap<String, String>>,
@@ -644,50 +646,71 @@ pub struct ValuesStore {
     last_mtimes: ArcSwap<HashMap<String, SystemTime>>,
 }
 
-impl ValuesStore {
-    /// Build a store and perform the initial values load synchronously.
-    pub fn new(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValidationResult<Self> {
-        Self::build(registry, values_dir, REFRESH_THRESHOLD, None)
+/// Builder for constructing a [`ValuesStore`].
+///
+/// Created via [`ValuesStore::builder`]. Configure optional parameters with
+/// the `with_*` methods, then finalize with [`build`](Self::build).
+pub struct ValuesStoreBuilder {
+    registry: Arc<SchemaRegistry>,
+    values_dir: PathBuf,
+    refresh_threshold: Option<Duration>,
+    on_propagation: Option<PropagationCallback>,
+}
+
+impl ValuesStoreBuilder {
+    /// Overrides the staleness threshold for refresh-on-read.
+    ///
+    /// Defaults to [`DEFAULT_REFRESH_THRESHOLD`]. Pass `None` to disable
+    /// refresh-on-read entirely; values then only change via
+    /// [`ValuesStore::refresh`]. A zero threshold refreshes on every read.
+    pub fn with_refresh_threshold(mut self, threshold: impl Into<Option<Duration>>) -> Self {
+        self.refresh_threshold = threshold.into();
+        self
     }
 
-    /// Build a store with a callback that fires whenever new values are detected.
+    /// Registers a callback that fires whenever new values are detected.
     /// The callback receives `(namespace, delay_secs)` on each value change.
-    pub fn with_propagation_callback(
-        registry: Arc<SchemaRegistry>,
-        values_dir: &Path,
-        callback: PropagationCallback,
-    ) -> ValidationResult<Self> {
-        Self::build(registry, values_dir, REFRESH_THRESHOLD, Some(callback))
+    pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
+        self.on_propagation = Some(callback);
+        self
     }
 
-    /// Internal constructor. `Duration::ZERO` threshold makes every `load()`
-    /// refresh, which is useful for tests.
-    fn build(
-        registry: Arc<SchemaRegistry>,
-        values_dir: &Path,
-        refresh_threshold: Duration,
-        on_propagation: Option<PropagationCallback>,
-    ) -> ValidationResult<Self> {
+    /// Builds the store and performs the initial values load synchronously.
+    pub fn build(self) -> ValidationResult<ValuesStore> {
+        let values_dir = &self.values_dir;
         if !should_suppress_missing_dir_errors() && fs::metadata(values_dir).is_err() {
             eprintln!("Values directory does not exist: {}", values_dir.display());
         }
 
         let baseline = Instant::now();
-        let initial_mtimes = Self::collect_mtimes(&registry, values_dir);
-        let (initial, generated_at_by_namespace) = registry.load_values_json(values_dir)?;
+        let initial_mtimes = ValuesStore::collect_mtimes(&self.registry, values_dir);
+        let (initial, generated_at_by_namespace) = self.registry.load_values_json(values_dir)?;
         let last_refresh_offset_ns = AtomicU64::new(baseline.elapsed().as_nanos() as u64);
 
-        Ok(Self {
-            registry,
-            values_dir: values_dir.to_path_buf(),
+        Ok(ValuesStore {
+            registry: self.registry,
+            values_dir: self.values_dir,
             values: ArcSwap::from_pointee(initial),
             baseline,
             last_refresh_offset_ns,
-            refresh_threshold,
+            refresh_threshold: self.refresh_threshold,
             last_generated_at: ArcSwap::from_pointee(generated_at_by_namespace),
-            on_propagation,
+            on_propagation: self.on_propagation,
             last_mtimes: ArcSwap::from_pointee(initial_mtimes),
         })
+    }
+}
+
+impl ValuesStore {
+    /// Returns a builder for constructing a store from the given registry and
+    /// values directory.
+    pub fn builder(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValuesStoreBuilder {
+        ValuesStoreBuilder {
+            registry,
+            values_dir: values_dir.to_path_buf(),
+            refresh_threshold: Some(DEFAULT_REFRESH_THRESHOLD),
+            on_propagation: None,
+        }
     }
 
     /// The registry the store was constructed with.
@@ -721,20 +744,39 @@ impl ValuesStore {
     /// threshold. The mtime check still applies, so unchanged files are not
     /// re-read from disk.
     pub fn force_load(&self) -> arc_swap::Guard<Arc<ValuesByNamespace>> {
-        let now_ns = self.baseline.elapsed().as_nanos() as u64;
-        let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
-        self.refresh(last_ns, now_ns);
+        if let Err(e) = self.refresh() {
+            self.log_refresh_error(&e);
+        }
         self.values.load()
     }
 
+    /// Refreshes values from disk, ignoring the staleness threshold.
+    ///
+    /// Returns whether a new snapshot was published, i.e. the files changed
+    /// on disk (by mtime) and reloaded successfully. On error the previous
+    /// snapshot is retained. Propagation callbacks fire on the calling thread
+    /// before this returns.
+    ///
+    /// Any call resets the refresh-on-read timer, so calling this more often
+    /// than the threshold guarantees reads never refresh inline.
+    pub fn refresh(&self) -> ValidationResult<bool> {
+        let now_ns = self.baseline.elapsed().as_nanos() as u64;
+        let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
+        self.refresh_at(last_ns, now_ns)
+    }
+
     fn maybe_refresh(&self) {
+        let Some(threshold) = self.refresh_threshold else {
+            return;
+        };
+
         let now_ns = self.baseline.elapsed().as_nanos() as u64;
         let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
         let elapsed_ns = now_ns.saturating_sub(last_ns);
-        let threshold_ns = self.refresh_threshold.as_nanos() as u64;
+        let threshold_ns = threshold.as_nanos() as u64;
         // Skip jitter for a zero threshold so callers (chiefly tests) can
         // force every read to refresh.
-        let jitter_ns = if self.refresh_threshold.is_zero() {
+        let jitter_ns = if threshold.is_zero() {
             0
         } else {
             stack_jitter_ns()
@@ -744,10 +786,20 @@ impl ValuesStore {
             return;
         }
 
-        self.refresh(last_ns, now_ns);
+        if let Err(e) = self.refresh_at(last_ns, now_ns) {
+            self.log_refresh_error(&e);
+        }
     }
 
-    fn refresh(&self, observed_last_ns: u64, now_ns: u64) {
+    fn log_refresh_error(&self, error: &ValidationError) {
+        eprintln!(
+            "Failed to reload values from {}: {}",
+            self.values_dir.display(),
+            error
+        );
+    }
+
+    fn refresh_at(&self, observed_last_ns: u64, now_ns: u64) -> ValidationResult<bool> {
         let current_mtimes = Self::collect_mtimes(&self.registry, &self.values_dir);
         if *self.last_mtimes.load().as_ref() == current_mtimes {
             let _ = self.last_refresh_offset_ns.compare_exchange(
@@ -756,7 +808,7 @@ impl ValuesStore {
                 Ordering::AcqRel,
                 Ordering::Relaxed,
             );
-            return;
+            return Ok(false);
         }
 
         let result = self.registry.load_values_json(&self.values_dir);
@@ -772,16 +824,9 @@ impl ValuesStore {
             Ok((new_values, generated_at)) => {
                 self.values.store(Arc::new(new_values));
                 self.last_mtimes.store(Arc::new(current_mtimes));
-                Some(generated_at)
+                Ok(generated_at)
             }
-            Err(e) => {
-                eprintln!(
-                    "Failed to reload values from {}: {}",
-                    self.values_dir.display(),
-                    e
-                );
-                None
-            }
+            Err(e) => Err(e),
         };
 
         // Bump the timestamp regardless of success. On failure, the bumped
@@ -795,35 +840,37 @@ impl ValuesStore {
             Ordering::Relaxed,
         );
 
+        let new_generated_at = new_generated_at?;
+
         // Fire the propagation callback after the CAS so other threads see a
         // fresh timestamp and don't redundantly re-read from disk while a
         // potentially slow callback (e.g. Python/GIL) executes.
-        if let Some(new_generated_at) = new_generated_at {
-            let last = self.last_generated_at.load();
-            if *last.as_ref() != new_generated_at {
-                if let Some(callback) = &self.on_propagation {
-                    let applied_at = Utc::now();
-                    for (ns, ts) in &new_generated_at {
-                        if last.get(ns).is_some_and(|old| old == ts) {
-                            continue;
-                        }
-                        match propagation_delay_secs(&applied_at, ts) {
-                            Some(delay) => {
-                                if let Err(e) =
-                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                        callback(ns, delay)
-                                    }))
-                                {
-                                    eprintln!("Propagation callback panicked for {ns}: {:?}", e);
-                                }
+        let last = self.last_generated_at.load();
+        if *last.as_ref() != new_generated_at {
+            if let Some(callback) = &self.on_propagation {
+                let applied_at = Utc::now();
+                for (ns, ts) in &new_generated_at {
+                    if last.get(ns).is_some_and(|old| old == ts) {
+                        continue;
+                    }
+                    match propagation_delay_secs(&applied_at, ts) {
+                        Some(delay) => {
+                            if let Err(e) =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    callback(ns, delay)
+                                }))
+                            {
+                                eprintln!("Propagation callback panicked for {ns}: {:?}", e);
                             }
-                            None => eprintln!("Bad generated_at for {ns}: {ts}"),
                         }
+                        None => eprintln!("Bad generated_at for {ns}: {ts}"),
                     }
                 }
-                self.last_generated_at.store(Arc::new(new_generated_at));
             }
+            self.last_generated_at.store(Arc::new(new_generated_at));
         }
+
+        Ok(true)
     }
 }
 
@@ -1639,15 +1686,13 @@ Error: \"version\" is a required property"
         let events_clone = events.clone();
 
         let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-        let store = ValuesStore::build(
-            registry,
-            &values_dir,
-            Duration::ZERO,
-            Some(Box::new(move |ns, delay| {
+        let store = ValuesStore::builder(registry, &values_dir)
+            .with_refresh_threshold(Duration::ZERO)
+            .with_callback(Box::new(move |ns, delay| {
                 events_clone.lock().unwrap().push((ns.to_string(), delay));
-            })),
-        )
-        .unwrap();
+            }))
+            .build()
+            .unwrap();
 
         // Initial load doesn't emit (generated_at set during construction).
         assert!(events.lock().unwrap().is_empty());
@@ -1700,7 +1745,10 @@ Error: \"version\" is a required property"
 
         let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
         // No callback — should not panic or error.
-        let store = ValuesStore::build(registry, &values_dir, Duration::ZERO, None).unwrap();
+        let store = ValuesStore::builder(registry, &values_dir)
+            .with_refresh_threshold(Duration::ZERO)
+            .build()
+            .unwrap();
         let _ = store.load();
         // Just verify it doesn't crash.
     }
@@ -1758,13 +1806,11 @@ Error: \"version\" is a required property"
         let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
 
         let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
-        let store = ValuesStore::build(
-            registry,
-            &base.join("values"),
-            Duration::ZERO,
-            Some(Box::new(|_ns, _delay| panic!("callback boom"))),
-        )
-        .unwrap();
+        let store = ValuesStore::builder(registry, &base.join("values"))
+            .with_refresh_threshold(Duration::ZERO)
+            .with_callback(Box::new(|_ns, _delay| panic!("callback boom")))
+            .build()
+            .unwrap();
 
         // Trigger a change so the panicking callback fires; load() must not unwind.
         fs::write(
@@ -1790,15 +1836,13 @@ Error: \"version\" is a required property"
         let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
         let events_clone = events.clone();
         let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
-        let store = ValuesStore::build(
-            registry,
-            &base.join("values"),
-            Duration::ZERO,
-            Some(Box::new(move |ns, delay| {
+        let store = ValuesStore::builder(registry, &base.join("values"))
+            .with_refresh_threshold(Duration::ZERO)
+            .with_callback(Box::new(move |ns, delay| {
                 events_clone.lock().unwrap().push((ns.to_string(), delay));
-            })),
-        )
-        .unwrap();
+            }))
+            .build()
+            .unwrap();
 
         // Change generated_at to a malformed value: detected as a change, but
         // unparseable, so no event is emitted.
@@ -1821,15 +1865,13 @@ Error: \"version\" is a required property"
         let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
         let events_clone = events.clone();
         let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
-        let store = ValuesStore::build(
-            registry,
-            &base.join("values"),
-            Duration::ZERO,
-            Some(Box::new(move |ns, delay| {
+        let store = ValuesStore::builder(registry, &base.join("values"))
+            .with_refresh_threshold(Duration::ZERO)
+            .with_callback(Box::new(move |ns, delay| {
                 events_clone.lock().unwrap().push((ns.to_string(), delay));
-            })),
-        )
-        .unwrap();
+            }))
+            .build()
+            .unwrap();
 
         // Only beta's generated_at changes; alpha is untouched.
         fs::write(
@@ -2259,14 +2301,25 @@ Error: \"version\" is a required property"
 
         fn store_with_zero_threshold(schemas_dir: &Path, values_dir: &Path) -> ValuesStore {
             let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir).unwrap());
-            ValuesStore::build(registry, values_dir, Duration::ZERO, None).unwrap()
+            ValuesStore::builder(registry, values_dir)
+                .with_refresh_threshold(Duration::ZERO)
+                .build()
+                .unwrap()
+        }
+
+        fn store_without_refresh_on_read(schemas_dir: &Path, values_dir: &Path) -> ValuesStore {
+            let registry = Arc::new(SchemaRegistry::from_directory(schemas_dir).unwrap());
+            ValuesStore::builder(registry, values_dir)
+                .with_refresh_threshold(None)
+                .build()
+                .unwrap()
         }
 
         #[test]
         fn test_initial_load_populates_values() {
             let (_temp, schemas_dir, values_dir) = setup_store_test();
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let store = ValuesStore::new(registry, &values_dir).unwrap();
+            let store = ValuesStore::builder(registry, &values_dir).build().unwrap();
 
             let guard = store.load();
             assert_eq!(guard["ns1"]["enabled"], json!(true));
@@ -2279,7 +2332,7 @@ Error: \"version\" is a required property"
             // read should still see the cached value.
             let (_temp, schemas_dir, values_dir) = setup_store_test();
             let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
-            let store = ValuesStore::new(registry, &values_dir).unwrap();
+            let store = ValuesStore::builder(registry, &values_dir).build().unwrap();
 
             // Confirm initial value, then modify the file.
             assert_eq!(store.load()["ns1"]["enabled"], json!(true));
@@ -2365,6 +2418,130 @@ Error: \"version\" is a required property"
             for h in handles {
                 assert_eq!(h.join().unwrap(), json!(7));
             }
+        }
+
+        #[test]
+        fn test_refresh_returns_true_on_change_false_when_unchanged() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let store = store_without_refresh_on_read(&schemas_dir, &values_dir);
+
+            // Nothing changed on disk since construction.
+            assert!(!store.refresh().unwrap());
+
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"options": {"enabled": false}}"#,
+            )
+            .unwrap();
+            assert!(store.refresh().unwrap());
+
+            // Unchanged again after the reload.
+            assert!(!store.refresh().unwrap());
+        }
+
+        #[test]
+        fn test_disabled_threshold_never_refreshes_on_read() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let store = store_without_refresh_on_read(&schemas_dir, &values_dir);
+
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"options": {"enabled": false}}"#,
+            )
+            .unwrap();
+
+            // Reads never refresh with a disabled threshold.
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
+
+            // A manual refresh picks up the change.
+            assert!(store.refresh().unwrap());
+            assert_eq!(store.load()["ns1"]["enabled"], json!(false));
+        }
+
+        #[test]
+        fn test_refresh_error_keeps_snapshot_and_recovers() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let store = store_without_refresh_on_read(&schemas_dir, &values_dir);
+            let ns1_values = values_dir.join("ns1").join("values.json");
+
+            fs::write(&ns1_values, "not json").unwrap();
+            assert!(store.refresh().is_err());
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
+
+            fs::write(&ns1_values, r#"{"options": {"enabled": false}}"#).unwrap();
+            assert!(store.refresh().unwrap());
+            assert_eq!(store.load()["ns1"]["enabled"], json!(false));
+        }
+
+        #[test]
+        fn test_refresh_fires_propagation_callback() {
+            let temp_dir = TempDir::new().unwrap();
+            let base = temp_dir.path();
+            let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+
+            let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+            let events_clone = events.clone();
+            let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+            let store = ValuesStore::builder(registry, &base.join("values"))
+                .with_refresh_threshold(None)
+                .with_callback(Box::new(move |ns, delay| {
+                    events_clone.lock().unwrap().push((ns.to_string(), delay));
+                }))
+                .build()
+                .unwrap();
+
+            fs::write(
+                &values_file,
+                r#"{"options": {"enabled": false}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+            )
+            .unwrap();
+            assert!(store.refresh().unwrap());
+
+            let recorded = events.lock().unwrap();
+            assert_eq!(recorded.len(), 1);
+            assert_eq!(recorded[0].0, "test");
+        }
+
+        #[test]
+        fn test_refresh_resets_lazy_timer() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let store = ValuesStore::builder(registry, &values_dir)
+                .with_refresh_threshold(Duration::from_secs(3600))
+                .build()
+                .unwrap();
+
+            assert!(!store.refresh().unwrap());
+
+            // A rewrite within the (freshly reset) window is not picked up by
+            // reads — the manual refresh preempted the lazy refresh.
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"options": {"enabled": false}}"#,
+            )
+            .unwrap();
+            assert_eq!(store.load()["ns1"]["enabled"], json!(true));
+        }
+
+        #[test]
+        fn test_refresh_runs_within_staleness_window() {
+            let (_temp, schemas_dir, values_dir) = setup_store_test();
+            let registry = Arc::new(SchemaRegistry::from_directory(&schemas_dir).unwrap());
+            let store = ValuesStore::builder(registry, &values_dir)
+                .with_refresh_threshold(Duration::from_secs(3600))
+                .build()
+                .unwrap();
+
+            // Immediately after construction, well within the staleness
+            // window, a manual refresh still reloads changed files.
+            fs::write(
+                values_dir.join("ns1").join("values.json"),
+                r#"{"options": {"enabled": false}}"#,
+            )
+            .unwrap();
+            assert!(store.refresh().unwrap());
+            assert_eq!(store.load()["ns1"]["enabled"], json!(false));
         }
     }
     mod array_tests {

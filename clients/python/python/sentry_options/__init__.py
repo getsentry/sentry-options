@@ -17,6 +17,7 @@ from sentry_options._core import NamespaceOptions
 from sentry_options._core import NotInitializedError
 from sentry_options._core import options
 from sentry_options._core import OptionsError
+from sentry_options._core import refresh
 from sentry_options._core import SchemaError
 from sentry_options._core import UnknownNamespaceError
 from sentry_options._core import UnknownOptionError
@@ -35,6 +36,7 @@ __all__ = [
     'options',
     'OptionValue',
     'OptionsError',
+    'refresh',
     'SchemaError',
     'UnknownNamespaceError',
     'UnknownOptionError',

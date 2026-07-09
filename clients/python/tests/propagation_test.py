@@ -8,65 +8,15 @@ to wait it out.
 """
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
 from pathlib import Path
-from textwrap import dedent
 
-
-def _make_options_dir(root: Path, *, generated_at: str | None = None) -> Path:
-    options_dir = root / 'opts'
-    schemas_dir = options_dir / 'schemas' / 'test-ns'
-    values_dir = options_dir / 'values' / 'test-ns'
-    schemas_dir.mkdir(parents=True)
-    values_dir.mkdir(parents=True)
-
-    schemas_dir.joinpath('schema.json').write_text(
-        json.dumps(
-            {
-                'version': '1.0',
-                'type': 'object',
-                'properties': {
-                    'enabled': {
-                        'type': 'boolean',
-                        'default': False,
-                        'description': 'Enabled',
-                    },
-                },
-            },
-        ),
-    )
-
-    values: dict = {'options': {'enabled': True}}
-    if generated_at is not None:
-        values['generated_at'] = generated_at
-    values_dir.joinpath('values.json').write_text(json.dumps(values))
-
-    return options_dir
-
-
-def _run(script: str, options_dir: Path, timeout: int = 30, **env_extra: str) -> None:
-    env = os.environ.copy()
-    env['SENTRY_OPTIONS_DIR'] = str(options_dir)
-    env.update(env_extra)
-    result = subprocess.run(
-        [sys.executable, '-c', dedent(script)],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    assert result.returncode == 0, (
-        f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+from conftest import make_options_dir, run_isolated
 
 
 def test_propagation_callback_fires_on_generated_at_change(tmp_path: Path) -> None:
-    options_dir = _make_options_dir(tmp_path, generated_at='2024-01-21T18:30:00+00:00')
+    options_dir = make_options_dir(tmp_path, generated_at='2024-01-21T18:30:00+00:00')
     values_file = options_dir / 'values' / 'test-ns' / 'values.json'
-    _run(
+    run_isolated(
         f"""\
         import json
         from sentry_options import init, options
@@ -90,9 +40,9 @@ def test_propagation_callback_fires_on_generated_at_change(tmp_path: Path) -> No
 
 
 def test_get_forced_sees_change_without_waiting(tmp_path: Path) -> None:
-    options_dir = _make_options_dir(tmp_path)
+    options_dir = make_options_dir(tmp_path)
     values_file = options_dir / 'values' / 'test-ns' / 'values.json'
-    _run(
+    run_isolated(
         f"""\
         import json
         from sentry_options import init, options
@@ -114,9 +64,9 @@ def test_get_forced_sees_change_without_waiting(tmp_path: Path) -> None:
 
 
 def test_propagation_callback_not_called_without_generated_at(tmp_path: Path) -> None:
-    options_dir = _make_options_dir(tmp_path)
+    options_dir = make_options_dir(tmp_path)
     values_file = options_dir / 'values' / 'test-ns' / 'values.json'
-    _run(
+    run_isolated(
         f"""\
         import json
         from sentry_options import init, options
@@ -137,9 +87,9 @@ def test_propagation_callback_not_called_without_generated_at(tmp_path: Path) ->
 
 
 def test_propagation_callback_exception_does_not_crash(tmp_path: Path) -> None:
-    options_dir = _make_options_dir(tmp_path, generated_at='2024-01-21T18:30:00+00:00')
+    options_dir = make_options_dir(tmp_path, generated_at='2024-01-21T18:30:00+00:00')
     values_file = options_dir / 'values' / 'test-ns' / 'values.json'
-    _run(
+    run_isolated(
         f"""\
         import json
         from sentry_options import init, options
@@ -161,9 +111,9 @@ def test_propagation_callback_exception_does_not_crash(tmp_path: Path) -> None:
 
 
 def test_propagation_callback_receives_multiple_updates(tmp_path: Path) -> None:
-    options_dir = _make_options_dir(tmp_path, generated_at='2024-01-21T18:00:00+00:00')
+    options_dir = make_options_dir(tmp_path, generated_at='2024-01-21T18:00:00+00:00')
     values_file = options_dir / 'values' / 'test-ns' / 'values.json'
-    _run(
+    run_isolated(
         f"""\
         import json
         from sentry_options import init, options
