@@ -702,6 +702,26 @@ impl ValuesStoreBuilder {
 }
 
 impl ValuesStore {
+    /// Builds a store with the default configuration and performs the initial
+    /// values load synchronously.
+    ///
+    /// Use [`builder`](Self::builder) to override the configuration.
+    pub fn new(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValidationResult<Self> {
+        Self::builder(registry, values_dir).build()
+    }
+
+    /// Builds a store with a callback that fires whenever new values are detected.
+    #[deprecated(note = "use `ValuesStore::builder(...).with_callback(...)` instead")]
+    pub fn with_propagation_callback(
+        registry: Arc<SchemaRegistry>,
+        values_dir: &Path,
+        callback: PropagationCallback,
+    ) -> ValidationResult<Self> {
+        Self::builder(registry, values_dir)
+            .with_callback(callback)
+            .build()
+    }
+
     /// Returns a builder for constructing a store from the given registry and
     /// values directory.
     pub fn builder(registry: Arc<SchemaRegistry>, values_dir: &Path) -> ValuesStoreBuilder {
