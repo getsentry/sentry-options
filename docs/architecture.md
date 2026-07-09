@@ -221,7 +221,7 @@ The `validate-schema` reusable workflow runs on schema PRs and enforces (`sentry
 | Remove a namespace | ❌ |
 | Change an option's type | ❌ |
 | Change an option's default | ❌ |
-| Change an object / array-of-object shape | ❌ (`ShapeChanged`) |
+| Change an object / array-of-object shape, or a map's value type | ❌ (`ShapeChanged`) |
 
 New namespaces must be named `{repo}` (exact) or `{repo}-*` (prefixed with `{repo}-`).
 

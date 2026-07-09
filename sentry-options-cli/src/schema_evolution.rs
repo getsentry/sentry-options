@@ -142,7 +142,15 @@ fn compare_schemas(
             let old_props = old_meta.property_schema.get("properties");
             let new_props = new_meta.property_schema.get("properties");
 
-            if old_props != new_props {
+            // Maps declare their value type under `additionalProperties`. Changing
+            // it — the value type of a scalar map, or the embedded shape of an
+            // object-valued map ("embedded keys") — is as breaking as changing a
+            // fixed struct's fields, so guard it the same way. Deep equality on the
+            // subtree catches arbitrarily nested changes.
+            let old_additional = old_meta.property_schema.get("additionalProperties");
+            let new_additional = new_meta.property_schema.get("additionalProperties");
+
+            if old_props != new_props || old_additional != new_additional {
                 modified_options.push(SchemaChangeAction::ShapeChanged {
                     context: format!("{}.{}", namespace, key),
                     option_type: "object".to_string(),
@@ -154,18 +162,23 @@ fn compare_schemas(
             }
         }
 
-        // 5d. changing array-of-objects item shape
+        // 5d. changing array item shape (fixed struct items or object/scalar-valued
+        // map items)
         if old_meta.option_type == "array" && new_meta.option_type == "array" {
-            let old_item_props = old_meta
-                .property_schema
-                .get("items")
-                .and_then(|i| i.get("properties"));
-            let new_item_props = new_meta
-                .property_schema
-                .get("items")
-                .and_then(|i| i.get("properties"));
+            let old_items = old_meta.property_schema.get("items");
+            let new_items = new_meta.property_schema.get("items");
 
-            if old_item_props.is_some() && old_item_props != new_item_props {
+            let old_item_props = old_items.and_then(|i| i.get("properties"));
+            let new_item_props = new_items.and_then(|i| i.get("properties"));
+            // Array of maps: the item's value type lives under `additionalProperties`.
+            let old_item_additional = old_items.and_then(|i| i.get("additionalProperties"));
+            let new_item_additional = new_items.and_then(|i| i.get("additionalProperties"));
+
+            let props_changed = old_item_props.is_some() && old_item_props != new_item_props;
+            let additional_changed =
+                old_item_additional.is_some() && old_item_additional != new_item_additional;
+
+            if props_changed || additional_changed {
                 modified_options.push(SchemaChangeAction::ShapeChanged {
                     context: format!("{}.{}", namespace, key),
                     option_type: "array<object>".to_string(),
@@ -601,6 +614,180 @@ mod tests {
 
         let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_map_value_type_change_fails() {
+        // A scalar map whose value type changes (string -> integer) is a breaking
+        // shape change even though the top-level option stays type "object".
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "tags".to_string(),
+            json!({
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+                "default": {},
+                "description": "String tags"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "tags".to_string(),
+                json!({
+                    "type": "object",
+                    "additionalProperties": {"type": "integer"},
+                    "default": {},
+                    "description": "String tags"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "object shape was modified");
+            }
+            _ => panic!("Expected ValidationErrors for map value type change"),
+        }
+    }
+
+    #[test]
+    fn test_object_valued_map_embedded_shape_change_fails() {
+        // A map whose values are objects ("embedded keys"): changing an embedded
+        // field's type must be rejected.
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "quotas".to_string(),
+            json!({
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer"}
+                    }
+                },
+                "default": {},
+                "description": "Per-key quotas"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "quotas".to_string(),
+                json!({
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": "string"}
+                        }
+                    },
+                    "default": {},
+                    "description": "Per-key quotas"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "object shape was modified");
+            }
+            _ => panic!("Expected ValidationErrors for embedded object shape change"),
+        }
+    }
+
+    #[test]
+    fn test_object_valued_map_identical_shape_passes() {
+        // An unchanged object-valued map must not be flagged as a shape change.
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut options = serde_json::Map::new();
+        options.insert(
+            "quotas".to_string(),
+            json!({
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer"},
+                        "window": {"type": "integer"}
+                    }
+                },
+                "default": {},
+                "description": "Per-key quotas"
+            }),
+        );
+        let schema = build_schema(options);
+
+        create_schema(&old_dir, "test", &schema);
+        create_schema(&new_dir, "test", &schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_array_of_maps_embedded_shape_change_fails() {
+        // Array whose items are maps: changing the item's value type is breaking.
+        let (old_dir, new_dir) = setup_dirs();
+
+        let mut old_options = serde_json::Map::new();
+        old_options.insert(
+            "rows".to_string(),
+            json!({
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": {"type": "integer"}
+                },
+                "default": [],
+                "description": "Rows of integer maps"
+            }),
+        );
+        let old_schema = build_schema(old_options);
+
+        let new_schema = modify_schema(&old_schema, |options| {
+            options.insert(
+                "rows".to_string(),
+                json!({
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"}
+                    },
+                    "default": [],
+                    "description": "Rows of integer maps"
+                }),
+            );
+        });
+
+        create_schema(&old_dir, "test", &old_schema);
+        create_schema(&new_dir, "test", &new_schema);
+
+        let result = detect_changes(old_dir.path(), new_dir.path(), "test", false, true);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ValidationErrors(errors)) => {
+                assert_error_contains(&errors, "array item object shape was modified");
+            }
+            _ => panic!("Expected ValidationErrors for array-of-maps shape change"),
+        }
     }
 
     #[test]
