@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import make_options_dir, run_isolated
+from conftest import make_options_dir
+from conftest import run_isolated
 
 
 def test_propagation_callback_fires_on_generated_at_change(tmp_path: Path) -> None:

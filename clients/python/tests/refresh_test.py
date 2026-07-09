@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import make_options_dir, run_isolated
+from conftest import make_options_dir
+from conftest import run_isolated
 
 
 def test_manual_refresh_with_disabled_threshold(tmp_path: Path) -> None:
