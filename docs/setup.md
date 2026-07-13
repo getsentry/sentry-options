@@ -123,10 +123,12 @@ Call `init()` once, as early in startup as possible (e.g. right where you initia
 ```python
 from sentry_options import init
 
-init()  # optional: init(on_propagation=Callback)
+init()  # optional: init(on_propagation=Callback, refresh_threshold=5.0)
 ```
 
-`on_propagation` is a callback fired whenever values reload, useful for collecting metrics.
+`on_propagation` is a callback fired whenever values reload, useful for collecting metrics. `refresh_threshold` sets the staleness window for refresh-on-read (default `5.0` seconds).
+
+**Important:** Passing `None` into `refresh_threshold` will completely disable automatic refreshes and must be triggered manually via `sentry_options.refresh`.
 
 #### Rust
 
@@ -138,7 +140,7 @@ use sentry_options::init;
 init()?; // shorthand for `Options::builder().init()`
 ```
 
-To override the directory, embed schemas, or register a propagation callback, use `Options::builder()` and chain any subset of the `with_*` methods before `.init()`:
+To override the directory, embed schemas, change the refresh threshold, or register a propagation callback, use `Options::builder()` and chain any subset of the `with_*` methods before `.init()`:
 
 ```rust
 use sentry_options::Options;
@@ -146,8 +148,11 @@ use sentry_options::Options;
 Options::builder()
     .with_schemas(&[("seer", include_str!("../sentry-options/schemas/seer/schema.json"))])
     .with_callback(on_propagation)
+    .with_refresh_threshold(Some(Duration::from_secs(2)))  // or `None` to disable refresh-on-read
     .init()?;
 ```
+
+**Important:** Passing `None` into `refresh_threshold` will completely disable automatic refreshes and must be triggered manually via `sentry_options.refresh`.
 
 `.init()` returns `OptionsError::AlreadyInitialized` if options are already initialized; ignore it with `.ok()` if that's expected. The standalone `init_with_schemas()` and `init_with_propagation_callback()` functions are **deprecated** in favor of the builder.
 

@@ -6,7 +6,10 @@ _Primitive = Union[str, int, float, bool]
 _Object = dict[str, _Primitive]
 OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 
-def init(on_propagation: Callable[[str, float], None] | None = None) -> None: ...
+def init(
+    on_propagation: Callable[[str, float], None] | None = None,
+    refresh_threshold: float | None = 5.0,
+) -> None: ...
 """
 Initialize the options extension with schema and
 values defined in environment variables or production paths.
@@ -16,6 +19,22 @@ Parameters
 on_propagation : callable, optional
     Callback invoked when values are refreshed with a new ``generated_at``
     timestamp. Receives ``(namespace: str, delay_secs: float)``.
+refresh_threshold : float | None
+    Staleness threshold in seconds for refresh-on-read (default: 5.0).
+    Pass ``None`` to disable refresh-on-read entirely; values then only
+    change via ``refresh()``.
+"""
+
+def refresh() -> bool: ...
+"""
+Refresh values from disk, ignoring the staleness threshold.
+
+Returns whether a new snapshot was published, i.e. the files changed on disk
+and reloaded successfully. On error the previous snapshot is retained and
+served. Calling this more often than the threshold guarantees reads never
+refresh inline.
+
+Raises NotInitializedError if ``init()`` has not been called.
 """
 
 def options(namespace: str) -> NamespaceOptions: ...

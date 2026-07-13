@@ -179,8 +179,9 @@ Options must be initialized once at startup, guarded by a global `OnceLock`. Rus
 | `.with_directory(path)` | Load schemas and values from a specific base directory |
 | `.with_schemas(&[(ns, json)])` | Use schemas embedded in the binary via `include_str!`. values still load from disk |
 | `.with_callback(cb)` | Register a reload callback |
+| `.with_refresh_threshold(t)` | Override the refresh-on-read staleness threshold (default 5 s); `None` disables refresh-on-read |
 
-`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None)`.
+`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None, refresh_threshold=5.0)`.
 
 The `init()` shorthand and Python's `init()` are idempotent — calling again is a no-op. The builder's `.init()` instead returns `OptionsError::AlreadyInitialized` when options are already initialized, so re-initializing with different settings is a loud error rather than a silent no-op.
 
@@ -189,9 +190,18 @@ The `init()` shorthand and Python's `init()` are idempotent — calling again is
 There is no background thread. Values are refreshed lazily, on the reading thread:
 
 - The current snapshot lives in an `ArcSwap`, so reads are lock-free.
-- On a read, if the snapshot is older than a **5-second threshold** (plus a small per-call jitter derived from the stack address, so threads don't all refresh on the same boundary), the reading thread re-stats and re-reads the files and publishes the new snapshot. Concurrent refreshers are harmless — last writer wins. On an I/O error the timestamp is still advanced to avoid hammering the disk.
+- On a read, if the snapshot is older than a **staleness threshold** — 5 seconds by default, configurable via `with_refresh_threshold` in Rust and `refresh_threshold=` in Python — plus a small per-call jitter derived from the stack address (so threads don't all refresh on the same boundary), the reading thread re-stats and re-reads the files and publishes the new snapshot. Concurrent refreshers are harmless — last writer wins. On an I/O error the timestamp is still advanced to avoid hammering the disk.
 
 End to end, a value change propagates as: ConfigMap update → ~1–2 min kubelet sync to the mounted file → ≤5 s until the next read picks it up. No pod restart is required.
+
+### Manual refresh
+
+`Options::refresh()` in Rust (`sentry_options.refresh()` in Python) reloads values immediately, ignoring the staleness threshold, and returns whether anything changed on disk. Files with an unchanged mtime are not re-read. On error the previous snapshot is retained.
+
+Every refresh — lazy or manual — resets the staleness timer. Two consequences:
+
+- **Preempting hot-path IO**: driving `refresh()` from your own timer more often than the threshold guarantees that reads never stat or parse files inline.
+- **Manual-only mode**: passing `None` as the refresh threshold disables refresh-on-read entirely; values then only change when `refresh()` is called. Combined with the reload callback, this supports eagerly re-deserializing options into a typed struct off the hot path whenever `refresh()` reports a change.
 
 ### Propagation metric
 
