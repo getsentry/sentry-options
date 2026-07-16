@@ -115,6 +115,13 @@ struct WriteArgs {
         help = "target to generate ConfigMap for (required for configmap format)"
     )]
     target: Option<String>,
+
+    #[arg(
+        long,
+        help = "override the ConfigMap name (defaults to sentry-options-{namespace}); needed when \
+                multiple targets share a Kubernetes namespace and must not collide on one ConfigMap"
+    )]
+    configmap_name: Option<String>,
 }
 
 /// Available subcommands
@@ -269,6 +276,7 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
                 args.commit_sha.as_deref(),
                 args.commit_timestamp.as_deref(),
                 &generated_at,
+                args.configmap_name.as_deref(),
             )?;
 
             let out_path = args.out.as_ref().map(Path::new);
@@ -277,10 +285,7 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
             if !quiet {
                 match out_path {
                     Some(path) => eprintln!("Successfully wrote ConfigMap to {}", path.display()),
-                    None => eprintln!(
-                        "Successfully generated ConfigMap: sentry-options-{}",
-                        namespace
-                    ),
+                    None => eprintln!("Successfully generated ConfigMap: {}", configmap.name()),
                 }
             }
         }

@@ -34,6 +34,12 @@ struct ConfigMapMetadata {
     annotations: BTreeMap<String, String>,
 }
 
+impl ConfigMap {
+    pub fn name(&self) -> &str {
+        &self.metadata.name
+    }
+}
+
 struct MergedOptions {
     namespace: String,
     target: String,
@@ -117,11 +123,14 @@ pub fn generate_json(maps: NamespaceMap, generated_at: &str) -> Result<Vec<(Stri
 }
 
 /// Generate a Kubernetes ConfigMap for a specific namespace/target.
-/// Config map is of the form `sentry-options-{namespace}`.
+/// Config map is of the form `sentry-options-{namespace}` by default.
 /// Target information is redundant to the cluster and is *not* included in the file name.
-/// Therefore, configmaps for the **same namespace** and **different targets** will have the **same** file name.
+/// Therefore, configmaps for the **same namespace** and **different targets** will have the **same** file name,
+/// unless `configmap_name` overrides it -- needed when multiple targets share a cluster (and so the
+/// same Kubernetes namespace) but must not collide on the same ConfigMap object.
 ///
 /// # Arguments
+/// * `configmap_name` - overrides the default `sentry-options-{namespace}` name when set
 /// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
 pub fn generate_configmap(
     maps: &NamespaceMap,
@@ -130,8 +139,11 @@ pub fn generate_configmap(
     commit_sha: Option<&str>,
     commit_timestamp: Option<&str>,
     generated_at: &str,
+    configmap_name: Option<&str>,
 ) -> Result<ConfigMap> {
-    let name = format!("sentry-options-{}", namespace);
+    let name = configmap_name
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("sentry-options-{}", namespace));
 
     let options = merge_options_for_target(maps, namespace, target)?;
     let values_json = serde_json::to_string(&serde_json::json!({
@@ -244,6 +256,7 @@ mod tests {
             Some("abc123"),
             Some("1705180800"),
             "2026-01-14T00:00:00Z",
+            None,
         )
         .unwrap();
 
@@ -278,6 +291,28 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_configmap_name_override() {
+        let maps = make_namespace_map(vec![(
+            "myns",
+            "default",
+            vec![("string_val", serde_json::json!("hello"))],
+        )]);
+
+        let cm = generate_configmap(
+            &maps,
+            "myns",
+            "default",
+            None,
+            None,
+            "2026-01-14T00:00:00Z",
+            Some("sentry-control-options-myns"),
+        )
+        .unwrap();
+
+        assert_eq!(cm.metadata.name, "sentry-control-options-myns");
+    }
+
+    #[test]
     fn test_generate_configmap_nonexistent_namespace() {
         let maps = make_namespace_map(vec![(
             "myns",
@@ -292,6 +327,7 @@ mod tests {
             None,
             None,
             "2026-01-14T00:00:00Z",
+            None,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
@@ -312,6 +348,7 @@ mod tests {
             None,
             None,
             "2026-01-14T00:00:00Z",
+            None,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
