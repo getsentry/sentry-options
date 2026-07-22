@@ -115,6 +115,12 @@ struct WriteArgs {
         help = "target to generate ConfigMap for (required for configmap format)"
     )]
     target: Option<String>,
+
+    #[arg(
+        long,
+        help = "optional suffix appended to the ConfigMap name (e.g. `control` yields `sentry-options-<namespace>-control`). Used to disambiguate ConfigMaps that share a namespace + cluster but differ in target (e.g. control-silo co-tenanted with us)."
+    )]
+    configmap_suffix: Option<String>,
 }
 
 /// Available subcommands
@@ -266,6 +272,7 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
                 &grouped,
                 &namespace,
                 &target,
+                args.configmap_suffix.as_deref(),
                 args.commit_sha.as_deref(),
                 args.commit_timestamp.as_deref(),
                 &generated_at,
@@ -277,10 +284,7 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
             if !quiet {
                 match out_path {
                     Some(path) => eprintln!("Successfully wrote ConfigMap to {}", path.display()),
-                    None => eprintln!(
-                        "Successfully generated ConfigMap: sentry-options-{}",
-                        namespace
-                    ),
+                    None => eprintln!("Successfully generated ConfigMap: {}", configmap.name()),
                 }
             }
         }
