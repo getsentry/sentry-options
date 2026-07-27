@@ -113,17 +113,31 @@ pub enum ValidationError {
     },
 }
 
-/// Validate a name component is valid for K8s (lowercase alphanumeric, '-', '.')
+/// Maximum length of a K8s DNS-1123 label (RFC 1123).
+pub const DNS1123_LABEL_MAX_LEN: usize = 63;
+
+/// Validate a name component is a valid K8s DNS-1123 label: lowercase
+/// alphanumeric and '-', starts and ends alphanumeric, at most 63 chars.
+///
+/// '.' is allowed in the configmap name, but not in `volume.name`
+/// so we reject it.
 pub fn validate_k8s_name_component(name: &str, label: &str) -> ValidationResult<()> {
+    if name.len() > DNS1123_LABEL_MAX_LEN {
+        return Err(ValidationError::InvalidName {
+            label: label.to_string(),
+            name: name.to_string(),
+            reason: format!("must be at most {} characters", DNS1123_LABEL_MAX_LEN),
+        });
+    }
     if let Some(c) = name
         .chars()
-        .find(|&c| !matches!(c, 'a'..='z' | '0'..='9' | '-' | '.'))
+        .find(|&c| !matches!(c, 'a'..='z' | '0'..='9' | '-'))
     {
         return Err(ValidationError::InvalidName {
             label: label.to_string(),
             name: name.to_string(),
             reason: format!(
-                "character '{}' not allowed. Use lowercase alphanumeric, '-', or '.'",
+                "character '{}' not allowed. Use lowercase alphanumeric or '-'",
                 c
             ),
         });
@@ -951,8 +965,8 @@ mod tests {
     fn test_validate_k8s_name_component_valid() {
         assert!(validate_k8s_name_component("relay", "namespace").is_ok());
         assert!(validate_k8s_name_component("my-service", "namespace").is_ok());
-        assert!(validate_k8s_name_component("my.service", "namespace").is_ok());
-        assert!(validate_k8s_name_component("a1-b2.c3", "namespace").is_ok());
+        assert!(validate_k8s_name_component("a1-b2-c3", "namespace").is_ok());
+        assert!(validate_k8s_name_component(&"a".repeat(63), "namespace").is_ok());
     }
 
     #[test]
@@ -982,15 +996,17 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_k8s_name_component_rejects_trailing_dot() {
-        let result = validate_k8s_name_component("service.", "namespace");
+    fn test_validate_k8s_name_component_rejects_dot() {
+        let result = validate_k8s_name_component("my.service", "namespace");
         assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("start and end with alphanumeric")
-        );
+        assert!(result.unwrap_err().to_string().contains("'.' not allowed"));
+    }
+
+    #[test]
+    fn test_validate_k8s_name_component_rejects_too_long() {
+        let result = validate_k8s_name_component(&"a".repeat(64), "namespace");
+        assert!(matches!(result, Err(ValidationError::InvalidName { .. })));
+        assert!(result.unwrap_err().to_string().contains("at most 63"));
     }
 
     #[test]

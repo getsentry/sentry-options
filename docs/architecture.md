@@ -155,7 +155,7 @@ Every namespace has a mandatory `default` target (the base) plus one directory p
 
 `sentry-options-cli write` compiles one namespace/target into output in one of two formats:
 
-- `--output-format configmap` → a `ConfigMap` named `sentry-options-{namespace}` (the target is *not* in the name; each region's cluster gets its own copy). It carries a `generated_at` value plus optional `commit_sha` / `commit_timestamp` annotations.
+- `--output-format configmap` → a `ConfigMap` named `sentry-options-{namespace}` (the target is normally *not* in the name; each region's cluster gets its own copy). It carries a `generated_at` value plus optional `commit_sha` / `commit_timestamp` annotations. `--configmap-suffix {s}` appends `-{s}` for the rare case where two targets share a cluster (control-silo co-tenanted with us); the full name must be a valid DNS-1123 label, since the injector reuses it as a volume name.
 - `--output-format json` → a file `sentry-options-{namespace}-{target}.json` shaped `{"options": {...}, "generated_at": "..."}`.
 
 Generated ConfigMaps are capped just under 1 MiB; the CLI errors if a namespace exceeds it. The CD pipeline runs `write` once per namespace/target and applies per region — a namespace with no directory for a region is skipped for that region.
@@ -244,9 +244,10 @@ In production the ConfigMap is mounted by `envoy-injector`, a `MutatingWebhookCo
 ```yaml
 options.sentry.io/inject: 'true'
 options.sentry.io/namespace: seer        # comma-separated for multiple namespaces
+options.sentry.io/target: control-silo   # optional; source the sentry-options-{ns}-control-silo ConfigMap
 ```
 
-When present, the webhook patches the pod to add a volume backed by the `sentry-options-{namespace}` ConfigMap and a volumeMount at `/etc/sentry-options/values/{namespace}/`. Details worth knowing:
+When present, the webhook patches the pod to add a volume backed by the `sentry-options-{namespace}` ConfigMap (or `sentry-options-{namespace}-{target}` when `options.sentry.io/target` is set) and a volumeMount at `/etc/sentry-options/values/{namespace}/`. The `target` annotation changes only the sourced ConfigMap, not the mount path. Details worth knowing:
 
 - The webhook only fires in Kubernetes namespaces labeled `sentry-envoy-injection: enabled` (the `default` namespace carries this label, which is where most services run).
 - `failurePolicy: Fail` — if the injector is unreachable, pod creation in those namespaces fails rather than starting un-injected.
