@@ -5,6 +5,7 @@ use std::{
 };
 
 use clap::ValueEnum;
+use sentry_options_validation::validate_k8s_name_component;
 use serde::Serialize;
 
 use crate::{AppError, FileData, NamespaceMap, OptionsMap, Result};
@@ -130,7 +131,8 @@ pub fn generate_json(maps: NamespaceMap, generated_at: &str) -> Result<Vec<(Stri
 /// in the ConfigMap name. `configmap_suffix` exists for cases where the same
 /// namespace has multiple targets deployed to the same cluster (e.g. control-silo
 /// co-tenanted with us on the internal-sentry cluster) — the caller passes a
-/// disambiguating suffix so the two ConfigMaps don't collide.
+/// disambiguating suffix so the two ConfigMaps don't collide. The assembled name
+/// is validated as a K8s DNS-1123 label and rejected up-front if invalid.
 ///
 /// # Arguments
 /// * `generated_at` - RFC3339 formatted timestamp (e.g., "2026-01-14T00:00:00Z")
@@ -147,6 +149,7 @@ pub fn generate_configmap(
         Some(suffix) => format!("sentry-options-{}-{}", namespace, suffix),
         None => format!("sentry-options-{}", namespace),
     };
+    validate_k8s_name_component(&name, "ConfigMap name")?;
 
     let options = merge_options_for_target(maps, namespace, target)?;
     let values_json = serde_json::to_string(&serde_json::json!({
@@ -356,6 +359,51 @@ mod tests {
 
         assert_eq!(cm.metadata.name, "sentry-options-getsentry-control");
         assert_eq!(cm.name(), "sentry-options-getsentry-control");
+    }
+
+    #[test]
+    fn test_generate_configmap_rejects_invalid_suffix() {
+        let maps = make_namespace_map(vec![(
+            "getsentry",
+            "default",
+            vec![("string_val", serde_json::json!("hello"))],
+        )]);
+
+        // Uppercase, underscores, and trailing hyphens would produce a name K8s rejects.
+        for bad in ["Control", "control_silo", "control-", ""] {
+            let result = generate_configmap(
+                &maps,
+                "getsentry",
+                "default",
+                Some(bad),
+                None,
+                None,
+                "2026-01-14T00:00:00Z",
+            );
+            assert!(result.is_err(), "expected suffix {:?} to be rejected", bad);
+        }
+    }
+
+    #[test]
+    fn test_generate_configmap_rejects_dotted_namespace() {
+        // A dotted namespace is a valid DNS subdomain but not a valid label, and
+        // the name is reused as a pod volume name — so it must be rejected.
+        let maps = make_namespace_map(vec![(
+            "my.ns",
+            "default",
+            vec![("string_val", serde_json::json!("hello"))],
+        )]);
+
+        let result = generate_configmap(
+            &maps,
+            "my.ns",
+            "default",
+            None,
+            None,
+            None,
+            "2026-01-14T00:00:00Z",
+        );
+        assert!(result.is_err());
     }
 
     #[test]
