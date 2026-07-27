@@ -1,4 +1,15 @@
 # Changelog
+## 1.2.2
+
+### New Features ✨
+
+- (cli) Adds ability to append optional suffix to configmap by @kenzoengineer in [#158](https://github.com/getsentry/sentry-options/pull/158)
+- Add manual refresh and configurable refresh threshold by @jan-auer in [#156](https://github.com/getsentry/sentry-options/pull/156)
+
+### Internal Changes 🔧
+
+- (docs) Update docs to include always_on() and always_off() testing utilities by @kenzoengineer in [#154](https://github.com/getsentry/sentry-options/pull/154)
+
 ## 1.2.1
 
 ### New Features ✨
