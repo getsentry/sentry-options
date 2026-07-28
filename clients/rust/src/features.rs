@@ -272,12 +272,20 @@ impl Condition {
     }
 }
 
-/// Check if a scalar context value is contained in a condition array.
+/// For scalar ctx_val, check if it's contained in the condition array.
+/// For array ctx_val, check if there is any intersection with the condition array.
 /// String comparison is case-insensitive.
 fn eval_in(ctx_val: &Value, condition_val: &Value) -> bool {
     let Some(arr) = condition_val.as_array() else {
         return false;
     };
+    match ctx_val {
+        Value::Array(ctx_arr) => ctx_arr.iter().any(|v| scalar_in(v, arr)),
+        _ => scalar_in(ctx_val, arr),
+    }
+}
+
+fn scalar_in(ctx_val: &Value, arr: &[Value]) -> bool {
     match ctx_val {
         Value::String(s) => {
             let s_lower = s.to_lowercase();
@@ -821,6 +829,52 @@ mod tests {
         let mut ctx2 = FeatureContext::new();
         ctx2.insert("organization_id", json!(999));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_in_list_property_matches_on_overlap() {
+        let cond = r#"{"property": "plan_family", "operator": "in", "value": ["business"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("plan_family", json!(["enterprise business", "Business"]));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("plan_family", json!(["team"]));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("plan_family", json!([]));
+        assert!(!check(&opts, "organizations:test-feature", &ctx3));
+    }
+
+    #[test]
+    fn test_condition_not_in_list_property_requires_no_overlap() {
+        let cond = r#"{"property": "plan_family", "operator": "not_in", "value": ["business"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("plan_family", json!(["enterprise business", "business"]));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("plan_family", json!(["team"]));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_in_list_property_no_type_coercion() {
+        let cond = r#"{"property": "org_id", "operator": "in", "value": ["123"]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", json!([123]));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let int_cond = r#"{"property": "org_id", "operator": "in", "value": [123]}"#;
+        let (int_opts, _t2) = setup_feature_options(&feature_json(true, 100, int_cond));
+        assert!(check(&int_opts, "organizations:test-feature", &ctx));
     }
 
     #[test]
