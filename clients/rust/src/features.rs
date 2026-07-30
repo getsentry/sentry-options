@@ -291,18 +291,23 @@ fn scalar_in(ctx_val: &Value, arr: &[Value]) -> bool {
             arr.iter()
                 .any(|v| v.as_str().is_some_and(|cv| cv.to_lowercase() == s_lower))
         }
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                arr.iter().any(|v| v.as_i64().is_some_and(|cv| cv == i))
-            } else if let Some(f) = n.as_f64() {
-                arr.iter().any(|v| v.as_f64().is_some_and(|cv| cv == f))
-            } else {
-                false
-            }
-        }
+        Value::Number(n) => arr
+            .iter()
+            .any(|v| v.as_number().is_some_and(|cv| numbers_equal(n, cv))),
         Value::Bool(b) => arr.iter().any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
         _ => false,
     }
+}
+
+/// Compare two JSON numbers regardless of their type (int vs float)
+/// 1 == 1, 1.0 == 1, and 1.0 == 1.0
+fn numbers_equal(a: &serde_json::Number, b: &serde_json::Number) -> bool {
+    // !f64 as opposed to (i64 || u64)
+    if !a.is_f64() && !b.is_f64() {
+        return a == b;
+    }
+    // mismatched types are cast to float
+    matches!((a.as_f64(), b.as_f64()), (Some(x), Some(y)) if x == y)
 }
 
 /// Check if a context array contains a condition scalar value.
@@ -318,15 +323,9 @@ fn eval_contains(ctx_val: &Value, condition_val: &Value) -> bool {
                 .iter()
                 .any(|v| v.as_str().is_some_and(|cv| cv.to_lowercase() == s_lower))
         }
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                ctx_arr.iter().any(|v| v.as_i64().is_some_and(|cv| cv == i))
-            } else if let Some(f) = n.as_f64() {
-                ctx_arr.iter().any(|v| v.as_f64().is_some_and(|cv| cv == f))
-            } else {
-                false
-            }
-        }
+        Value::Number(n) => ctx_arr
+            .iter()
+            .any(|v| v.as_number().is_some_and(|cv| numbers_equal(n, cv))),
         Value::Bool(b) => ctx_arr
             .iter()
             .any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
@@ -340,16 +339,7 @@ fn eval_contains(ctx_val: &Value, condition_val: &Value) -> bool {
 fn eval_equals(ctx_val: &Value, condition_val: &Value) -> bool {
     match (ctx_val, condition_val) {
         (Value::String(a), Value::String(b)) => a.to_lowercase() == b.to_lowercase(),
-        (Value::Number(a), Value::Number(b)) => {
-            // Compare as i64 first, fall back to f64
-            if let (Some(ai), Some(bi)) = (a.as_i64(), b.as_i64()) {
-                ai == bi
-            } else if let (Some(af), Some(bf)) = (a.as_f64(), b.as_f64()) {
-                af == bf
-            } else {
-                false
-            }
-        }
+        (Value::Number(a), Value::Number(b)) => numbers_equal(a, b),
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Array(a), Value::Array(b)) => {
             a.len() == b.len() && a.iter().zip(b.iter()).all(|(av, bv)| eval_equals(av, bv))
@@ -827,6 +817,51 @@ mod tests {
     }
 
     #[test]
+    fn test_condition_in_matches_across_int_and_float() {
+        let cond = r#"{"property": "org_id", "operator": "in", "value": [123.0]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", json!(123));
+        assert!(check(&opts, "organizations:test-feature", &ctx));
+
+        let mut list_ctx = FeatureContext::new();
+        list_ctx.insert("org_id", json!([123]));
+        assert!(check(&opts, "organizations:test-feature", &list_ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("org_id", json!(124));
+        assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_in_large_ints_compare_exactly() {
+        // 2^53 + 1 and 2^53 collide as f64, so ints must not round-trip through it.
+        let cond = r#"{"property": "org_id", "operator": "in", "value": [9007199254740993]}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", json!(9007199254740992i64));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("org_id", json!(9007199254740993i64));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
+
+        // Above i64::MAX, where as_i64() gives up but the values are still exact.
+        let big = r#"{"property": "org_id", "operator": "in", "value": [18446744073709551615]}"#;
+        let (big_opts, _t2) = setup_feature_options(&feature_json(true, 100, big));
+
+        let mut ctx3 = FeatureContext::new();
+        ctx3.insert("org_id", json!(18446744073709551614u64));
+        assert!(!check(&big_opts, "organizations:test-feature", &ctx3));
+
+        let mut ctx4 = FeatureContext::new();
+        ctx4.insert("org_id", json!(18446744073709551615u64));
+        assert!(check(&big_opts, "organizations:test-feature", &ctx4));
+    }
+
+    #[test]
     fn test_condition_contains() {
         let cond = r#"{"property": "tags", "operator": "contains", "value": "beta"}"#;
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
@@ -841,6 +876,30 @@ mod tests {
     }
 
     #[test]
+    fn test_condition_contains_matches_across_int_and_float() {
+        let int_cond = r#"{"property": "ids", "operator": "contains", "value": 123}"#;
+        let (int_opts, _t) = setup_feature_options(&feature_json(true, 100, int_cond));
+
+        let float_cond = r#"{"property": "ids", "operator": "contains", "value": 123.0}"#;
+        let (float_opts, _t2) = setup_feature_options(&feature_json(true, 100, float_cond));
+
+        let mut int_ctx = FeatureContext::new();
+        int_ctx.insert("ids", json!([123]));
+        let mut float_ctx = FeatureContext::new();
+        float_ctx.insert("ids", json!([123.0]));
+
+        // Matches regardless of which side holds the float.
+        assert!(check(&int_opts, "organizations:test-feature", &int_ctx));
+        assert!(check(&int_opts, "organizations:test-feature", &float_ctx));
+        assert!(check(&float_opts, "organizations:test-feature", &int_ctx));
+        assert!(check(&float_opts, "organizations:test-feature", &float_ctx));
+
+        let mut other = FeatureContext::new();
+        other.insert("ids", json!([124]));
+        assert!(!check(&int_opts, "organizations:test-feature", &other));
+    }
+
+    #[test]
     fn test_condition_equals() {
         let cond = r#"{"property": "plan", "operator": "equals", "value": "enterprise"}"#;
         let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
@@ -852,6 +911,21 @@ mod tests {
         let mut ctx2 = FeatureContext::new();
         ctx2.insert("plan", json!("free"));
         assert!(!check(&opts, "organizations:test-feature", &ctx2));
+    }
+
+    #[test]
+    fn test_condition_equals_large_ints_compare_exactly() {
+        // Above i64::MAX these used to collapse into f64 and compare equal.
+        let cond = r#"{"property": "org_id", "operator": "equals", "value": 18446744073709551615}"#;
+        let (opts, _t) = setup_feature_options(&feature_json(true, 100, cond));
+
+        let mut ctx = FeatureContext::new();
+        ctx.insert("org_id", json!(18446744073709551614u64));
+        assert!(!check(&opts, "organizations:test-feature", &ctx));
+
+        let mut ctx2 = FeatureContext::new();
+        ctx2.insert("org_id", json!(18446744073709551615u64));
+        assert!(check(&opts, "organizations:test-feature", &ctx2));
     }
 
     #[test]
