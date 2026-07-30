@@ -611,10 +611,11 @@ impl SchemaRegistry {
         }
 
         for key in &unknown_keys {
-            eprintln!(
-                "sentry-options: Ignoring unknown option '{}' in namespace '{}'. \
-                 This is expected during deployments when values are updated before schemas.",
-                key, namespace
+            tracing::warn!(
+                key = %key,
+                namespace = %namespace,
+                "Ignoring unknown option. This is expected during deployments when \
+                 values are updated before schemas.",
             );
         }
 
@@ -693,7 +694,7 @@ impl ValuesStoreBuilder {
     pub fn build(self) -> ValidationResult<ValuesStore> {
         let values_dir = &self.values_dir;
         if !should_suppress_missing_dir_errors() && fs::metadata(values_dir).is_err() {
-            eprintln!("Values directory does not exist: {}", values_dir.display());
+            tracing::warn!(path = %values_dir.display(), "Values directory does not exist");
         }
 
         let baseline = Instant::now();
@@ -826,10 +827,10 @@ impl ValuesStore {
     }
 
     fn log_refresh_error(&self, error: &ValidationError) {
-        eprintln!(
-            "Failed to reload values from {}: {}",
-            self.values_dir.display(),
-            error
+        tracing::error!(
+            path = %self.values_dir.display(),
+            error = %error,
+            "Failed to reload values",
         );
     }
 
@@ -845,6 +846,7 @@ impl ValuesStore {
             return Ok(false);
         }
 
+        let reload_start = Instant::now();
         let result = self.registry.load_values_json(&self.values_dir);
 
         // Publish the new snapshot before bumping the timestamp. The CAS below
@@ -856,6 +858,16 @@ impl ValuesStore {
         // architectures.
         let new_generated_at = match result {
             Ok((new_values, generated_at)) => {
+                let elapsed_ms = reload_start.elapsed().as_millis();
+                for namespace in new_values.keys() {
+                    tracing::info!(
+                        path = %self.values_dir.display(),
+                        namespace = %namespace,
+                        elapsed_ms,
+                        "Reloaded values",
+                    );
+                }
+
                 self.values.store(Arc::new(new_values));
                 self.last_mtimes.store(Arc::new(current_mtimes));
                 Ok(generated_at)
@@ -894,10 +906,18 @@ impl ValuesStore {
                                     callback(ns, delay)
                                 }))
                             {
-                                eprintln!("Propagation callback panicked for {ns}: {:?}", e);
+                                tracing::error!(
+                                    namespace = %ns,
+                                    error = ?e,
+                                    "Propagation callback panicked",
+                                );
                             }
                         }
-                        None => eprintln!("Bad generated_at for {ns}: {ts}"),
+                        None => tracing::warn!(
+                            namespace = %ns,
+                            generated_at = %ts,
+                            "Bad generated_at timestamp",
+                        ),
                     }
                 }
             }
