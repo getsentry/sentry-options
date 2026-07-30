@@ -228,7 +228,7 @@ impl Segment {
         if self.rollout >= 100 {
             return true;
         }
-        context.id() % 100 < self.rollout
+        context.id() % 100 <= self.rollout
     }
 }
 
@@ -255,32 +255,36 @@ impl Condition {
     }
 
     fn matches(&self, context: &FeatureContext) -> bool {
-        let Some(ctx_val) = context.get(&self.property) else {
-            return false;
-        };
-        match &self.operator {
+        let ctx_val = context.get(&self.property);
+        let result = match &self.operator {
             OperatorKind::In => eval_in(ctx_val, &self.value),
-            OperatorKind::NotIn => !eval_in(ctx_val, &self.value),
+            OperatorKind::NotIn => eval_in(ctx_val, &self.value).map(|m| !m),
             OperatorKind::Contains => eval_contains(ctx_val, &self.value),
-            OperatorKind::NotContains => !eval_contains(ctx_val, &self.value),
+            OperatorKind::NotContains => eval_contains(ctx_val, &self.value).map(|m| !m),
             OperatorKind::Equals => eval_equals(ctx_val, &self.value),
-            OperatorKind::NotEquals => !eval_equals(ctx_val, &self.value),
+            OperatorKind::NotEquals => eval_equals(ctx_val, &self.value).map(|m| !m),
             OperatorKind::Matches => eval_matches(ctx_val, &self.value),
-            OperatorKind::NotMatches => !eval_matches(ctx_val, &self.value),
-        }
+            OperatorKind::NotMatches => eval_matches(ctx_val, &self.value).map(|m| !m),
+        };
+        // A comparison that cannot be made is a non-match even when negated:
+        // flagpole raises for these, and the exception is caught above the
+        // evaluator rather than inverted.
+        result.unwrap_or(false)
     }
 }
 
 /// For scalar ctx_val, check if it's contained in the condition array.
 /// For array ctx_val, check if there is any intersection with the condition array.
 /// String comparison is case-insensitive.
-fn eval_in(ctx_val: &Value, condition_val: &Value) -> bool {
-    let Some(arr) = condition_val.as_array() else {
-        return false;
-    };
+///
+/// `None` means the comparison could not be made.
+fn eval_in(ctx_val: Option<&Value>, condition_val: &Value) -> Option<bool> {
+    let arr = condition_val.as_array()?;
     match ctx_val {
-        Value::Array(ctx_arr) => ctx_arr.iter().any(|v| scalar_in(v, arr)),
-        _ => scalar_in(ctx_val, arr),
+        None => Some(false),
+        Some(Value::Object(_)) => None,
+        Some(Value::Array(ctx_arr)) => Some(ctx_arr.iter().any(|v| scalar_in(v, arr))),
+        Some(scalar) => Some(scalar_in(scalar, arr)),
     }
 }
 
@@ -312,37 +316,52 @@ fn numbers_equal(a: &serde_json::Number, b: &serde_json::Number) -> bool {
 
 /// Check if a context array contains a condition scalar value.
 /// String comparison is case-insensitive.
-fn eval_contains(ctx_val: &Value, condition_val: &Value) -> bool {
-    let Some(ctx_arr) = ctx_val.as_array() else {
-        return false;
-    };
+///
+/// A property that is missing or is not a list cannot be searched at all, so
+/// `not_contains` does not grant the feature for it either.
+fn eval_contains(ctx_val: Option<&Value>, condition_val: &Value) -> Option<bool> {
+    let ctx_arr = ctx_val?.as_array()?;
     match condition_val {
         Value::String(s) => {
             let s_lower = s.to_lowercase();
+            Some(
+                ctx_arr
+                    .iter()
+                    .any(|v| v.as_str().is_some_and(|cv| cv.to_lowercase() == s_lower)),
+            )
+        }
+        Value::Number(n) => Some(
             ctx_arr
                 .iter()
-                .any(|v| v.as_str().is_some_and(|cv| cv.to_lowercase() == s_lower))
-        }
-        Value::Number(n) => ctx_arr
-            .iter()
-            .any(|v| v.as_number().is_some_and(|cv| numbers_equal(n, cv))),
-        Value::Bool(b) => ctx_arr
-            .iter()
-            .any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
-        _ => false,
+                .any(|v| v.as_number().is_some_and(|cv| numbers_equal(n, cv))),
+        ),
+        Value::Bool(b) => Some(
+            ctx_arr
+                .iter()
+                .any(|v| v.as_bool().is_some_and(|cv| cv == *b)),
+        ),
+        _ => None,
     }
 }
 
 /// Check if a context value equals a condition value.
+/// A missing property equals nothing, and is not treated as unusable.
+fn eval_equals(ctx_val: Option<&Value>, condition_val: &Value) -> Option<bool> {
+    Some(match ctx_val {
+        Some(ctx_val) => values_equal(ctx_val, condition_val),
+        None => false,
+    })
+}
+
 /// Scalars are compared directly (strings case-insensitively).
 /// Arrays are compared element-wise with matching length.
-fn eval_equals(ctx_val: &Value, condition_val: &Value) -> bool {
+fn values_equal(ctx_val: &Value, condition_val: &Value) -> bool {
     match (ctx_val, condition_val) {
         (Value::String(a), Value::String(b)) => a.to_lowercase() == b.to_lowercase(),
         (Value::Number(a), Value::Number(b)) => numbers_equal(a, b),
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Array(a), Value::Array(b)) => {
-            a.len() == b.len() && a.iter().zip(b.iter()).all(|(av, bv)| eval_equals(av, bv))
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(av, bv)| values_equal(av, bv))
         }
         _ => false,
     }
@@ -396,17 +415,22 @@ fn glob_star_match(pattern: &str, value: &str) -> bool {
 /// Check if a string context value matches any pattern in the condition array.
 /// Patterns use star-only glob semantics; comparison is case-insensitive.
 /// Returns false for non-string context values.
-fn eval_matches(ctx_val: &Value, condition_val: &Value) -> bool {
-    let Some(s) = ctx_val.as_str() else {
-        return false;
-    };
-    let Some(arr) = condition_val.as_array() else {
-        return false;
-    };
-    arr.iter().any(|v| {
-        v.as_str()
-            .is_some_and(|pattern| glob_star_match(pattern, s))
-    })
+fn eval_matches(ctx_val: Option<&Value>, condition_val: &Value) -> Option<bool> {
+    let arr = condition_val.as_array()?;
+    match ctx_val {
+        // A container cannot be glob matched against.
+        Some(Value::Array(_) | Value::Object(_)) => None,
+        None => Some(false),
+        Some(scalar) => {
+            let Some(s) = scalar.as_str() else {
+                return Some(false);
+            };
+            Some(arr.iter().any(|v| {
+                v.as_str()
+                    .is_some_and(|pattern| glob_star_match(pattern, s))
+            }))
+        }
+    }
 }
 
 /// A handle for checking feature flags within a specific namespace.
@@ -1480,5 +1504,77 @@ mod tests {
         let mut ctx = FeatureContext::new();
         ctx.insert("org_id", json!(123));
         assert!(check(&opts, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_id_string_is_stable() {
+        for (value, expected) in [
+            (json!("sentry"), "sentry"),
+            (json!(123), "123"),
+            (json!(-7), "-7"),
+            (json!(true), "True"),
+            (json!(false), "False"),
+            (json!(null), "None"),
+            (json!(1.0), "1.0"),
+            (json!(1.5), "1.5"),
+            (json!(["a", "b"]), "[a, b]"),
+            (json!([1, 2]), "[1, 2]"),
+            (json!([]), "[]"),
+        ] {
+            assert_eq!(value_to_id_string(&value), expected, "for {value}");
+        }
+    }
+
+    fn condition_matches(operator: &str, value: &str, ctx: &FeatureContext) -> bool {
+        let json = format!(r#"{{"property": "prop", "operator": "{operator}", "value": {value}}}"#);
+        Condition::from_json(&serde_json::from_str(&json).unwrap())
+            .expect("condition should parse")
+            .matches(ctx)
+    }
+
+    #[test]
+    fn test_missing_property_matches_only_negated_conditions() {
+        let ctx = FeatureContext::new();
+        for (operator, value, expected) in [
+            ("in", "[1]", false),
+            ("not_in", "[1]", true),
+            ("equals", "1", false),
+            ("not_equals", "1", true),
+            ("matches", r#"["a"]"#, false),
+            ("not_matches", r#"["a"]"#, true),
+            // `contains` has no list to search, so neither form matches.
+            ("contains", r#""a""#, false),
+            ("not_contains", r#""a""#, false),
+        ] {
+            assert_eq!(
+                condition_matches(operator, value, &ctx),
+                expected,
+                "{operator}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_unusable_property_type_matches_neither_form() {
+        let mut map = FeatureContext::new();
+        map.insert("prop", json!({"k": "v"}));
+        let mut scalar = FeatureContext::new();
+        scalar.insert("prop", json!("a"));
+        let mut list = FeatureContext::new();
+        list.insert("prop", json!(["b"]));
+
+        for (operator, value, ctx) in [
+            ("in", "[1]", &map),
+            ("not_in", "[1]", &map),
+            ("contains", r#""a""#, &scalar),
+            ("not_contains", r#""a""#, &scalar),
+            ("matches", r#"["b"]"#, &list),
+            ("not_matches", r#"["b"]"#, &list),
+        ] {
+            assert!(!condition_matches(operator, value, ctx), "{operator}");
+        }
+
+        // A usable list that lacks the value still matches when negated.
+        assert!(condition_matches("not_contains", r#""a""#, &list));
     }
 }
