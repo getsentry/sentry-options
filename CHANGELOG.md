@@ -1,4 +1,21 @@
 # Changelog
+## 1.2.3
+
+### New Features ✨
+
+#### Flags
+
+- Make number comparison type agnostic by @kenzoengineer in [#160](https://github.com/getsentry/sentry-options/pull/160)
+- In and NotIn operators now support arrays by @kenzoengineer in [#159](https://github.com/getsentry/sentry-options/pull/159)
+
+#### Other
+
+- (tracing) Replace println/eprintln with tracing by @jan-auer in [#116](https://github.com/getsentry/sentry-options/pull/116)
+
+### Bug Fixes 🐛
+
+- (flags) Miscellaneous feature flag parity fixes by @kenzoengineer in [#162](https://github.com/getsentry/sentry-options/pull/162)
+
 ## 1.2.2
 
 ### New Features ✨
