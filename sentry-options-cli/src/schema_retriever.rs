@@ -22,7 +22,7 @@ pub fn fetch_all_schemas(config: &RepoSchemaConfigs, out_dir: &Path, quiet: bool
     repo_names.sort();
 
     if !quiet {
-        println!("Fetching schemas...");
+        tracing::info!("Fetching schemas");
     }
 
     // Fetch all repos in parallel, collecting results
@@ -58,7 +58,7 @@ pub fn fetch_all_schemas(config: &RepoSchemaConfigs, out_dir: &Path, quiet: bool
         match result {
             Ok(()) => {
                 if !quiet {
-                    println!("  Fetched {}", repo_name);
+                    tracing::info!(repo = repo_name, "Fetched schema");
                 }
             }
             Err(e) => errors.push(e),
@@ -136,7 +136,7 @@ fn try_fetch_repo_schemas(
         let sha = String::from_utf8_lossy(&rev_output.stdout)
             .trim()
             .to_string();
-        eprintln!("  {} cloned at sha: {}", repo_name, sha);
+        tracing::info!(repo = repo_name, %sha, "Cloned repo");
     }
 
     copy_schemas(&repo_path.join(&source.path), out_dir)?;

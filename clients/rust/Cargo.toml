@@ -13,6 +13,7 @@ thiserror.workspace = true
 sha1.workspace = true
 arc-swap.workspace = true
 num = "0.4.3"
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
