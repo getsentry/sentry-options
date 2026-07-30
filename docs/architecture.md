@@ -131,6 +131,8 @@ segments:                  # required
 
 Condition operators: `in`, `not_in`, `contains`, `not_contains`, `equals`, `not_equals`, `matches`, `not_matches`.
 
+`in` and `not_in` also accept a list-valued context property, matching when the property and the condition value share any entry. This lets a context report several names for one entity — a plan family of `["business", "enterprise business"]` matches a condition listing only `business`.
+
 ### Validation internals
 
 When a schema is loaded, `sentry-options-validation` compiles a JSON-Schema validator from it and injects two constraints (`inject_object_constraints`):
