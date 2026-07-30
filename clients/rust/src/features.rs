@@ -1532,4 +1532,23 @@ mod tests {
         ctx.insert("org_id", json!(123));
         assert!(check(&opts, "organizations:test-feature", &ctx));
     }
+
+    #[test]
+    fn test_id_string_is_stable() {
+        for (value, expected) in [
+            (json!("sentry"), "sentry"),
+            (json!(123), "123"),
+            (json!(-7), "-7"),
+            (json!(true), "True"),
+            (json!(false), "False"),
+            (json!(null), "None"),
+            (json!(1.0), "1.0"),
+            (json!(1.5), "1.5"),
+            (json!(["a", "b"]), "[a, b]"),
+            (json!([1, 2]), "[1, 2]"),
+            (json!([]), "[]"),
+        ] {
+            assert_eq!(value_to_id_string(&value), expected, "for {value}");
+        }
+    }
 }
