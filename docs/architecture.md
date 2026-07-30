@@ -216,7 +216,7 @@ When a refresh observes a newer `generated_at` than the previous snapshot, the p
 A `FeatureContext` carries arbitrary key→value data plus an optional set of `identity_fields`. Evaluation (`clients/rust/src/features.rs`):
 
 - A feature's `segments` are tried in order; the **first** segment whose conditions all match (logical AND) decides the result via its rollout. If no segment matches, the feature is off. A feature with `enabled: false` is always off.
-- Rollout: `rollout: 0` → off, `>= 100` → on, otherwise the context is in the rollout iff `id % 100 < rollout`.
+- Rollout: `rollout: 0` → off, `>= 100` → on, otherwise the context is in the rollout iff `id % 100 <= rollout`. The `<=` matches flagpole, so migrating a feature does not move orgs between buckets, even though it means a partial rollout covers one bucket more than its number suggests.
 - The context `id` is a SHA-1 hash built from the identity fields: each identity field present in the data, sorted, joined as `key:value:...`. If no `identity_fields` are set, **all** data keys are used (so the id — and the rollout bucket — changes whenever any field differs).
 
 `identity_fields` therefore decide what a percentage rollout is bucketed by. Setting them to a stable entity such as `["organization_id"]` keeps a 50% rollout consistent per-org across requests and services; leaving them unset makes bucketing depend on the entire context. This mirrors flagpole's model — context fields are for *targeting*, identity fields are for stable *bucketing*.

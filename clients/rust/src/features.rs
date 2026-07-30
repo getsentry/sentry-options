@@ -87,7 +87,7 @@ impl FeatureContext {
     /// The result is cached and reset when identity fields or context data change.
     /// When no identity fields are set, all context keys are used (non-deterministic
     /// rollout across contexts with different keys).
-    /// The id value is mostly used to id % 100 < rollout.
+    /// The id value is mostly used to id % 100 <= rollout.
     pub fn id(&self) -> u64 {
         if let Some(id) = self.cached_id.get() {
             return id;
