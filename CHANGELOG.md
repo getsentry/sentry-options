@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.4
+
+### New Features ✨
+
+- (flags) Add experiment mode top level key to feature flag definition by @kenzoengineer in [#163](https://github.com/getsentry/sentry-options/pull/163)
+
 ## 1.2.3
 
 ### New Features ✨
