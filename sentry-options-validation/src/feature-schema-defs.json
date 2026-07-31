@@ -28,6 +28,11 @@
       "description": {
         "type": "string",
         "description": "Human-readable description of the feature."
+      },
+      "experiment_mode": {
+        "type": ["string", "null"],
+        "enum": ["simple", null],
+        "description": "When set, the flag is treated as an experiment with exposure tracking. Does not affect evaluation."
       }
     },
     "required": ["owner", "segments", "created_at"],

@@ -2297,6 +2297,65 @@ Error: \"version\" is a required property"
                 schema.validate_option("feature.organizations:fury-mode", &json!({"segments": []}));
             assert!(matches!(result, Err(ValidationError::ValueError { .. })));
         }
+
+        #[test]
+        fn test_validate_values_feature_with_experiment_mode() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "feature.organizations:fury-mode": {
+                        "owner": {"team": "hybrid-cloud"},
+                        "segments": [],
+                        "created_at": "2024-01-01",
+                        "experiment_mode": "simple"
+                    }
+                }),
+            );
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_validate_values_feature_with_invalid_experiment_mode_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "feature.organizations:fury-mode": {
+                        "owner": {"team": "hybrid-cloud"},
+                        "segments": [],
+                        "created_at": "2024-01-01",
+                        "experiment_mode": "not-a-real-mode"
+                    }
+                }),
+            );
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn test_validate_values_feature_without_experiment_mode_still_valid() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", FEATURE_SCHEMA);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "feature.organizations:fury-mode": {
+                        "owner": {"team": "hybrid-cloud"},
+                        "segments": [],
+                        "created_at": "2024-01-01"
+                    }
+                }),
+            );
+            assert!(result.is_ok());
+        }
     }
 
     mod store_tests {
