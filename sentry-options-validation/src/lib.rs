@@ -302,10 +302,9 @@ impl SchemaRegistry {
         Ok(registry)
     }
 
-    /// Add in-memory `(namespace, json)` schemas to this registry, overlaying
-    /// whatever is already loaded (e.g. from a directory). Applies the same
-    /// validation pipeline as `from_directory`. Errors if a namespace is already
-    /// present, so an in-memory schema can't silently shadow one loaded from disk.
+    /// Add in-memory `(namespace, json)` schemas to whatever is already loaded.
+    /// Errors on an already-present namespace, so an in-memory schema can't
+    /// silently shadow one loaded from disk.
     pub fn add_schemas(&mut self, schemas: &[(&str, &str)]) -> ValidationResult<()> {
         let namespace_validator = Self::compile_namespace_validator()?;
         let schema_file = Path::new("<embedded>");

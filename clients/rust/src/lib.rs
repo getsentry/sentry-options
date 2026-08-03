@@ -222,8 +222,7 @@ impl Options {
 /// All settings are optional and independent:
 /// - `with_directory` overrides the base directory
 /// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
-/// - `with_additional_schemas` layers in-memory schemas on top of the base chosen
-///   above, whether that base came from disk or from `with_schemas`
+/// - `with_additional_schemas` adds in-memory schemas alongside whichever base the above selects
 /// - `with_callback` registers a callback that fires on every value refresh.
 /// - `with_refresh_threshold` overrides or disables the staleness threshold
 ///   for refresh-on-read.
@@ -257,12 +256,9 @@ impl<'a> InitBuilder<'a> {
         self
     }
 
-    /// Provide schemas as in-memory `(namespace, json)` pairs WITHOUT overriding
-    /// any local schemas in `{dir}/schemas/`. Errors on a namespace already present.
-    ///
-    /// Composes with [`with_schemas`](Self::with_schemas): these are layered on
-    /// top of whatever base that selects, so setting both replaces the on-disk
-    /// schemas and then adds these alongside the replacements.
+    /// Add in-memory `(namespace, json)` schemas alongside the base regardless
+    /// if it came from `{dir}/schemas/` or [`with_schemas`](Self::with_schemas).
+    /// Errors on a namespace the base already has, rather than shadowing it.
     pub fn with_additional_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
         self.additional_schemas = Some(schemas);
         self
@@ -311,15 +307,13 @@ impl<'a> InitBuilder<'a> {
     pub fn build(self) -> Result<Options> {
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
-        // `with_schemas` picks the base registry, `with_additional_schemas` layers
-        // on top of whichever base that is.
+        // `with_schemas` picks the base, `with_additional_schemas` adds to it.
         let mut registry = match self.schemas {
             Some(s) => SchemaRegistry::from_schemas(s)?,
             None => {
                 let schemas_dir = dir.join("schemas");
-                // With additional schemas supplied, a missing schemas dir just means
-                // there is nothing on disk to layer onto. Without them it stays an
-                // error: a caller who supplied no schemas at all has none.
+                // A missing dir is only tolerable when in-memory schemas will fill
+                // the registry; otherwise the caller ends up with nothing.
                 if self.additional_schemas.is_some() && !schemas_dir.exists() {
                     SchemaRegistry::new()
                 } else {

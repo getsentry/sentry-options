@@ -199,11 +199,9 @@ impl PyFeatureChecker {
 /// refresh-on-read (default: 5.0). Pass `None` to disable refresh-on-read
 /// entirely; values then only change via `refresh()`.
 ///
-/// `schemas` optionally supplies namespace schemas in memory as a
-/// `{namespace: schema_json}` mapping, overlaid on top of those read from
-/// `{dir}/schemas/` (added alongside them; errors on a namespace already present
-/// on disk). Values are still loaded from disk via the fallback chain. Use this
-/// when a schema is generated at runtime and must coexist with on-disk schemas.
+/// `schemas` adds namespace schemas from memory as a `{namespace: schema_json}`
+/// mapping, alongside those read from `{dir}/schemas/`, useful for schemas only known at
+/// runtime. Errors on a namespace already on disk. Values still load from disk.
 #[pyfunction]
 #[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64()), schemas=None))]
 fn init(

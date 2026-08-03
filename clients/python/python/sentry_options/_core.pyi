@@ -25,11 +25,9 @@ refresh_threshold : float | None
     Pass ``None`` to disable refresh-on-read entirely; values then only
     change via ``refresh()``.
 schemas : dict[str, str] | None
-    Namespace schemas supplied in memory as a ``{namespace: schema_json}``
-    mapping, overlaid on top of those read from ``{dir}/schemas/`` (added
-    alongside them; errors on a namespace already present on disk). Values are
-    still loaded from disk via the fallback chain. Use when a schema is generated
-    at runtime and must coexist with on-disk schemas.
+    Namespace schemas from memory, added alongside those read from
+    ``{dir}/schemas/``, for schemas only known at runtime. Errors on a namespace
+    already on disk. Values still load from disk.
 """
 
 def refresh() -> bool: ...
