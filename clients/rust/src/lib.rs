@@ -222,6 +222,8 @@ impl Options {
 /// All settings are optional and independent:
 /// - `with_directory` overrides the base directory
 /// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
+/// - `with_additional_schemas` layers in-memory schemas on top of the base chosen
+///   above, whether that base came from disk or from `with_schemas`
 /// - `with_callback` registers a callback that fires on every value refresh.
 /// - `with_refresh_threshold` overrides or disables the staleness threshold
 ///   for refresh-on-read.
@@ -257,6 +259,10 @@ impl<'a> InitBuilder<'a> {
 
     /// Provide schemas as in-memory `(namespace, json)` pairs WITHOUT overriding
     /// any local schemas in `{dir}/schemas/`. Errors on a namespace already present.
+    ///
+    /// Composes with [`with_schemas`](Self::with_schemas): these are layered on
+    /// top of whatever base that selects, so setting both replaces the on-disk
+    /// schemas and then adds these alongside the replacements.
     pub fn with_additional_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
         self.additional_schemas = Some(schemas);
         self
@@ -305,24 +311,25 @@ impl<'a> InitBuilder<'a> {
     pub fn build(self) -> Result<Options> {
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
-        let registry = match (self.schemas, self.additional_schemas) {
-            // Fully in-memory: replace the on-disk schemas entirely.
-            (Some(s), _) => SchemaRegistry::from_schemas(s)?,
-            // Overlay: base off the directory (tolerating a missing schemas dir),
-            // then add the in-memory schemas alongside it.
-            (None, Some(overrides)) => {
+        // `with_schemas` picks the base registry, `with_additional_schemas` layers
+        // on top of whichever base that is.
+        let mut registry = match self.schemas {
+            Some(s) => SchemaRegistry::from_schemas(s)?,
+            None => {
                 let schemas_dir = dir.join("schemas");
-                let mut registry = if schemas_dir.exists() {
-                    SchemaRegistry::from_directory(&schemas_dir)?
-                } else {
+                // With additional schemas supplied, a missing schemas dir just means
+                // there is nothing on disk to layer onto. Without them it stays an
+                // error: a caller who supplied no schemas at all has none.
+                if self.additional_schemas.is_some() && !schemas_dir.exists() {
                     SchemaRegistry::new()
-                };
-                registry.add_schemas(overrides)?;
-                registry
+                } else {
+                    SchemaRegistry::from_directory(&schemas_dir)?
+                }
             }
-            // Default: read schemas from the directory.
-            (None, None) => SchemaRegistry::from_directory(&dir.join("schemas"))?,
         };
+        if let Some(additional) = self.additional_schemas {
+            registry.add_schemas(additional)?;
+        }
 
         let refresh_threshold = self
             .refresh_threshold
@@ -490,6 +497,31 @@ mod tests {
         assert_eq!(options.get("disk", "enabled").unwrap(), json!(true));
         // ...and the in-memory namespace was added alongside it.
         assert_eq!(options.get("mem", "enabled").unwrap(), json!(true));
+    }
+
+    #[test]
+    fn test_with_schemas_and_additional_schemas_compose() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+
+        // On disk but replaced by with_schemas, so it must NOT resolve.
+        create_schema(&schemas, "disk", BOOL_SCHEMA);
+        create_values(&values, "disk", r#"{"options": {"enabled": true}}"#);
+        create_values(&values, "base", r#"{"options": {"enabled": true}}"#);
+        create_values(&values, "extra", r#"{"options": {"enabled": true}}"#);
+
+        let options = Options::builder()
+            .with_directory(temp.path())
+            .with_schemas(&[("base", BOOL_SCHEMA)])
+            .with_additional_schemas(&[("extra", BOOL_SCHEMA)])
+            .build()
+            .unwrap();
+
+        assert_eq!(options.get("base", "enabled").unwrap(), json!(true));
+        assert_eq!(options.get("extra", "enabled").unwrap(), json!(true));
+        assert!(options.get("disk", "enabled").is_err());
     }
 
     #[test]
