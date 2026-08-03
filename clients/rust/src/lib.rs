@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-pub use sentry_options_validation::{DEFAULT_REFRESH_THRESHOLD, PropagationCallback};
+pub use sentry_options_validation::{
+    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, feature_property,
+};
 use sentry_options_validation::{
     SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
 };

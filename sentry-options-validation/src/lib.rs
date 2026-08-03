@@ -154,6 +154,13 @@ pub fn validate_k8s_name_component(name: &str, label: &str) -> ValidationResult<
     Ok(())
 }
 
+/// The value a namespace schema pairs with each `feature.<name>` key, i.e.
+/// `{"$ref": "#/definitions/Feature"}`. Splice this in when assembling a schema
+/// in memory rather than hand-rolling the ref the meta-schema requires.
+pub fn feature_property() -> Value {
+    json!({ "$ref": "#/definitions/Feature" })
+}
+
 /// Metadata for a single option in a namespace schema
 #[derive(Debug, Clone)]
 pub struct OptionMetadata {
@@ -979,6 +986,18 @@ mod tests {
         fs::write(&values_file, values_json).unwrap();
 
         (schemas_dir, values_dir)
+    }
+
+    #[test]
+    fn test_feature_property_matches_meta_schema() {
+        // Fails if the shape drifts from what the meta-schema requires.
+        let schema = json!({
+            "version": "1.0",
+            "type": "object",
+            "properties": { "feature.red-bar": feature_property() },
+        })
+        .to_string();
+        SchemaRegistry::from_schemas(&[("getsentry-features", &schema)]).unwrap();
     }
 
     #[test]

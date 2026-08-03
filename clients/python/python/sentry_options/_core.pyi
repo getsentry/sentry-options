@@ -25,6 +25,12 @@ refresh_threshold : float | None
     change via ``refresh()``.
 """
 
+def feature_property() -> dict[str, str]: ...
+"""
+Return the value a namespace schema pairs with each ``feature.<name>`` key,
+i.e. ``{"$ref": "#/definitions/Feature"}``, for assembling a schema in memory.
+"""
+
 def refresh() -> bool: ...
 """
 Refresh values from disk, ignoring the staleness threshold.
