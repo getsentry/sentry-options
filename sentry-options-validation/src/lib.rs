@@ -297,9 +297,18 @@ impl SchemaRegistry {
     /// pipeline as `from_directory` (meta-schema check, constraint injection,
     /// validator compilation) without reading from the filesystem.
     pub fn from_schemas(schemas: &[(&str, &str)]) -> ValidationResult<Self> {
+        let mut registry = Self::new();
+        registry.add_schemas(schemas)?;
+        Ok(registry)
+    }
+
+    /// Add in-memory `(namespace, json)` schemas to this registry, overlaying
+    /// whatever is already loaded (e.g. from a directory). Applies the same
+    /// validation pipeline as `from_directory`. Errors if a namespace is already
+    /// present, so an in-memory schema can't silently shadow one loaded from disk.
+    pub fn add_schemas(&mut self, schemas: &[(&str, &str)]) -> ValidationResult<()> {
         let namespace_validator = Self::compile_namespace_validator()?;
         let schema_file = Path::new("<embedded>");
-        let mut schemas_map = HashMap::new();
 
         for (namespace, json) in schemas {
             validate_k8s_name_component(namespace, "namespace name")?;
@@ -312,7 +321,7 @@ impl SchemaRegistry {
 
             Self::validate_with_namespace_schema(&schema_data, schema_file, &namespace_validator)?;
             let schema = Self::parse_schema(schema_data, namespace, schema_file)?;
-            if schemas_map.insert(namespace.to_string(), schema).is_some() {
+            if self.schemas.insert(namespace.to_string(), schema).is_some() {
                 return Err(ValidationError::SchemaError {
                     file: schema_file.to_path_buf(),
                     message: format!("Duplicate namespace '{}'", namespace),
@@ -320,9 +329,7 @@ impl SchemaRegistry {
             }
         }
 
-        Ok(Self {
-            schemas: schemas_map,
-        })
+        Ok(())
     }
 
     /// Validate an entire values object for a namespace

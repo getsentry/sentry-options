@@ -230,6 +230,7 @@ impl Options {
 pub struct InitBuilder<'a> {
     directory: Option<PathBuf>,
     schemas: Option<&'a [(&'a str, &'a str)]>,
+    additional_schemas: Option<&'a [(&'a str, &'a str)]>,
     callback: Option<PropagationCallback>,
     refresh_threshold: Option<Option<Duration>>,
 }
@@ -247,9 +248,17 @@ impl<'a> InitBuilder<'a> {
     }
 
     /// Provide schemas as in-memory `(namespace, json)` pairs instead of reading
-    /// them from `{dir}/schemas/`, intended to be used with `include_str!`
+    /// them from `{dir}/schemas/`, intended to be used with `include_str!`.
+    /// In other words, overrides schemas supplied locally.
     pub fn with_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
         self.schemas = Some(schemas);
+        self
+    }
+
+    /// Provide schemas as in-memory `(namespace, json)` pairs WITHOUT overriding
+    /// any local schemas in `{dir}/schemas/`. Errors on a namespace already present.
+    pub fn with_additional_schemas(mut self, schemas: &'a [(&'a str, &'a str)]) -> Self {
+        self.additional_schemas = Some(schemas);
         self
     }
 
@@ -296,9 +305,23 @@ impl<'a> InitBuilder<'a> {
     pub fn build(self) -> Result<Options> {
         let dir = self.directory.unwrap_or_else(resolve_options_dir);
 
-        let registry = match self.schemas {
-            Some(s) => SchemaRegistry::from_schemas(s)?,
-            None => SchemaRegistry::from_directory(&dir.join("schemas"))?,
+        let registry = match (self.schemas, self.additional_schemas) {
+            // Fully in-memory: replace the on-disk schemas entirely.
+            (Some(s), _) => SchemaRegistry::from_schemas(s)?,
+            // Overlay: base off the directory (tolerating a missing schemas dir),
+            // then add the in-memory schemas alongside it.
+            (None, Some(overrides)) => {
+                let schemas_dir = dir.join("schemas");
+                let mut registry = if schemas_dir.exists() {
+                    SchemaRegistry::from_directory(&schemas_dir)?
+                } else {
+                    SchemaRegistry::new()
+                };
+                registry.add_schemas(overrides)?;
+                registry
+            }
+            // Default: read schemas from the directory.
+            (None, None) => SchemaRegistry::from_directory(&dir.join("schemas"))?,
         };
 
         let refresh_threshold = self
@@ -442,6 +465,51 @@ mod tests {
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "enabled").unwrap(), json!(true));
+    }
+
+    #[test]
+    fn test_with_additional_schemas_overlays_directory_schemas() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        let values = temp.path().join("values");
+        fs::create_dir_all(&schemas).unwrap();
+
+        // On-disk namespace.
+        create_schema(&schemas, "disk", BOOL_SCHEMA);
+        create_values(&values, "disk", r#"{"options": {"enabled": true}}"#);
+        // In-memory namespace: schema via with_additional_schemas, values on disk.
+        create_values(&values, "mem", r#"{"options": {"enabled": true}}"#);
+
+        let options = Options::builder()
+            .with_directory(temp.path())
+            .with_additional_schemas(&[("mem", BOOL_SCHEMA)])
+            .build()
+            .unwrap();
+
+        // The on-disk namespace still resolves...
+        assert_eq!(options.get("disk", "enabled").unwrap(), json!(true));
+        // ...and the in-memory namespace was added alongside it.
+        assert_eq!(options.get("mem", "enabled").unwrap(), json!(true));
+    }
+
+    #[test]
+    fn test_with_additional_schemas_conflicting_namespace_errors() {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "dup", BOOL_SCHEMA);
+
+        // Overlaying a namespace that already exists on disk must error rather
+        // than silently shadow it.
+        let result = Options::builder()
+            .with_directory(temp.path())
+            .with_additional_schemas(&[("dup", BOOL_SCHEMA)])
+            .build();
+
+        assert!(
+            result.is_err(),
+            "expected an error for a namespace already on disk"
+        );
     }
 
     #[test]
