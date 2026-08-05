@@ -199,15 +199,16 @@ impl PyFeatureChecker {
 /// refresh-on-read (default: 5.0). Pass `None` to disable refresh-on-read
 /// entirely; values then only change via `refresh()`.
 ///
-/// `schemas` adds namespace schemas from memory as a `{namespace: schema_json}`
-/// mapping, alongside those read from `{dir}/schemas/`, useful for schemas only known at
-/// runtime. Errors on a namespace already on disk. Values still load from disk.
+/// `additional_schemas` adds namespace schemas from memory as a
+/// `{namespace: schema_json}` mapping, alongside those read from `{dir}/schemas/`,
+/// useful for schemas only known at runtime. Errors on a namespace already on
+/// disk. Values still load from disk.
 #[pyfunction]
-#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64()), schemas=None))]
+#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64()), additional_schemas=None))]
 fn init(
     on_propagation: Option<Py<PyAny>>,
     refresh_threshold: Option<f64>,
-    schemas: Option<HashMap<String, String>>,
+    additional_schemas: Option<HashMap<String, String>>,
 ) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
@@ -224,7 +225,8 @@ fn init(
     };
 
     // we need to own the ones passed in
-    let owned_schemas: Vec<(String, String)> = schemas.unwrap_or_default().into_iter().collect();
+    let owned_schemas: Vec<(String, String)> =
+        additional_schemas.unwrap_or_default().into_iter().collect();
     let schema_refs: Vec<(&str, &str)> = owned_schemas
         .iter()
         .map(|(ns, json)| (ns.as_str(), json.as_str()))
