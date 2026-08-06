@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Union
 
+from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
 from sentry_options._core import features
@@ -26,8 +27,10 @@ _Primitive = Union[str, int, float, bool]
 _Object = dict[str, _Primitive]
 OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 
+
 __all__ = [
     'init',
+    'feature_property',
     'features',
     'FeatureChecker',
     'FeatureContext',

@@ -270,6 +270,13 @@ fn refresh(py: Python<'_>) -> PyResult<bool> {
     py.detach(|| opts.refresh()).map_err(options_err)
 }
 
+/// Return the value a namespace schema pairs with each ``feature.<name>`` key,
+/// i.e. ``{"$ref": "#/definitions/Feature"}``, for assembling a schema in memory.
+#[pyfunction]
+fn feature_property(py: Python<'_>) -> PyResult<Py<PyAny>> {
+    json_to_py(py, &sentry_options::feature_property())
+}
+
 /// Get a namespace handle for accessing options.
 ///
 /// Raises RuntimeError if init() has not been called.
@@ -382,6 +389,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(options, m)?)?;
     m.add_function(wrap_pyfunction!(features, m)?)?;
     m.add_function(wrap_pyfunction!(refresh, m)?)?;
+    m.add_function(wrap_pyfunction!(feature_property, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
     m.add_class::<PyFeatureContext>()?;
