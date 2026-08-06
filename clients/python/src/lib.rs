@@ -198,9 +198,18 @@ impl PyFeatureChecker {
 /// `refresh_threshold` is the staleness threshold in seconds for
 /// refresh-on-read (default: 5.0). Pass `None` to disable refresh-on-read
 /// entirely; values then only change via `refresh()`.
+///
+/// `additional_schemas` adds namespace schemas from memory as a
+/// `{namespace: schema_json}` mapping, alongside those read from `{dir}/schemas/`,
+/// useful for schemas only known at runtime. Errors on a namespace already on
+/// disk. Values still load from disk.
 #[pyfunction]
-#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64())))]
-fn init(on_propagation: Option<Py<PyAny>>, refresh_threshold: Option<f64>) -> PyResult<()> {
+#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64()), additional_schemas=None))]
+fn init(
+    on_propagation: Option<Py<PyAny>>,
+    refresh_threshold: Option<f64>,
+    additional_schemas: Option<HashMap<String, String>>,
+) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
     }
@@ -215,7 +224,18 @@ fn init(on_propagation: Option<Py<PyAny>>, refresh_threshold: Option<f64>) -> Py
         None => None,
     };
 
+    // we need to own the ones passed in
+    let owned_schemas: Vec<(String, String)> =
+        additional_schemas.unwrap_or_default().into_iter().collect();
+    let schema_refs: Vec<(&str, &str)> = owned_schemas
+        .iter()
+        .map(|(ns, json)| (ns.as_str(), json.as_str()))
+        .collect();
+
     let mut builder = RustOptions::builder().with_refresh_threshold(refresh_threshold);
+    if !schema_refs.is_empty() {
+        builder = builder.with_additional_schemas(&schema_refs);
+    }
     if let Some(cb) = on_propagation {
         // `Py<PyAny>` is `Send + Sync`; the closure re-acquires the GIL for the
         // call, so the callback can run on whichever thread triggers a refresh.

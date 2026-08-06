@@ -180,10 +180,11 @@ Options must be initialized once at startup, guarded by a global `OnceLock`. Rus
 | _(no overrides)_ | Resolve the directory and load schemas from disk |
 | `.with_directory(path)` | Load schemas and values from a specific base directory |
 | `.with_schemas(&[(ns, json)])` | Use schemas embedded in the binary via `include_str!`. values still load from disk |
+| `.with_additional_schemas(&[(ns, json)])` | Add in-memory schemas alongside the base above, for schemas only known at runtime. Errors on a namespace the base already has |
 | `.with_callback(cb)` | Register a reload callback |
 | `.with_refresh_threshold(t)` | Override the refresh-on-read staleness threshold (default 5 s); `None` disables refresh-on-read |
 
-`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None, refresh_threshold=5.0)`.
+`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None, refresh_threshold=5.0, additional_schemas=None)`, where `additional_schemas` is a `{ns: json}` mapping equivalent to `.with_additional_schemas()`.
 
 The `init()` shorthand and Python's `init()` are idempotent — calling again is a no-op. The builder's `.init()` instead returns `OptionsError::AlreadyInitialized` when options are already initialized, so re-initializing with different settings is a loud error rather than a silent no-op.
 

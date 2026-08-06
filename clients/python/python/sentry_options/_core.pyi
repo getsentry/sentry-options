@@ -9,6 +9,7 @@ OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 def init(
     on_propagation: Callable[[str, float], None] | None = None,
     refresh_threshold: float | None = 5.0,
+    additional_schemas: dict[str, str] | None = None,
 ) -> None: ...
 """
 Initialize the options extension with schema and
@@ -23,6 +24,10 @@ refresh_threshold : float | None
     Staleness threshold in seconds for refresh-on-read (default: 5.0).
     Pass ``None`` to disable refresh-on-read entirely; values then only
     change via ``refresh()``.
+additional_schemas : dict[str, str] | None
+    Namespace schemas from memory, added alongside those read from
+    ``{dir}/schemas/``, for schemas only known at runtime. Errors on a namespace
+    already on disk. Values still load from disk.
 """
 
 def refresh() -> bool: ...
