@@ -1,4 +1,15 @@
 # Changelog
+## 1.2.5
+
+### New Features ✨
+
+- (flags) Expose feature flag definition helper by @kenzoengineer in [#165](https://github.com/getsentry/sentry-options/pull/165)
+- (init) Optionally load additionally schemas from memory by @kenzoengineer in [#164](https://github.com/getsentry/sentry-options/pull/164)
+
+### Internal Changes 🔧
+
+- Replace secrets: inherit with explicit secret in validate-schema-changes by @oioki in [#166](https://github.com/getsentry/sentry-options/pull/166)
+
 ## 1.2.4
 
 ### New Features ✨
