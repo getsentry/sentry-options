@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.6
+
+### New Features ✨
+
+- (flags) Enable open, pattern matched features by @kenzoengineer in [#168](https://github.com/getsentry/sentry-options/pull/168)
+
 ## 1.2.5
 
 ### New Features ✨
