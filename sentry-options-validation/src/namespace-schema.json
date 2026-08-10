@@ -11,6 +11,24 @@
     "additionalProperties": {
       "type": "boolean"
     },
+    "patternProperties": {
+      "type": "object",
+      "properties": {
+        "^feature\\.": {
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/Feature"
+            }
+          },
+          "required": ["$ref"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["^feature\\."],
+      "additionalProperties": false
+    },
     "properties": {
       "type": "object",
       "patternProperties": {
@@ -81,7 +99,8 @@
       "additionalProperties": false
     }
   },
-  "required": ["version", "type", "properties"],
+  "required": ["version", "type"],
+  "anyOf": [{ "required": ["properties"] }, { "required": ["patternProperties"] }],
   "additionalProperties": false,
   "$defs": {
     "value_type": {
