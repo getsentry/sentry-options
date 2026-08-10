@@ -408,6 +408,14 @@ In `sentry-options/schemas/{namespace}/schema.json`, add a `feature.`-prefixed o
 
 The full `Feature` shape (owner, segments, conditions, rollout) is defined in `sentry-options-validation/src/feature-schema-defs.json`.
 
+If your service registers its flags in code and you don't want to repeat the list here, declare them by pattern instead of adding an entry per flag:
+
+```json
+"patternProperties": { "^feature\\.": { "$ref": "#/definitions/Feature" } }
+```
+
+Any `feature.`-prefixed key is then accepted and validated against `Feature`. The tradeoff is that a typo'd flag name in a values file no longer gets flagged as unknown, so this only pays off when something else already owns the names.
+
 ## Setting a feature flag value
 
 Same as [Setting an option value](#setting-an-option-value), in [sentry-options-automator](https://github.com/getsentry/sentry-options-automator) under `option-values/{namespace}/{target}/values.yaml`, with the same `default`/region target and override rules — but the value is a `Feature`:

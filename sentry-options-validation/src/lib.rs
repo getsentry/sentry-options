@@ -31,6 +31,11 @@ const FEATURE_SCHEMA_DEFS_JSON: &str = include_str!("feature-schema-defs.json");
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
 
+/// Prefix marking an option key as a feature flag.
+const FEATURE_KEY_PREFIX: &str = "feature.";
+/// Regex a schema uses to declare features by pattern instead of by name.
+const FEATURE_KEY_PATTERN: &str = "^feature\\.";
+
 /// Default minimum age of a cached values snapshot before a read triggers a
 /// refresh. A per-thread jitter of up to 1 s is added on top to spread the
 /// reload across threads.
@@ -178,6 +183,10 @@ pub struct NamespaceSchema {
     feature_keys: HashSet<String>,
     /// All property keys from the schema, including feature flags that aren't in `options`.
     all_keys: HashSet<String>,
+    /// Set when the schema declares features by pattern rather than by name, i.e. any
+    /// `feature.`-prefixed key is accepted. The set of valid names then lives in the
+    /// consuming service's code, not here.
+    open_features: bool,
     validator: jsonschema::Validator,
 }
 
@@ -220,7 +229,21 @@ impl NamespaceSchema {
     /// Whether `key` is a known key in this namespace, runtime
     /// option or feature flag.
     pub fn is_known_key(&self, key: &str) -> bool {
-        self.options.contains_key(key) || self.feature_keys.contains(key)
+        self.options.contains_key(key) || self.accepts_feature_key(key)
+    }
+
+    /// Whether `key` is a feature this namespace declares, either by name or by
+    /// pattern (see `open_features`).
+    fn accepts_feature_key(&self, key: &str) -> bool {
+        self.feature_keys.contains(key)
+            || (self.open_features && key.starts_with(FEATURE_KEY_PREFIX))
+    }
+
+    /// Whether a values key belongs to this namespace, i.e. survives loading rather
+    /// than being stripped as unknown. Unlike `is_known_key` this covers every
+    /// declared property, not just those with option metadata.
+    pub fn accepts_key(&self, key: &str) -> bool {
+        self.all_keys.contains(key) || self.accepts_feature_key(key)
     }
 
     /// Validate a single key-value pair against the schema.
@@ -482,13 +505,21 @@ impl SchemaRegistry {
         let mut options = HashMap::new();
         let mut feature_keys = HashSet::new();
         let mut all_keys = HashSet::new();
-        let mut has_feature_keys = false;
+        // A `patternProperties` entry for the feature prefix declares features by
+        // pattern instead of listing every name, so any `feature.`-prefixed key is
+        // accepted and validated against the spliced-in Feature definition.
+        let open_features = schema
+            .get("patternProperties")
+            .and_then(|p| p.as_object())
+            .is_some_and(|p| p.contains_key(FEATURE_KEY_PATTERN));
+
+        let mut has_feature_keys = open_features;
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 all_keys.insert(prop_name.clone());
                 // Detect feature flags so that we can augment the schema with defs.
                 // They're tracked separately from `options` (see NamespaceSchema).
-                if prop_name.starts_with("feature.") {
+                if prop_name.starts_with(FEATURE_KEY_PREFIX) {
                     has_feature_keys = true;
                     feature_keys.insert(prop_name.clone());
                 }
@@ -537,6 +568,7 @@ impl SchemaRegistry {
             options,
             feature_keys,
             all_keys,
+            open_features,
             validator,
         }))
     }
@@ -614,10 +646,7 @@ impl SchemaRegistry {
             None => return values.clone(),
         };
 
-        let unknown_keys: Vec<&String> = obj
-            .keys()
-            .filter(|k| !schema.all_keys.contains(*k))
-            .collect();
+        let unknown_keys: Vec<&String> = obj.keys().filter(|k| !schema.accepts_key(k)).collect();
 
         if unknown_keys.is_empty() {
             return values.clone();
@@ -634,7 +663,7 @@ impl SchemaRegistry {
 
         let filtered: serde_json::Map<String, Value> = obj
             .iter()
-            .filter(|(k, _)| schema.all_keys.contains(*k))
+            .filter(|(k, _)| schema.accepts_key(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         Value::Object(filtered)
@@ -1004,6 +1033,86 @@ mod tests {
         })
         .to_string();
         SchemaRegistry::from_schemas(&[("getsentry-features", &schema)]).unwrap();
+    }
+
+    /// A namespace declaring features by pattern rather than by name.
+    fn open_features_schema() -> String {
+        json!({
+            "version": "1.0",
+            "type": "object",
+            "patternProperties": { "^feature\\.": feature_property() },
+        })
+        .to_string()
+    }
+
+    fn valid_feature_value() -> Value {
+        json!({
+            "created_at": "2026-01-01",
+            "owner": {"team": "dev-infra"},
+            "segments": [{"name": "all", "conditions": [], "rollout": 100}],
+        })
+    }
+
+    #[test]
+    fn test_open_features_accepts_any_feature_key() {
+        let registry = SchemaRegistry::from_schemas(&[("gs", &open_features_schema())]).unwrap();
+        let schema = registry.get("gs").unwrap();
+
+        // Any feature name is declared by the pattern, so it survives loading and
+        // validates against the spliced-in Feature definition.
+        assert!(schema.accepts_key("feature.organizations:never-enumerated"));
+        assert!(schema.is_known_key("feature.organizations:never-enumerated"));
+        registry
+            .validate_values(
+                "gs",
+                &json!({"feature.organizations:never-enumerated": valid_feature_value()}),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_open_features_still_validates_shape() {
+        let registry = SchemaRegistry::from_schemas(&[("gs", &open_features_schema())]).unwrap();
+        // `segments` is required by the Feature definition: an open namespace accepts
+        // any feature *name*, not any feature *value*.
+        let result = registry.validate_values(
+            "gs",
+            &json!({"feature.organizations:bad": {"created_at": "2026-01-01"}}),
+        );
+        assert!(result.is_err(), "expected a Feature shape violation");
+    }
+
+    #[test]
+    fn test_open_features_does_not_accept_non_feature_keys() {
+        let registry = SchemaRegistry::from_schemas(&[("gs", &open_features_schema())]).unwrap();
+        let schema = registry.get("gs").unwrap();
+
+        assert!(!schema.accepts_key("some.option"));
+        let stripped = registry.strip_unknown_keys(
+            "gs",
+            &json!({
+                "feature.organizations:keep": valid_feature_value(),
+                "some.option": 1,
+            }),
+        );
+        let obj = stripped.as_object().unwrap();
+        assert!(obj.contains_key("feature.organizations:keep"));
+        assert!(!obj.contains_key("some.option"));
+    }
+
+    #[test]
+    fn test_enumerated_features_still_reject_undeclared_names() {
+        let schema = json!({
+            "version": "1.0",
+            "type": "object",
+            "properties": { "feature.organizations:declared": feature_property() },
+        })
+        .to_string();
+        let registry = SchemaRegistry::from_schemas(&[("gs", &schema)]).unwrap();
+        let schema = registry.get("gs").unwrap();
+
+        assert!(schema.accepts_key("feature.organizations:declared"));
+        assert!(!schema.accepts_key("feature.organizations:undeclared"));
     }
 
     #[test]

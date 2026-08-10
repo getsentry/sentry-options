@@ -115,6 +115,14 @@ A feature flag is an option whose name begins with `feature.` and whose definiti
 "feature.red-bar": { "$ref": "#/definitions/Feature" }
 ```
 
+A namespace can instead declare every feature at once, accepting any `feature.`-prefixed key without naming it:
+
+```json
+"patternProperties": { "^feature\\.": { "$ref": "#/definitions/Feature" } }
+```
+
+Values are validated against `Feature` either way; the difference is only whether the schema also constrains the *set of names*. Use the pattern form when the names are owned elsewhere — e.g. a service that registers its flags in code — and enumerate otherwise, since enumerating means a values key naming a flag that doesn't exist is stripped as unknown instead of accepted.
+
 The `Feature` definition (`sentry-options-validation/src/feature-schema-defs.json`) is spliced into the namespace schema when the schema is loaded, so feature values are validated against it. A `Feature` value:
 
 ```yaml
