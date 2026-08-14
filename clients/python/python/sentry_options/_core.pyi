@@ -73,6 +73,14 @@ class FeatureChecker:
     """
     def has(self, feature_name: str, context: FeatureContext) -> bool:
         """Check if a feature flag with `feature_name` is available to `context`"""
+    def try_has(self, feature_name: str, context: FeatureContext) -> bool | None:
+        """
+        Same as ``has``, but will return ``None`` if the feature has no value
+        set, or one of ``NotInitializedError``, ``UnknownNamespaceError``,
+        or ``SchemaError`` during a failure.
+
+        The latter return values would all have been swallowed into ``false`` in ``has``.
+        """
     def __repr__(self) -> str: ...
 
 

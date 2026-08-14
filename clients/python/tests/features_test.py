@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from sentry_options import FeatureContext
 from sentry_options import features
+from sentry_options import UnknownNamespaceError
 
 
 NAMESPACE = 'sentry-options-testing'
@@ -174,3 +175,32 @@ def test_feature_context_bool_not_confused_with_int() -> None:
 def test_invalid_context_value_type_raises() -> None:
     with pytest.raises((TypeError, ValueError)):
         make_context({'key': object()})
+
+
+def test_try_has_normal_case_matches_has() -> None:
+    ctx = make_context({'organization_id': 123})
+    checker = features(NAMESPACE)
+
+    assert checker.try_has('organizations:enabled-feature', ctx) is checker.has('organizations:enabled-feature', ctx)
+    assert checker.try_has('organizations:disabled-feature', ctx) is checker.has('organizations:disabled-feature', ctx)
+
+
+def test_try_has_returns_none_when_feature_has_no_value() -> None:
+    ctx = make_context({'organization_id': 123})
+    checker = features(NAMESPACE)
+
+    # try_has() returns None...
+    assert checker.try_has('organizations:nonexistent', ctx) is None
+    # has() returns false for this case
+    assert checker.has('organizations:nonexistent', ctx) is False
+
+
+def test_try_has_raises_on_unknown_namespace() -> None:
+    ctx = make_context({'organization_id': 123})
+
+    # try_has() raises...
+    with pytest.raises(UnknownNamespaceError):
+        features('not-a-namespace').try_has('organizations:enabled-feature', ctx)
+
+    # ...white has() returns false for this case
+    assert features('not-a-namespace').has('organizations:enabled-feature', ctx) is False
