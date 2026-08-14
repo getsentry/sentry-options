@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.7
+
+### New Features ✨
+
+- (flags) Add `try_has`, which doesn't swallow failures into `false` by @kenzoengineer in [#169](https://github.com/getsentry/sentry-options/pull/169)
+
 ## 1.2.6
 
 ### New Features ✨
