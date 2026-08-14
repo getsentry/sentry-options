@@ -434,6 +434,21 @@ fn eval_matches(ctx_val: Option<&Value>, condition_val: &Value) -> Option<bool> 
 }
 
 /// A handle for checking feature flags within a specific namespace.
+/// Why a feature could not be evaluated. Distinct from [`crate::OptionsError`]:
+/// an unset feature is not an error here (see [`FeatureChecker::try_has`]), and a
+/// value that fails to parse as a `Feature` is.
+#[derive(Debug, thiserror::Error)]
+pub enum FeatureError {
+    #[error("Options not initialized - call init() first")]
+    NotInitialized,
+
+    #[error("Value for '{key}' is not a valid feature")]
+    InvalidValue { key: String },
+
+    #[error(transparent)]
+    Options(#[from] crate::OptionsError),
+}
+
 pub struct FeatureChecker {
     namespace: String,
     options: Option<&'static crate::Options>,
@@ -452,29 +467,43 @@ impl FeatureChecker {
     /// Returns false if the feature is not defined, not enabled, conditions don't match,
     /// or options have not been initialized.
     pub fn has(&self, feature_name: &str, context: &FeatureContext) -> bool {
-        let Some(opts) = self.options else {
-            return false;
-        };
+        // Deliberately collapses every failure to false, use `try_has` when the distinction matters.
+        match self.try_has(feature_name, context) {
+            Ok(Some(result)) => result,
+            Ok(None) => false,
+            Err(e) => {
+                tracing::debug!(feature = feature_name, error = %e, "Feature evaluation failed");
+                false
+            }
+        }
+    }
+
+    /// Like [`has`](Self::has), but distinguishes a feature that evaluated to false
+    /// from one that could not be evaluated at all.
+    ///
+    /// - `Ok(Some(bool))` -- evaluated: disabled, no matching segment, or matched
+    /// - `Ok(None)` -- no value set for this feature, so there was nothing to evaluate
+    /// - `Err(_)` -- evaluation failed: see [`FeatureError`]
+    ///
+    /// Prefer `has` on hot paths.
+    pub fn try_has(
+        &self,
+        feature_name: &str,
+        context: &FeatureContext,
+    ) -> Result<Option<bool>, FeatureError> {
+        let opts = self.options.ok_or(FeatureError::NotInitialized)?;
         let key = format!("feature.{feature_name}");
 
         let feature_val = match opts.get(&self.namespace, &key) {
             Ok(v) => v,
-            Err(e) => {
-                tracing::debug!(key = %key, error = %e, "Failed to get feature");
-                return false;
-            }
+            // A feature the schema knows about but that has no value set is absent,
+            // not an error: nothing has been rolled out yet.
+            Err(crate::OptionsError::UnknownOption { .. }) => return Ok(None),
+            Err(e) => return Err(e.into()),
         };
 
-        let feature = match Feature::from_json(&feature_val) {
-            Some(f) => {
-                tracing::debug!(key = %key, "Parsed feature");
-                f
-            }
-            None => {
-                tracing::debug!(key = %key, "Failed to parse feature");
-                return false;
-            }
-        };
+        let feature = Feature::from_json(&feature_val)
+            .ok_or_else(|| FeatureError::InvalidValue { key: key.clone() })?;
 
         let result = feature.matches(context);
         tracing::debug!(
@@ -483,7 +512,7 @@ impl FeatureChecker {
             context_id = context.id(),
             "Feature match result"
         );
-        result
+        Ok(Some(result))
     }
 }
 
@@ -1576,5 +1605,102 @@ mod tests {
 
         // A usable list that lacks the value still matches when negated.
         assert!(condition_matches("not_contains", r#""a""#, &list));
+    }
+
+    /// FeatureChecker holds a `&'static Options`, so tests leak one.
+    fn checker(opts: Options, namespace: &str) -> FeatureChecker {
+        FeatureChecker::new(namespace.to_string(), Box::leak(Box::new(opts)))
+    }
+
+    /// Schema declaring the feature, with a values file that sets nothing.
+    fn setup_without_value() -> (Options, TempDir) {
+        let temp = TempDir::new().unwrap();
+        let schemas = temp.path().join("schemas");
+        fs::create_dir_all(&schemas).unwrap();
+        create_schema(&schemas, "test", FEATURE_SCHEMA);
+        create_values(&temp.path().join("values"), "test", r#"{"options": {}}"#);
+        (Options::from_directory(temp.path()).unwrap(), temp)
+    }
+
+    #[test]
+    fn test_try_has_evaluated() {
+        let (opts, _temp) = setup_feature_options(&feature_json(true, 100, ""));
+        let checker = checker(opts, "test");
+
+        let result = checker.try_has("organizations:test-feature", &FeatureContext::new());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_try_has_evaluated_false_is_not_absent() {
+        // A disabled feature evaluated fine; it just isn't on. This is the case a
+        // bare bool conflates with "could not evaluate".
+        let (opts, _temp) = setup_feature_options(&feature_json(false, 100, ""));
+        let checker = checker(opts, "test");
+
+        let result = checker.try_has("organizations:test-feature", &FeatureContext::new());
+        assert_eq!(result.unwrap(), Some(false));
+    }
+
+    #[test]
+    fn test_try_has_absent_when_no_value_set() {
+        let (opts, _temp) = setup_without_value();
+        let checker = checker(opts, "test");
+
+        let result = checker.try_has("organizations:test-feature", &FeatureContext::new());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_try_has_absent_when_feature_not_in_schema() {
+        let (opts, _temp) = setup_feature_options(&feature_json(true, 100, ""));
+        let checker = checker(opts, "test");
+
+        let result = checker.try_has("organizations:never-declared", &FeatureContext::new());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_try_has_errors_on_unknown_namespace() {
+        let (opts, _temp) = setup_feature_options(&feature_json(true, 100, ""));
+        let checker = checker(opts, "not-a-namespace");
+
+        assert!(matches!(
+            checker.try_has("organizations:test-feature", &FeatureContext::new()),
+            Err(FeatureError::Options(
+                crate::OptionsError::UnknownNamespace(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_try_has_errors_when_uninitialized() {
+        let checker = FeatureChecker {
+            namespace: "test".to_string(),
+            options: None,
+        };
+
+        assert!(matches!(
+            checker.try_has("organizations:test-feature", &FeatureContext::new()),
+            Err(FeatureError::NotInitialized)
+        ));
+    }
+
+    #[test]
+    fn test_has_still_collapses_every_failure_to_false() {
+        // has() is the fail-soft read path and must not start propagating.
+        let (opts, _temp) = setup_without_value();
+        let absent = checker(opts, "test");
+        assert!(!absent.has("organizations:test-feature", &FeatureContext::new()));
+
+        let (opts, _temp) = setup_feature_options(&feature_json(true, 100, ""));
+        let unknown_ns = checker(opts, "not-a-namespace");
+        assert!(!unknown_ns.has("organizations:test-feature", &FeatureContext::new()));
+
+        let uninitialized = FeatureChecker {
+            namespace: "test".to_string(),
+            options: None,
+        };
+        assert!(!uninitialized.has("organizations:test-feature", &FeatureContext::new()));
     }
 }

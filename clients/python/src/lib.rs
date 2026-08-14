@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
-    FeatureContext as RustFeatureContext, Options as RustOptions, OptionsError as RustOptionsError,
+    FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
+    OptionsError as RustOptionsError,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -132,6 +133,19 @@ fn options_err(err: RustOptionsError) -> PyErr {
     }
 }
 
+fn feature_err(err: RustFeatureError) -> PyErr {
+    match err {
+        RustFeatureError::NotInitialized => {
+            NotInitializedError::new_err("Options not initialized - call init() first")
+        }
+        // feature flag values are basically schemas
+        RustFeatureError::InvalidValue { ref key } => {
+            SchemaError::new_err(format!("Value for '{}' is not a valid feature", key))
+        }
+        RustFeatureError::Options(e) => options_err(e),
+    }
+}
+
 /// Feature evaluation context holding arbitrary key-value data.
 ///
 /// Pass a dict of context data and optional identity_fields to control
@@ -181,6 +195,19 @@ impl PyFeatureChecker {
     /// Returns false if the feature is not defined, not enabled, or conditions don't match.
     fn has(&self, feature_name: &str, context: PyRef<'_, PyFeatureContext>) -> bool {
         self.inner.has(feature_name, &context.inner)
+    }
+
+    /// Like `has`, but returns a Result<Option<bool>> instead.
+    /// Instead of swallowing all failures into `false`, will return
+    /// `None` if no value is defined, and an `Err` for an error.
+    fn try_has(
+        &self,
+        feature_name: &str,
+        context: PyRef<'_, PyFeatureContext>,
+    ) -> PyResult<Option<bool>> {
+        self.inner
+            .try_has(feature_name, &context.inner)
+            .map_err(feature_err)
     }
 
     fn __repr__(&self) -> String {
