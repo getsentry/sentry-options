@@ -83,6 +83,25 @@ pub type ValidationResult<T> = Result<T, ValidationError>;
 /// A map of option values keyed by their namespace
 pub type ValuesByNamespace = HashMap<String, HashMap<String, Value>>;
 
+/// The old and new values for an option changed by a refresh.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotValueChange {
+    pub old: Value,
+    pub new: Value,
+}
+
+/// Effective option changes for one namespace after a successful refresh.
+///
+/// Values are compared after unknown keys have been stripped and the complete
+/// snapshot has passed schema validation. `removed` maps option names to their
+/// old values because those entries have no value in the new snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotDiff {
+    pub added: HashMap<String, Value>,
+    pub removed: HashMap<String, Value>,
+    pub changed: HashMap<String, SnapshotValueChange>,
+}
+
 /// Errors that can occur during schema and value validation
 #[derive(Debug, thiserror::Error)]
 pub enum ValidationError {
@@ -681,6 +700,10 @@ impl Default for SchemaRegistry {
 /// to the app reading the new values.
 pub type PropagationCallback = Box<dyn Fn(&str, f64) + Send + Sync>;
 
+/// Callback invoked after a successful refresh with an effective snapshot
+/// change. Receives `(namespace, diff)` and is skipped for empty diffs.
+pub type SnapshotDiffCallback = Box<dyn Fn(&str, &SnapshotDiff) + Send + Sync>;
+
 /// Validates and serves option values, reloading them lazily on read and
 /// serving the current snapshot lock-free via `ArcSwap`. See `refresh` for the
 /// staleness window and memory-ordering details.
@@ -698,6 +721,8 @@ pub struct ValuesStore {
     last_generated_at: ArcSwap<HashMap<String, String>>,
     /// Optional callback invoked when propagation delay is measured.
     on_propagation: Option<PropagationCallback>,
+    /// Optional callback invoked when a refresh changes effective option values.
+    on_snapshot_diff: Option<SnapshotDiffCallback>,
     /// Last known modification times of values files, used to skip
     /// redundant reloads when nothing has changed on disk.
     last_mtimes: ArcSwap<HashMap<String, SystemTime>>,
@@ -712,6 +737,7 @@ pub struct ValuesStoreBuilder {
     values_dir: PathBuf,
     refresh_threshold: Option<Duration>,
     on_propagation: Option<PropagationCallback>,
+    on_snapshot_diff: Option<SnapshotDiffCallback>,
 }
 
 impl ValuesStoreBuilder {
@@ -729,6 +755,14 @@ impl ValuesStoreBuilder {
     /// The callback receives `(namespace, delay_secs)` on each value change.
     pub fn with_callback(mut self, callback: PropagationCallback) -> Self {
         self.on_propagation = Some(callback);
+        self
+    }
+
+    /// Registers a callback that receives compact per-namespace diffs after a
+    /// successful refresh. The callback is not invoked when the accepted
+    /// snapshot is unchanged.
+    pub fn with_snapshot_diff_callback(mut self, callback: SnapshotDiffCallback) -> Self {
+        self.on_snapshot_diff = Some(callback);
         self
     }
 
@@ -753,6 +787,7 @@ impl ValuesStoreBuilder {
             refresh_threshold: self.refresh_threshold,
             last_generated_at: ArcSwap::from_pointee(generated_at_by_namespace),
             on_propagation: self.on_propagation,
+            on_snapshot_diff: self.on_snapshot_diff,
             last_mtimes: ArcSwap::from_pointee(initial_mtimes),
         })
     }
@@ -787,6 +822,7 @@ impl ValuesStore {
             values_dir: values_dir.to_path_buf(),
             refresh_threshold: Some(DEFAULT_REFRESH_THRESHOLD),
             on_propagation: None,
+            on_snapshot_diff: None,
         }
     }
 
@@ -910,9 +946,11 @@ impl ValuesStore {
                     );
                 }
 
+                let previous_values = self.values.load();
+                let snapshot_diffs = snapshot_diffs(previous_values.as_ref(), &new_values);
                 self.values.store(Arc::new(new_values));
                 self.last_mtimes.store(Arc::new(current_mtimes));
-                Ok(generated_at)
+                Ok((generated_at, snapshot_diffs))
             }
             Err(e) => Err(e),
         };
@@ -928,7 +966,7 @@ impl ValuesStore {
             Ordering::Relaxed,
         );
 
-        let new_generated_at = new_generated_at?;
+        let (new_generated_at, snapshot_diffs) = new_generated_at?;
 
         // Fire the propagation callback after the CAS so other threads see a
         // fresh timestamp and don't redundantly re-read from disk while a
@@ -966,8 +1004,84 @@ impl ValuesStore {
             self.last_generated_at.store(Arc::new(new_generated_at));
         }
 
+        // Diff callbacks run only after the accepted snapshot has been
+        // published. A callback panic is isolated so callback failures cannot
+        // roll back or otherwise affect the successful refresh.
+        if let Some(callback) = &self.on_snapshot_diff {
+            for (namespace, diff) in &snapshot_diffs {
+                if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    callback(namespace, diff)
+                })) {
+                    tracing::error!(
+                        namespace = %namespace,
+                        error = ?e,
+                        "Snapshot diff callback panicked",
+                    );
+                }
+            }
+        }
+
         Ok(true)
     }
+}
+
+/// Compare two accepted snapshots and retain only effective option changes.
+fn snapshot_diffs(
+    previous: &ValuesByNamespace,
+    current: &ValuesByNamespace,
+) -> HashMap<String, SnapshotDiff> {
+    let namespaces: HashSet<&String> = previous.keys().chain(current.keys()).collect();
+    let mut diffs = HashMap::new();
+
+    for namespace in namespaces {
+        let old_options = previous.get(namespace);
+        let new_options = current.get(namespace);
+        let keys: HashSet<&String> = old_options
+            .into_iter()
+            .flat_map(|options| options.keys())
+            .chain(new_options.into_iter().flat_map(|options| options.keys()))
+            .collect();
+
+        let mut added = HashMap::new();
+        let mut removed = HashMap::new();
+        let mut changed = HashMap::new();
+        for key in keys {
+            match (
+                old_options.and_then(|options| options.get(key)),
+                new_options.and_then(|options| options.get(key)),
+            ) {
+                (None, Some(new)) => {
+                    added.insert(key.clone(), new.clone());
+                }
+                (Some(old), None) => {
+                    removed.insert(key.clone(), old.clone());
+                }
+                (Some(old), Some(new)) if old != new => {
+                    changed.insert(
+                        key.clone(),
+                        SnapshotValueChange {
+                            old: old.clone(),
+                            new: new.clone(),
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        if !added.is_empty() || !removed.is_empty() || !changed.is_empty() {
+            diffs.insert(
+                namespace.clone(),
+                SnapshotDiff {
+                    added,
+                    removed,
+                    changed,
+                },
+            );
+        }
+    }
+
+    diffs
 }
 
 /// Parse an RFC3339 timestamp and return the delay in seconds from then to `now`.
@@ -1941,6 +2055,105 @@ Error: \"version\" is a required property"
             .unwrap();
         let _ = store.load();
         // Just verify it doesn't crash.
+    }
+
+    #[test]
+    fn test_snapshot_diff_reports_effective_changes_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let schema_dir = base.join("schemas").join("test");
+        fs::create_dir_all(&schema_dir).unwrap();
+        fs::write(
+            schema_dir.join("schema.json"),
+            r#"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false, "description": "Enabled"},
+                    "added": {"type": "string", "default": "", "description": "Added"},
+                    "removed": {"type": "string", "default": "", "description": "Removed"}
+                }
+            }"#,
+        )
+        .unwrap();
+        let values_dir = base.join("values").join("test");
+        fs::create_dir_all(&values_dir).unwrap();
+        let values_file = values_dir.join("values.json");
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": true, "removed": "gone"}}"#,
+        )
+        .unwrap();
+
+        let diffs: Arc<Mutex<Vec<(String, SnapshotDiff)>>> = Arc::new(Mutex::new(Vec::new()));
+        let diffs_clone = diffs.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::builder(registry, &base.join("values"))
+            .with_refresh_threshold(Duration::ZERO)
+            .with_snapshot_diff_callback(Box::new(move |namespace, diff| {
+                diffs_clone
+                    .lock()
+                    .unwrap()
+                    .push((namespace.to_string(), diff.clone()));
+            }))
+            .build()
+            .unwrap();
+
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": false, "added": "new", "ignored": "unknown"}}"#,
+        )
+        .unwrap();
+        assert!(store.refresh().unwrap());
+
+        let captured = diffs.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].0, "test");
+        let diff = &captured[0].1;
+        assert_eq!(diff.added.get("added"), Some(&json!("new")));
+        assert_eq!(diff.removed.get("removed"), Some(&json!("gone")));
+        assert_eq!(
+            diff.changed.get("enabled"),
+            Some(&SnapshotValueChange {
+                old: json!(true),
+                new: json!(false),
+            })
+        );
+        assert!(!diff.added.contains_key("ignored"));
+        drop(captured);
+
+        // An mtime change containing only an unknown key has no effective diff.
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": false, "added": "new", "ignored": "changed"}}"#,
+        )
+        .unwrap();
+        assert!(store.refresh().unwrap());
+        assert_eq!(diffs.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_snapshot_diff_callback_panic_does_not_affect_reload() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::builder(registry, &base.join("values"))
+            .with_refresh_threshold(Duration::ZERO)
+            .with_snapshot_diff_callback(Box::new(|_, _| panic!("diff callback boom")))
+            .build()
+            .unwrap();
+
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": false}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        assert!(store.refresh().unwrap());
+        assert_eq!(
+            store.values.load().get("test").unwrap().get("enabled"),
+            Some(&json!(false))
+        );
     }
 
     /// Write a boolean-only schema and a values file for `namespace` under

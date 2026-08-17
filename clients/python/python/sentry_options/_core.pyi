@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-from typing import Callable, Union
+from typing import Callable, TypedDict, Union
 
 _Primitive = Union[str, int, float, bool]
 _Object = dict[str, _Primitive]
 OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 
+class SnapshotValueChange(TypedDict):
+    old: OptionValue
+    new: OptionValue
+
+class SnapshotDiff(TypedDict):
+    added: dict[str, OptionValue]
+    removed: dict[str, OptionValue]
+    changed: dict[str, SnapshotValueChange]
+
 def init(
     on_propagation: Callable[[str, float], None] | None = None,
     refresh_threshold: float | None = 5.0,
     additional_schemas: dict[str, str] | None = None,
+    on_snapshot_diff: Callable[[str, SnapshotDiff], None] | None = None,
 ) -> None: ...
 """
 Initialize the options extension with schema and
@@ -28,6 +38,11 @@ additional_schemas : dict[str, str] | None
     Namespace schemas from memory, added alongside those read from
     ``{dir}/schemas/``, for schemas only known at runtime. Errors on a namespace
     already on disk. Values still load from disk.
+on_snapshot_diff : callable, optional
+    Callback invoked after a successful refresh with a non-empty effective
+    snapshot diff. Receives ``(namespace: str, diff: SnapshotDiff)`` where
+    ``diff`` contains ``added`` key-to-new-value, ``removed`` key-to-old-value,
+    and ``changed`` keys mapped to ``{"old": ..., "new": ...}``.
 """
 
 def feature_property() -> dict[str, str]: ...

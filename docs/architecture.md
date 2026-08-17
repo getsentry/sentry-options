@@ -190,9 +190,10 @@ Options must be initialized once at startup, guarded by a global `OnceLock`. Rus
 | `.with_schemas(&[(ns, json)])` | Use schemas embedded in the binary via `include_str!`. values still load from disk |
 | `.with_additional_schemas(&[(ns, json)])` | Add in-memory schemas alongside the base above, for schemas only known at runtime. Errors on a namespace the base already has |
 | `.with_callback(cb)` | Register a reload callback |
+| `.with_snapshot_diff_callback(cb)` | Register a callback for non-empty effective option diffs after successful refreshes |
 | `.with_refresh_threshold(t)` | Override the refresh-on-read staleness threshold (default 5 s); `None` disables refresh-on-read |
 
-`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None, refresh_threshold=5.0, additional_schemas=None)`, where `additional_schemas` is a `{ns: json}` mapping equivalent to `.with_additional_schemas()`.
+`init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None, refresh_threshold=5.0, additional_schemas=None, on_snapshot_diff=None)`, where `additional_schemas` is a `{ns: json}` mapping equivalent to `.with_additional_schemas()`.
 
 The `init()` shorthand and Python's `init()` are idempotent — calling again is a no-op. The builder's `.init()` instead returns `OptionsError::AlreadyInitialized` when options are already initialized, so re-initializing with different settings is a loud error rather than a silent no-op.
 
@@ -217,6 +218,18 @@ Every refresh — lazy or manual — resets the staleness timer. Two consequence
 ### Propagation metric
 
 When a refresh observes a newer `generated_at` than the previous snapshot, the propagation callback (`Options::builder().with_callback` in Rust, `on_propagation` in Python) fires with the namespace and the delay between generation and load — useful for measuring deploy lag.
+
+### Snapshot diffs
+
+The snapshot diff callback (`with_snapshot_diff_callback` in Rust,
+`on_snapshot_diff` in Python) receives one event per namespace whose accepted
+option values changed. Its compact payload contains `added` key-to-new-value,
+`removed` key-to-old-value, and `changed` keys with `old` and `new` values.
+Comparison happens after
+unknown keys are stripped and schema validation succeeds, so a refresh that
+only changes ignored keys emits no event. The callback also runs when values
+change without `generated_at`; it is never called for a failed refresh, and a
+callback panic/exception is isolated from the newly published snapshot.
 
 ## Feature Flag Evaluation
 

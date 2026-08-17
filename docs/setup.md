@@ -123,10 +123,12 @@ Call `init()` once, as early in startup as possible (e.g. right where you initia
 ```python
 from sentry_options import init
 
-init()  # optional: init(on_propagation=Callback, refresh_threshold=5.0)
+init()  # optional: init(on_propagation=Callback, on_snapshot_diff=Callback)
 ```
 
 `on_propagation` is a callback fired whenever values reload, useful for collecting metrics. `refresh_threshold` sets the staleness window for refresh-on-read (default `5.0` seconds).
+
+`on_snapshot_diff` receives `(namespace, diff)` after a successful refresh with a non-empty effective diff. `diff` is a plain dictionary with `added` (key-to-new-value), `removed` (key-to-old-value), and `changed` (key-to-`{"old": ..., "new": ...}`) entries. Unknown keys stripped during validation and refreshes with no effective option changes are omitted. Callback errors are printed and do not prevent the accepted snapshot from being served.
 
 **Important:** Passing `None` into `refresh_threshold` will completely disable automatic refreshes and must be triggered manually via `sentry_options.refresh`.
 
@@ -148,6 +150,7 @@ use sentry_options::Options;
 Options::builder()
     .with_schemas(&[("seer", include_str!("../sentry-options/schemas/seer/schema.json"))])
     .with_callback(on_propagation)
+    .with_snapshot_diff_callback(on_snapshot_diff)
     .with_refresh_threshold(Some(Duration::from_secs(2)))  // or `None` to disable refresh-on-read
     .init()?;
 ```

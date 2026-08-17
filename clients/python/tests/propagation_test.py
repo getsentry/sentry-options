@@ -138,3 +138,49 @@ def test_propagation_callback_receives_multiple_updates(tmp_path: Path) -> None:
         """,
         options_dir,
     )
+
+
+def test_snapshot_diff_callback_reports_effective_changes(tmp_path: Path) -> None:
+    options_dir = make_options_dir(tmp_path)
+    values_file = options_dir / 'values' / 'test-ns' / 'values.json'
+    run_isolated(
+        f"""\
+        import json
+        from sentry_options import init, options
+
+        results = []
+        init(on_snapshot_diff=lambda ns, diff: results.append((ns, diff)))
+        assert options("test-ns").get("enabled") is True
+
+        with open("{values_file}", "w") as f:
+            json.dump({{"options": {{"enabled": False, "unknown": "ignored"}}}}, f)
+        assert options("test-ns").get_forced("enabled") is False
+
+        assert results == [("test-ns", {{
+            "added": {{}},
+            "removed": {{}},
+            "changed": {{"enabled": {{"old": True, "new": False}}}},
+        }})]
+        """,
+        options_dir,
+    )
+
+
+def test_snapshot_diff_callback_exception_does_not_crash(tmp_path: Path) -> None:
+    options_dir = make_options_dir(tmp_path)
+    values_file = options_dir / 'values' / 'test-ns' / 'values.json'
+    run_isolated(
+        f"""\
+        import json
+        from sentry_options import init, options
+
+        def boom(ns, diff):
+            raise RuntimeError("diff callback boom")
+
+        init(on_snapshot_diff=boom)
+        with open("{values_file}", "w") as f:
+            json.dump({{"options": {{"enabled": False}}}}, f)
+        assert options("test-ns").get_forced("enabled") is False
+        """,
+        options_dir,
+    )
