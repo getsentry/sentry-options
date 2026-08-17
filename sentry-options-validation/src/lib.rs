@@ -18,9 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicU64, Ordering},
-    Mutex,
 };
 use std::time::{Duration, Instant, SystemTime};
 
