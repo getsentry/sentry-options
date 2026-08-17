@@ -202,7 +202,7 @@ The `init()` shorthand and Python's `init()` are idempotent — calling again is
 There is no background thread. Values are refreshed lazily, on the reading thread:
 
 - The current snapshot lives in an `ArcSwap`, so reads are lock-free.
-- On a read, if the snapshot is older than a **staleness threshold** — 5 seconds by default, configurable via `with_refresh_threshold` in Rust and `refresh_threshold=` in Python — plus a small per-call jitter derived from the stack address (so threads don't all refresh on the same boundary), the reading thread re-stats and re-reads the files and publishes the new snapshot. Concurrent refreshers are harmless — last writer wins. On an I/O error the timestamp is still advanced to avoid hammering the disk.
+- On a read, if the snapshot is older than a **staleness threshold** — 5 seconds by default, configurable via `with_refresh_threshold` in Rust and `refresh_threshold=` in Python — plus a small per-call jitter derived from the stack address (so threads don't all refresh on the same boundary), the reading thread re-stats and re-reads the files and publishes the new snapshot. Concurrent reloads are serialized, so each callback compares the snapshot actually being replaced. On an I/O error the timestamp is still advanced to avoid hammering the disk.
 
 End to end, a value change propagates as: ConfigMap update → ~1–2 min kubelet sync to the mounted file → ≤5 s until the next read picks it up. No pod restart is required.
 

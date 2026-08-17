@@ -5,7 +5,8 @@
 //!
 //! Values refresh lazily on read on the same thread. A read past
 //! the staleness window re-reads the values directory on the calling thread
-//! and publishes the new snapshot via `ArcSwap` (last-writer-wins). The full
+//! and publishes the new snapshot via `ArcSwap`. Reloads are serialized so a
+//! callback always compares adjacent accepted snapshots. The full
 //! scheme is in `docs/architecture.md`; the memory-ordering invariants are
 //! documented inline in the `refresh` method below.
 
@@ -19,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
+    Mutex,
 };
 use std::time::{Duration, Instant, SystemTime};
 
@@ -713,6 +715,9 @@ pub struct ValuesStore {
     values: ArcSwap<ValuesByNamespace>,
     baseline: Instant,
     last_refresh_offset_ns: AtomicU64,
+    /// Serializes disk reload and snapshot publication so diffs always compare
+    /// the snapshot being replaced, rather than a stale concurrent read.
+    refresh_lock: Mutex<()>,
     /// Staleness threshold for refresh-on-read; `None` disables it, so values
     /// only change via [`refresh`](Self::refresh).
     refresh_threshold: Option<Duration>,
@@ -784,6 +789,7 @@ impl ValuesStoreBuilder {
             values: ArcSwap::from_pointee(initial),
             baseline,
             last_refresh_offset_ns,
+            refresh_lock: Mutex::new(()),
             refresh_threshold: self.refresh_threshold,
             last_generated_at: ArcSwap::from_pointee(generated_at_by_namespace),
             on_propagation: self.on_propagation,
@@ -873,9 +879,7 @@ impl ValuesStore {
     /// Any call resets the refresh-on-read timer, so calling this more often
     /// than the threshold guarantees reads never refresh inline.
     pub fn refresh(&self) -> ValidationResult<bool> {
-        let now_ns = self.baseline.elapsed().as_nanos() as u64;
-        let last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
-        self.refresh_at(last_ns, now_ns)
+        self.refresh_at()
     }
 
     fn maybe_refresh(&self) {
@@ -899,7 +903,7 @@ impl ValuesStore {
             return;
         }
 
-        if let Err(e) = self.refresh_at(last_ns, now_ns) {
+        if let Err(e) = self.refresh_at() {
             self.log_refresh_error(&e);
         }
     }
@@ -912,7 +916,13 @@ impl ValuesStore {
         );
     }
 
-    fn refresh_at(&self, observed_last_ns: u64, now_ns: u64) -> ValidationResult<bool> {
+    fn refresh_at(&self) -> ValidationResult<bool> {
+        let _refresh_guard = self
+            .refresh_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now_ns = self.baseline.elapsed().as_nanos() as u64;
+        let observed_last_ns = self.last_refresh_offset_ns.load(Ordering::Acquire);
         let current_mtimes = Self::collect_mtimes(&self.registry, &self.values_dir);
         if *self.last_mtimes.load().as_ref() == current_mtimes {
             let _ = self.last_refresh_offset_ns.compare_exchange(
@@ -967,6 +977,11 @@ impl ValuesStore {
         );
 
         let (new_generated_at, snapshot_diffs) = new_generated_at?;
+
+        // Call user code without the reload lock: callbacks may be slow or may
+        // themselves read options. The published snapshot and its diff were
+        // computed while holding the lock above.
+        drop(_refresh_guard);
 
         // Fire the propagation callback after the CAS so other threads see a
         // fresh timestamp and don't redundantly re-read from disk while a
@@ -1104,7 +1119,7 @@ fn stack_jitter_ns() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use std::sync::{Barrier, Mutex};
     use tempfile::TempDir;
 
     fn create_test_schema(temp_dir: &TempDir, namespace: &str, schema_json: &str) -> PathBuf {
@@ -2154,6 +2169,58 @@ Error: \"version\" is a required property"
             store.values.load().get("test").unwrap().get("enabled"),
             Some(&json!(false))
         );
+    }
+
+    #[test]
+    fn test_concurrent_refresh_emits_one_adjacent_snapshot_diff() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+        let diffs: Arc<Mutex<Vec<SnapshotDiff>>> = Arc::new(Mutex::new(Vec::new()));
+        let diffs_clone = diffs.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = Arc::new(
+            ValuesStore::builder(registry, &base.join("values"))
+                .with_snapshot_diff_callback(Box::new(move |_, diff| {
+                    diffs_clone.lock().unwrap().push(diff.clone());
+                }))
+                .build()
+                .unwrap(),
+        );
+
+        fs::write(
+            values_file,
+            r#"{"options": {"enabled": false}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        // Force both refreshers to observe a reload opportunity once the
+        // serialization lock is released.
+        store.last_mtimes.store(Arc::new(HashMap::new()));
+        let refresh_guard = store.refresh_lock.lock().unwrap();
+        let barrier = Arc::new(Barrier::new(3));
+        let workers: Vec<_> = (0..2)
+            .map(|_| {
+                let store = store.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    store.refresh().unwrap()
+                })
+            })
+            .collect();
+
+        barrier.wait();
+        drop(refresh_guard);
+
+        assert_eq!(
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .filter(|refreshed| *refreshed)
+                .count(),
+            1
+        );
+        assert_eq!(diffs.lock().unwrap().len(), 1);
     }
 
     /// Write a boolean-only schema and a values file for `namespace` under
