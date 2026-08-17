@@ -55,9 +55,24 @@ def test_get_array_of_objects_default() -> None:
     assert isinstance(value, list)
 
 
+def test_snapshot_returns_only_explicit_values() -> None:
+    snapshot = options('sentry-options-testing').snapshot()
+
+    assert snapshot['example-option'] == 'wow'
+    assert snapshot['int-option'] == 123
+    # These keys are available through get(), but only as schema defaults.
+    assert 'string-option' not in snapshot
+    assert 'array-option' not in snapshot
+
+
 def test_unknown_namespace() -> None:
     with pytest.raises(UnknownNamespaceError, match='nonexistent'):
         options('nonexistent').get('any-key')
+
+
+def test_snapshot_unknown_namespace() -> None:
+    with pytest.raises(UnknownNamespaceError, match='nonexistent'):
+        options('nonexistent').snapshot()
 
 
 def test_unknown_option() -> None:
