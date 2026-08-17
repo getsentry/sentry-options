@@ -230,6 +230,8 @@ unknown keys are stripped and schema validation succeeds, so a refresh that
 only changes ignored keys emits no event. The callback also runs when values
 change without `generated_at`; it is never called for a failed refresh, and a
 callback panic/exception is isolated from the newly published snapshot.
+Diff computation itself is opt-in: clients without a snapshot diff callback do
+not construct these payloads during reloads.
 
 ## Feature Flag Evaluation
 

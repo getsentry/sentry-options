@@ -956,7 +956,11 @@ impl ValuesStore {
                 }
 
                 let previous_values = self.values.load();
-                let snapshot_diffs = snapshot_diffs(previous_values.as_ref(), &new_values);
+                let snapshot_diffs = if self.on_snapshot_diff.is_some() {
+                    snapshot_diffs(previous_values.as_ref(), &new_values)
+                } else {
+                    HashMap::new()
+                };
                 self.values.store(Arc::new(new_values));
                 self.last_mtimes.store(Arc::new(current_mtimes));
                 Ok((generated_at, snapshot_diffs))
