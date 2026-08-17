@@ -9,8 +9,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 pub use sentry_options_validation::{
-    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, SnapshotDiff, SnapshotDiffCallback,
-    SnapshotValueChange, feature_property,
+    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, feature_property,
 };
 use sentry_options_validation::{
     SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
@@ -75,7 +74,6 @@ impl Options {
             &dir.join("values"),
             Some(DEFAULT_REFRESH_THRESHOLD),
             Some(callback),
-            None,
         )
     }
 
@@ -87,7 +85,6 @@ impl Options {
             registry,
             &base_dir.join("values"),
             Some(DEFAULT_REFRESH_THRESHOLD),
-            None,
             None,
         )
     }
@@ -101,7 +98,6 @@ impl Options {
             &resolve_options_dir().join("values"),
             Some(DEFAULT_REFRESH_THRESHOLD),
             None,
-            None,
         )
     }
 
@@ -110,15 +106,11 @@ impl Options {
         values_dir: &Path,
         refresh_threshold: Option<Duration>,
         callback: Option<PropagationCallback>,
-        snapshot_diff_callback: Option<SnapshotDiffCallback>,
     ) -> Result<Self> {
         let mut builder = ValuesStore::builder(Arc::new(registry), values_dir)
             .with_refresh_threshold(refresh_threshold);
         if let Some(cb) = callback {
             builder = builder.with_callback(cb);
-        }
-        if let Some(cb) = snapshot_diff_callback {
-            builder = builder.with_snapshot_diff_callback(cb);
         }
         Ok(Self {
             store: builder.build()?,
@@ -234,8 +226,6 @@ impl Options {
 /// - `with_schemas` supplies schemas in memory instead of reading `{dir}/schemas/`
 /// - `with_additional_schemas` adds in-memory schemas alongside whichever base the above selects
 /// - `with_callback` registers a callback that fires on every value refresh.
-/// - `with_snapshot_diff_callback` registers a callback for non-empty effective
-///   option diffs after a successful refresh.
 /// - `with_refresh_threshold` overrides or disables the staleness threshold
 ///   for refresh-on-read.
 ///
@@ -245,7 +235,6 @@ pub struct InitBuilder<'a> {
     schemas: Option<&'a [(&'a str, &'a str)]>,
     additional_schemas: Option<&'a [(&'a str, &'a str)]>,
     callback: Option<PropagationCallback>,
-    snapshot_diff_callback: Option<SnapshotDiffCallback>,
     refresh_threshold: Option<Option<Duration>>,
 }
 
@@ -281,18 +270,6 @@ impl<'a> InitBuilder<'a> {
     /// are refreshed with a new `generated_at` timestamp.
     pub fn with_callback(mut self, callback: impl Fn(&str, f64) + Send + Sync + 'static) -> Self {
         self.callback = Some(Box::new(callback));
-        self
-    }
-
-    /// Register a callback that receives `(namespace, diff)` after a
-    /// successful refresh with an effective option change. The diff compares
-    /// accepted snapshots, so unknown keys stripped during loading do not
-    /// appear. Callback panics are caught and do not affect the reload.
-    pub fn with_snapshot_diff_callback(
-        mut self,
-        callback: impl Fn(&str, &SnapshotDiff) + Send + Sync + 'static,
-    ) -> Self {
-        self.snapshot_diff_callback = Some(Box::new(callback));
         self
     }
 
@@ -358,7 +335,6 @@ impl<'a> InitBuilder<'a> {
             &dir.join("values"),
             refresh_threshold,
             self.callback,
-            self.snapshot_diff_callback,
         )
     }
 }

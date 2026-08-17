@@ -7,7 +7,6 @@ The library watches for file changes and refreshes values automatically.
 """
 from __future__ import annotations
 
-from typing import TypedDict
 from typing import Union
 
 from sentry_options._core import feature_property
@@ -29,17 +28,6 @@ _Object = dict[str, _Primitive]
 OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 
 
-class SnapshotValueChange(TypedDict):
-    old: OptionValue
-    new: OptionValue
-
-
-class SnapshotDiff(TypedDict):
-    added: dict[str, OptionValue]
-    removed: dict[str, OptionValue]
-    changed: dict[str, SnapshotValueChange]
-
-
 __all__ = [
     'init',
     'feature_property',
@@ -55,6 +43,4 @@ __all__ = [
     'SchemaError',
     'UnknownNamespaceError',
     'UnknownOptionError',
-    'SnapshotDiff',
-    'SnapshotValueChange',
 ]

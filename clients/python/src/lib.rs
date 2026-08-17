@@ -7,7 +7,7 @@ use std::time::Duration;
 use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
-    OptionsError as RustOptionsError, SnapshotDiff,
+    OptionsError as RustOptionsError,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -112,36 +112,6 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
     } else {
         Err(PyValueError::new_err("Unsupported type for override"))
     }
-}
-
-/// Convert the compact Rust snapshot diff to a plain Python dictionary. A
-/// dictionary keeps the callback payload easy to consume from Getsentry while
-/// retaining typed `old`/`new` values for changed entries.
-fn snapshot_diff_to_py(py: Python<'_>, diff: &SnapshotDiff) -> PyResult<Py<PyAny>> {
-    let payload = PyDict::new(py);
-
-    let added = PyDict::new(py);
-    for (key, value) in &diff.added {
-        added.set_item(key, json_to_py(py, value)?)?;
-    }
-    payload.set_item("added", added)?;
-
-    let removed = PyDict::new(py);
-    for (key, value) in &diff.removed {
-        removed.set_item(key, json_to_py(py, value)?)?;
-    }
-    payload.set_item("removed", removed)?;
-
-    let changed = PyDict::new(py);
-    for (key, value) in &diff.changed {
-        let change = PyDict::new(py);
-        change.set_item("old", json_to_py(py, &value.old)?)?;
-        change.set_item("new", json_to_py(py, &value.new)?)?;
-        changed.set_item(key, change)?;
-    }
-    payload.set_item("changed", changed)?;
-
-    Ok(payload.into_any().unbind())
 }
 
 fn options_err(err: RustOptionsError) -> PyErr {
@@ -251,11 +221,6 @@ impl PyFeatureChecker {
 /// Optionally accepts an `on_propagation` callback that fires whenever values
 /// are refreshed with a new `generated_at` timestamp. The callback receives
 /// `(namespace: str, delay_secs: float)`.
-///
-/// `on_snapshot_diff` receives `(namespace: str, diff: dict)` after a
-/// successful refresh whose accepted option snapshot has a non-empty diff.
-/// The dictionary contains `added`, `removed`, and `changed` entries.
-///
 /// `refresh_threshold` is the staleness threshold in seconds for
 /// refresh-on-read (default: 5.0). Pass `None` to disable refresh-on-read
 /// entirely; values then only change via `refresh()`.
@@ -265,12 +230,11 @@ impl PyFeatureChecker {
 /// useful for schemas only known at runtime. Errors on a namespace already on
 /// disk. Values still load from disk.
 #[pyfunction]
-#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64()), additional_schemas=None, on_snapshot_diff=None))]
+#[pyo3(signature = (on_propagation=None, refresh_threshold=Some(DEFAULT_REFRESH_THRESHOLD.as_secs_f64()), additional_schemas=None))]
 fn init(
     on_propagation: Option<Py<PyAny>>,
     refresh_threshold: Option<f64>,
     additional_schemas: Option<HashMap<String, String>>,
-    on_snapshot_diff: Option<Py<PyAny>>,
 ) -> PyResult<()> {
     if GLOBAL_OPTIONS.get().is_some() {
         return Ok(());
@@ -305,19 +269,6 @@ fn init(
             Python::attach(|py| {
                 if let Err(e) = cb.call1(py, (ns, delay)) {
                     e.print(py);
-                }
-            });
-        });
-    }
-    if let Some(cb) = on_snapshot_diff {
-        // `Py<PyAny>` is `Send + Sync`; the closure re-acquires the GIL for the
-        // call, so the callback can run on whichever thread triggers a refresh.
-        builder = builder.with_snapshot_diff_callback(move |ns, diff| {
-            Python::attach(|py| {
-                match snapshot_diff_to_py(py, diff).and_then(|payload| cb.call1(py, (ns, payload)))
-                {
-                    Ok(_) => {}
-                    Err(e) => e.print(py),
                 }
             });
         });
