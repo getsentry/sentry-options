@@ -314,7 +314,8 @@ fn init(
         // call, so the callback can run on whichever thread triggers a refresh.
         builder = builder.with_snapshot_diff_callback(move |ns, diff| {
             Python::attach(|py| {
-                match snapshot_diff_to_py(py, diff).and_then(|payload| cb.call1(py, (ns, payload))) {
+                match snapshot_diff_to_py(py, diff).and_then(|payload| cb.call1(py, (ns, payload)))
+                {
                     Ok(_) => {}
                     Err(e) => e.print(py),
                 }
