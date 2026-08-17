@@ -61,14 +61,6 @@ class NamespaceOptions:
     def get_forced(self, key: str) -> OptionValue: ...
     """Like get, but always refreshes. Refresh incurs a cost so this should only be used in testing."""
 
-    def snapshot(self) -> dict[str, OptionValue]: ...
-    """
-    Return the accepted explicitly configured values for this namespace.
-
-    Schema defaults and test overrides are excluded. Unknown keys have already
-    been removed during loading.
-    """
-
     def isset(self, key: str) -> bool: ...
     """See if an option is defined and has a value set."""
 

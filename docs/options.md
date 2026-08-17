@@ -6,7 +6,6 @@ The first half of this document covers runtime options. The second half covers f
   - [Reading an option](#reading-an-option)
     - [Python](#python)
     - [Rust](#rust)
-  - [Reading configured values](#reading-configured-values)
   - [Testing with options](#testing-with-options)
     - [Python](#python-1)
     - [Rust](#rust-1)
@@ -68,28 +67,6 @@ struct IPAddress {
 */
 // directly destructure an object
 let cfg: IPAddress = serde_json::from_value(opts.get("database.config")?)?;
-```
-
-## Reading configured values
-
-Use a snapshot when you need every explicitly configured value in one namespace. It contains only values accepted from the ConfigMap: unknown keys have been removed during validation, and schema defaults are not included. A namespace with no configured values returns an empty map. Test overrides are also not included.
-
-### Python
-
-```python
-from sentry_options import options
-
-configured = options('seer').snapshot()
-timeout = configured.get('inference.timeout')
-```
-
-### Rust
-
-```rust
-use sentry_options::Options;
-
-let configured = Options::new()?.snapshot("seer")?;
-let timeout = configured.get("inference.timeout");
 ```
 
 ## Testing with options

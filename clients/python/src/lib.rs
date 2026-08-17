@@ -358,22 +358,6 @@ impl NamespaceOptions {
         json_to_py(py, &value)
     }
 
-    /// Return the accepted explicitly configured values for this namespace.
-    ///
-    /// Schema defaults and test overrides are excluded. Unknown keys have
-    /// already been removed during loading.
-    fn snapshot(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let snapshot = self
-            .options
-            .snapshot(&self.namespace)
-            .map_err(options_err)?;
-        let result = PyDict::new(py);
-        for (key, value) in snapshot {
-            result.set_item(key, json_to_py(py, &value)?)?;
-        }
-        Ok(result.into_any().unbind())
-    }
-
     /// Check if an option has a defined value.
     fn isset(&self, key: &str) -> PyResult<bool> {
         self.options

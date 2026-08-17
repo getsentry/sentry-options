@@ -4,7 +4,6 @@ pub mod features;
 
 pub use features::{FeatureChecker, FeatureContext, FeatureError, features};
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -128,22 +127,6 @@ impl Options {
     /// to drive refreshes in production.
     pub fn get_forced(&self, namespace: &str, key: &str) -> Result<Value> {
         self.get_inner(namespace, key, true)
-    }
-
-    /// Return the accepted explicitly configured values for a namespace.
-    ///
-    /// The returned map is a copy of the current validated values snapshot:
-    /// unknown keys have already been removed during loading, while schema
-    /// defaults and test overrides are intentionally excluded. A known
-    /// namespace with no values configured returns an empty map.
-    pub fn snapshot(&self, namespace: &str) -> Result<HashMap<String, Value>> {
-        self.store
-            .registry()
-            .get(namespace)
-            .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
-
-        let values_guard = self.store.load();
-        Ok(values_guard.get(namespace).cloned().unwrap_or_default())
     }
 
     /// Refreshes values from disk, ignoring the staleness threshold.
@@ -583,52 +566,6 @@ mod tests {
 
         let options = Options::from_directory(temp.path()).unwrap();
         assert_eq!(options.get("test", "timeout").unwrap(), json!(30));
-    }
-
-    #[test]
-    fn snapshot_returns_only_accepted_explicit_values() {
-        let temp = TempDir::new().unwrap();
-        let schemas = temp.path().join("schemas");
-        let values = temp.path().join("values");
-        fs::create_dir_all(&schemas).unwrap();
-
-        create_schema(
-            &schemas,
-            "test",
-            r#"{
-                "version": "1.0",
-                "type": "object",
-                "properties": {
-                    "explicit": {"type": "boolean", "default": false, "description": "Explicit"},
-                    "default-only": {"type": "string", "default": "fallback", "description": "Default"}
-                }
-            }"#,
-        );
-        create_values(
-            &values,
-            "test",
-            r#"{"options": {"explicit": true, "unknown": "ignored"}}"#,
-        );
-
-        let options = Options::from_directory(temp.path()).unwrap();
-        let snapshot = options.snapshot("test").unwrap();
-
-        assert_eq!(snapshot.get("explicit"), Some(&json!(true)));
-        assert!(!snapshot.contains_key("default-only"));
-        assert!(!snapshot.contains_key("unknown"));
-    }
-
-    #[test]
-    fn snapshot_rejects_unknown_namespace() {
-        let options = Options::builder()
-            .with_schemas(&[("test", BOOL_SCHEMA)])
-            .build()
-            .unwrap();
-
-        assert!(matches!(
-            options.snapshot("unknown"),
-            Err(OptionsError::UnknownNamespace(namespace)) if namespace == "unknown"
-        ));
     }
 
     #[test]
