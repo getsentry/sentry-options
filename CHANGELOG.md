@@ -1,4 +1,14 @@
 # Changelog
+## 1.2.8
+
+### New Features ✨
+
+- (schema) Allow a top level `definitions` key to accomodate YAML anchors by @kenzoengineer in [#171](https://github.com/getsentry/sentry-options/pull/171)
+
+### Bug Fixes 🐛
+
+- (schema) Allow timezones in schema regex by @kenzoengineer in [#167](https://github.com/getsentry/sentry-options/pull/167)
+
 ## 1.2.7
 
 ### New Features ✨
