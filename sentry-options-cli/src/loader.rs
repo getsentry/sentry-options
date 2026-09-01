@@ -125,14 +125,24 @@ fn validate_and_parse(
             source: e,
         })?;
 
-    let mut result = HashMap::new();
-
-    // should only have one top level key named "options"
-    if data.len() != 1 {
-        let keys: Vec<String> = data.keys().map(|k| k.to_string()).collect();
+    let mut unexpected_keys: Vec<&String> = data
+        .keys()
+        .filter(|key| key.as_str() != "options" && key.as_str() != "definitions")
+        .collect();
+    unexpected_keys.sort();
+    if !unexpected_keys.is_empty() {
         return Err(AppError::Validation(format!(
-            "Invalid YAML structure in {}: expected exactly one top level key 'options', found {:?}",
-            path, keys
+            "Invalid YAML structure in {}: expected only top level keys 'options' and optional 'definitions', found unexpected keys {:?}",
+            path, unexpected_keys
+        )));
+    }
+
+    if let Some(definitions) = data.get("definitions")
+        && !definitions.is_mapping()
+    {
+        return Err(AppError::Validation(format!(
+            "Invalid YAML structure in {}: expected 'definitions' to be a mapping",
+            path
         )));
     }
 
@@ -143,6 +153,8 @@ fn validate_and_parse(
             path, keys
         )));
     };
+
+    let mut result = HashMap::new();
 
     // options should be a Mapping
     let Some(options_map) = options.as_mapping() else {

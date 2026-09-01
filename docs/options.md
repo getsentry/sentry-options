@@ -235,6 +235,15 @@ Adding an option with the Python library installed should trigger the ([precommi
 This is done in the [sentry-options-automator](https://github.com/getsentry/sentry-options-automator) repo.
 Options are set in `./option-values/{namespace}/{target}/values.yaml`.
 
+Values files may also contain an optional top-level `definitions` mapping for reusable YAML anchors. Aliases are expanded during parsing; definitions are not deployed:
+
+```yaml
+definitions:
+  internal_ids: &internal_ids [1, 2]
+options:
+  allowed.ids: *internal_ids
+```
+
 `{namespace}` is the namespace of your options, either your repo name (e.g. `seer`, `snuba`) or prefixed by your repo name (e.g. `seer-review`)
 
 `{target}` is the location it will be deployed to.

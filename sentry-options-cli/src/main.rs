@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn test_yaml_missing_options_key() {
         let f = TestFixture::new(&["test"]);
-        f.create_file("test", "default", "bad.yaml", "settings:\n  key: value");
+        f.create_file("test", "default", "bad.yaml", "definitions: {}");
 
         let result = f.load();
         assert!(result.is_err());
@@ -576,22 +576,61 @@ mod tests {
     }
 
     #[test]
-    fn test_yaml_multiple_top_level_keys() {
+    fn test_yaml_definitions_expand_anchors() {
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
+            "test",
+            "default",
+            "values.yaml",
+            r#"definitions:
+  shared_string: &shared_string "value"
+options:
+  string_val: *shared_string
+"#,
+        );
+
+        let grouped = f.load().unwrap();
+        let data = &grouped["test"]["default"][0].data;
+        assert_eq!(data.len(), 1);
+        assert_eq!(data["string_val"], "value");
+    }
+
+    #[test]
+    fn test_yaml_unknown_top_level_key() {
         let f = TestFixture::new(&["test"]);
         f.create_file(
             "test",
             "default",
             "bad.yaml",
-            "options:\n  key: value\nextra:\n  other: value",
+            "options:\n  string_val: value\nextra:\n  other: value",
         );
 
         let result = f.load();
-        assert!(result.is_err());
         match result {
             Err(AppError::Validation(msg)) => {
-                assert!(msg.contains("exactly one top level key"));
+                assert!(msg.contains("unexpected keys"));
+                assert!(msg.contains("extra"));
             }
-            _ => panic!("Expected Validation error for multiple top-level keys"),
+            _ => panic!("Expected Validation error for an unknown top-level key"),
+        }
+    }
+
+    #[test]
+    fn test_yaml_definitions_must_be_a_mapping() {
+        let f = TestFixture::new(&["test"]);
+        f.create_file(
+            "test",
+            "default",
+            "bad.yaml",
+            "definitions: value\noptions:\n  string_val: value",
+        );
+
+        let result = f.load();
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(msg.contains("expected 'definitions' to be a mapping"));
+            }
+            _ => panic!("Expected Validation error when definitions is not a mapping"),
         }
     }
 
