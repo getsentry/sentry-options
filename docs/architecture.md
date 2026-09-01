@@ -154,12 +154,16 @@ Both constraints are injected recursively, descending into `properties`, `additi
 
 ## Values & Targets
 
-Values are YAML files under `option-values/{namespace}/{target}/`, each with a single `options:` key:
+Values are YAML files under `option-values/{namespace}/{target}/`. Each requires an `options:` mapping and may include a `definitions:` mapping for reusable YAML anchors:
 
 ```yaml
+definitions:
+  internal_ids: &internal_ids [1, 2]
 options:
-  inference.timeout: 200
+  allowed.ids: *internal_ids
 ```
+
+`definitions` is only an authoring aid. YAML aliases are expanded during parsing, and only `options` is validated, merged, and emitted to JSON or ConfigMaps. Other top-level keys are rejected.
 
 Every namespace has a mandatory `default` target (the base) plus one directory per region target (`us`, `de`, `s4s2`, …). A target's values are merged on top of `default`, with target keys overriding. A namespace is only deployed to a region that has its own target directory — `default` alone deploys nowhere.
 
