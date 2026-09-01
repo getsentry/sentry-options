@@ -3,7 +3,7 @@
 pub mod experiments;
 pub mod features;
 
-pub use experiments::{Arm, Experiment, Layer, assign as assign_experiment};
+pub use experiments::{Arm, Experiment, Layer};
 pub use features::{FeatureChecker, FeatureContext, FeatureError, features};
 
 use std::path::{Path, PathBuf};

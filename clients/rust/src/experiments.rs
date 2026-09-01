@@ -4,6 +4,9 @@
 //! into one of several weighted arms. This is intentionally independent of the
 //! feature-flag evaluator in [`crate::features`]: it has its own salted hash and
 //! never touches [`crate::features::FeatureContext`] or its rollout identity.
+//!
+//! Assignment is deterministic and publicly reproducible from the salt, subject
+//! key, and weights — never use it to gate a security-sensitive decision.
 
 use std::ops::RangeInclusive;
 
@@ -25,8 +28,8 @@ impl Arm {
     }
 }
 
-/// A multi-arm experiment. `namespace` acts as the salt that decorrelates
-/// distinct experiments sharing the same arm layout.
+/// A multi-arm experiment. `namespace` and `name` together salt the assignment,
+/// decorrelating experiments that share the same arm layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Experiment {
     pub name: String,
@@ -42,50 +45,45 @@ impl Experiment {
             arms,
         }
     }
-}
 
-/// Reduce a salted string to a bucket in `0..total` using the first 8 bytes of
-/// its SHA-1 digest. Own hash, kept separate from the feature evaluator's.
-fn bucket_of(salted: &str, total: u32) -> u32 {
-    let mut hasher = Sha1::new();
-    hasher.update(salted.as_bytes());
-    let digest = hasher.finalize();
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&digest[0..8]);
-    let raw = u64::from_be_bytes(bytes);
-    (raw % total as u64) as u32
-}
-
-fn salted_key(namespace: &str, name: &str, subject_key: &str) -> String {
-    format!("{namespace}:{name}:{subject_key}")
-}
-
-/// Deterministically assign `subject_key` to one of `experiment`'s arms.
-///
-/// Returns `None` only when the experiment has no arms or all weights are zero.
-/// The salt (namespace + name) means two experiments with identical arm layouts
-/// but different names assign independently.
-pub fn assign<'a>(experiment: &'a Experiment, subject_key: &str) -> Option<&'a Arm> {
-    let total: u32 = experiment.arms.iter().map(|a| a.weight).sum();
-    if total == 0 {
-        return None;
-    }
-    let salted = salted_key(&experiment.namespace, &experiment.name, subject_key);
-    let mut bucket = bucket_of(&salted, total);
-    for arm in &experiment.arms {
-        if bucket < arm.weight {
-            return Some(arm);
+    /// Assign `subject_key` to one arm; `None` if there are no arms or all
+    /// weights are zero. Changing any weight or arm re-buckets every subject.
+    pub fn assign(&self, subject_key: &str) -> Option<&Arm> {
+        let total: u64 = self.arms.iter().map(|a| a.weight as u64).sum();
+        if total == 0 {
+            return None;
         }
-        bucket -= arm.weight;
+        let mut bucket = bucket_for([&self.namespace, &self.name, subject_key], total);
+        for arm in &self.arms {
+            let weight = arm.weight as u64;
+            if bucket < weight {
+                return Some(arm);
+            }
+            bucket -= weight;
+        }
+        unreachable!("bucket {bucket} must be < sum of weights {total}");
     }
-    // Unreachable: bucket < total == sum(weights). Kept as a total fallback.
-    experiment.arms.last()
 }
 
-/// A layer of mutually exclusive experiments over a single shared salted bucket.
+/// Reduce salted `components` to a bucket in `0..total`. Length-prefixes each
+/// component so `:`-bearing values can't collide; SHA-1 is for distribution only.
+fn bucket_for(components: [&str; 3], total: u64) -> u64 {
+    let mut hasher = Sha1::new();
+    for component in components {
+        hasher.update((component.len() as u64).to_be_bytes());
+        hasher.update(component.as_bytes());
+    }
+    let digest = hasher.finalize();
+    let raw = u64::from_be_bytes(digest[..8].try_into().expect("SHA-1 yields 20 bytes"));
+    raw % total
+}
+
+/// A layer of mutually exclusive experiments over a single shared salted slot.
 ///
-/// Each experiment claims a disjoint slice of `0..=99`. A subject falling in one
-/// experiment's range is excluded from every other experiment in the layer.
+/// Each experiment claims a disjoint slice of `0..=99`; the caller is
+/// responsible for keeping ranges disjoint and within bounds. A subject falling
+/// in one experiment's range is excluded from every other experiment in the
+/// layer, and any slot no range covers is an implicit holdout.
 #[derive(Debug, Clone)]
 pub struct Layer {
     pub name: String,
@@ -110,11 +108,10 @@ impl Layer {
     /// arm within it. The layer slot (`0..=99`) is computed from the layer's own
     /// salt so it is independent of any single experiment's assignment.
     pub fn assign(&self, subject_key: &str) -> Option<(&Experiment, &Arm)> {
-        let salted = salted_key(&self.salt, &self.name, subject_key);
-        let slot = bucket_of(&salted, 100);
+        let slot = bucket_for([&self.salt, &self.name, subject_key], 100) as u32;
         for (experiment, range) in &self.experiments {
             if range.contains(&slot) {
-                return assign(experiment, subject_key).map(|arm| (experiment, arm));
+                return experiment.assign(subject_key).map(|arm| (experiment, arm));
             }
         }
         None
@@ -139,9 +136,9 @@ mod tests {
         let exp = two_arm("checkout-color", "seer");
         for i in 0..1000 {
             let key = format!("subject-{i}");
-            let first = assign(&exp, &key).unwrap().name.clone();
+            let first = exp.assign(&key).unwrap().name.clone();
             for _ in 0..10 {
-                assert_eq!(assign(&exp, &key).unwrap().name, first);
+                assert_eq!(exp.assign(&key).unwrap().name, first);
             }
         }
     }
@@ -149,9 +146,21 @@ mod tests {
     #[test]
     fn empty_or_zero_weight_returns_none() {
         let empty = Experiment::new("e", "ns", vec![]);
-        assert!(assign(&empty, "s").is_none());
+        assert!(empty.assign("s").is_none());
         let zero = Experiment::new("z", "ns", vec![Arm::new("a", 0), Arm::new("b", 0)]);
-        assert!(assign(&zero, "s").is_none());
+        assert!(zero.assign("s").is_none());
+    }
+
+    #[test]
+    fn zero_weight_arm_is_never_selected() {
+        let exp = Experiment::new(
+            "z",
+            "seer",
+            vec![Arm::new("never", 0), Arm::new("always", 100)],
+        );
+        for i in 0..1000 {
+            assert_eq!(exp.assign(&format!("s{i}")).unwrap().name, "always");
+        }
     }
 
     #[test]
@@ -161,7 +170,7 @@ mod tests {
         let n = 100_000;
         for i in 0..n {
             let key = format!("user:{i}");
-            let arm = assign(&exp, &key).unwrap();
+            let arm = exp.assign(&key).unwrap();
             *counts.entry(arm.name.as_str()).or_default() += 1;
         }
         let control = counts["control"] as f64 / n as f64;
@@ -189,7 +198,7 @@ mod tests {
         let n = 100_000;
         for i in 0..n {
             let key = format!("acct-{i}");
-            let arm = assign(&exp, &key).unwrap();
+            let arm = exp.assign(&key).unwrap();
             *counts.entry(arm.name.clone()).or_default() += 1;
         }
         for arm in ["a", "b", "c", "d"] {
@@ -208,7 +217,7 @@ mod tests {
         let mut big = 0u32;
         let n = 100_000;
         for i in 0..n {
-            if assign(&exp, &format!("s{i}")).unwrap().name == "big" {
+            if exp.assign(&format!("s{i}")).unwrap().name == "big" {
                 big += 1;
             }
         }
@@ -227,8 +236,8 @@ mod tests {
         let n = 100_000;
         for i in 0..n {
             let key = format!("subject#{i}");
-            let a = assign(&exp_a, &key).unwrap().name.clone();
-            let b = assign(&exp_b, &key).unwrap().name.clone();
+            let a = exp_a.assign(&key).unwrap().name.clone();
+            let b = exp_b.assign(&key).unwrap().name.clone();
             *joint.entry((a, b)).or_default() += 1;
         }
         for a in ["control", "treatment"] {
@@ -241,6 +250,35 @@ mod tests {
                 assert!(
                     (frac - 0.25).abs() < 0.01,
                     "joint cell ({a},{b}) fraction {frac} — assignments are correlated"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn colon_in_salt_fields_does_not_collide() {
+        // Length-prefixed hashing keeps these tuples independent; a naive
+        // `:`-join would fold both onto "a:x:b:<key>" and correlate them.
+        let a = two_arm("b", "a:x");
+        let b = two_arm("x:b", "a");
+        let mut joint: HashMap<(String, String), u32> = HashMap::new();
+        let n = 100_000;
+        for i in 0..n {
+            let key = format!("s{i}");
+            let x = a.assign(&key).unwrap().name.clone();
+            let y = b.assign(&key).unwrap().name.clone();
+            *joint.entry((x, y)).or_default() += 1;
+        }
+        for x in ["control", "treatment"] {
+            for y in ["control", "treatment"] {
+                let cell = joint
+                    .get(&(x.to_string(), y.to_string()))
+                    .copied()
+                    .unwrap_or(0);
+                let frac = cell as f64 / n as f64;
+                assert!(
+                    (frac - 0.25).abs() < 0.01,
+                    "joint cell ({x},{y}) fraction {frac} — colon-bearing fields collided"
                 );
             }
         }
