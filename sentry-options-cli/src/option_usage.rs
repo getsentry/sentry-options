@@ -19,7 +19,7 @@ fn load_all_options(values_dir: &Path) -> Result<HashSet<String>> {
     for entry in WalkDir::new(values_dir) {
         let entry = entry?;
 
-        if !entry.file_type().is_file() {
+        if !entry.file_type().is_file() && !entry.file_type().is_symlink() {
             continue;
         }
 
@@ -192,6 +192,27 @@ mod tests {
         let result = check_option_usage(deletions.to_string(), dir.path()).unwrap();
 
         assert_eq!(result, "sentry:feature.enabled sentry:system.url");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlinked_options_in_use() {
+        use std::os::unix::fs::symlink;
+
+        let dir = setup_test_dir();
+        let source_dir = setup_test_dir();
+        create_values(source_dir.path(), "source", &[("feature.enabled", "true")]);
+
+        let target_dir = dir.path().join("sentry").join("default");
+        fs::create_dir_all(&target_dir).unwrap();
+        symlink(
+            source_dir.path().join("source/default/values.yaml"),
+            target_dir.join("values.yaml"),
+        )
+        .unwrap();
+
+        let result = check_option_usage("sentry:feature.enabled".to_string(), dir.path()).unwrap();
+        assert_eq!(result, "sentry:feature.enabled");
     }
 
     #[test]

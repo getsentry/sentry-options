@@ -17,9 +17,9 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
     let root_path = Path::new(root);
     for entry in WalkDir::new(root) {
         let dir_entry = entry?;
+        let file_type = dir_entry.file_type();
 
-        // Only process files, skip directories
-        if dir_entry.file_type().is_file() {
+        if file_type.is_file() || file_type.is_symlink() {
             let path = dir_entry.path();
             let path_string = path.display().to_string();
 

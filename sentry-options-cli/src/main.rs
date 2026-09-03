@@ -531,6 +531,70 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_yaml_file_symlink_is_loaded() {
+        use std::os::unix::fs::symlink;
+
+        let f = TestFixture::new(&["test"]);
+        let source_dir = TempDir::new().unwrap();
+        let source = source_dir.path().join("flagpole.yaml");
+        fs::write(&source, valid_yaml(&[("string_val", "\"linked\"")])).unwrap();
+
+        let target_dir = f.options_dir.path().join("test").join("default");
+        fs::create_dir_all(&target_dir).unwrap();
+        let relative_source = Path::new("../../..")
+            .join(source_dir.path().file_name().unwrap())
+            .join("flagpole.yaml");
+        symlink(relative_source, target_dir.join("values.yaml")).unwrap();
+
+        let grouped = f.load().unwrap();
+        let files = grouped.get("test").unwrap().get("default").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files[0].data.get("string_val"),
+            Some(&serde_json::json!("linked"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_non_yaml_file_symlink_is_ignored() {
+        use std::os::unix::fs::symlink;
+
+        let f = TestFixture::new(&["test"]);
+        let source_dir = TempDir::new().unwrap();
+        let source = source_dir.path().join("flagpole.yaml");
+        fs::write(&source, valid_yaml(&[("string_val", "\"linked\"")])).unwrap();
+
+        let target_dir = f.options_dir.path().join("test").join("default");
+        fs::create_dir_all(&target_dir).unwrap();
+        symlink(source, target_dir.join("values.txt")).unwrap();
+
+        assert!(f.load().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_dangling_yaml_file_symlink_is_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let f = TestFixture::new(&["test"]);
+        let target_dir = f.options_dir.path().join("test").join("default");
+        fs::create_dir_all(&target_dir).unwrap();
+        symlink(
+            // symlinked file doesn't exist
+            f.options_dir.path().join("missing.yaml"),
+            target_dir.join("values.yaml"),
+        )
+        .unwrap();
+
+        let result = f.load();
+        assert!(
+            matches!(result, Err(AppError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound)
+        );
+    }
+
     #[test]
     fn test_empty_yaml_file() {
         let f = TestFixture::new(&["test"]);
