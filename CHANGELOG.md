@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.9
+
+### New Features ✨
+
+- (cli) Adds the ability to follow symlinks by @kenzoengineer in [#173](https://github.com/getsentry/sentry-options/pull/173)
+
 ## 1.2.8
 
 ### New Features ✨
