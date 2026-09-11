@@ -97,7 +97,7 @@ impl Assignment {
             "namespace": self.namespace,
             "experiment": self.experiment,
             "layer": self.layer,
-            "unit": self.unit.join(","),
+            "unit": self.unit,
             "subject": self.subject,
             "slot": self.slot,
             "status": self.status.as_str(),
@@ -112,9 +112,7 @@ impl Assignment {
 pub enum ExperimentError {
     #[error("Options not initialized - call init() first")]
     NotInitialized,
-    #[error(
-        "Experiment '{experiment}' expects context field '{field}' to be a string, number or bool"
-    )]
+    #[error("Experiment '{experiment}' needs context field '{field}' as a string, number or bool")]
     MissingUnit { experiment: String, field: String },
     #[error("Experiments in namespace '{namespace}' are invalid:{message}")]
     InvalidValue { namespace: String, message: String },
@@ -145,7 +143,7 @@ fn unit_value(value: &Value) -> Option<String> {
 
 /// Assign `experiment` within an already-loaded set; the checker wraps this with
 /// the live values of a namespace.
-pub fn assign_in(
+pub(crate) fn assign_in(
     set: &ExperimentSet,
     namespace: &str,
     experiment: &str,
@@ -602,7 +600,7 @@ mod tests {
                 "namespace": NS,
                 "experiment": "checkout-color",
                 "layer": "checkout",
-                "unit": "organization_id",
+                "unit": ["organization_id"],
                 "subject": "5",
                 "slot": 3,
                 "status": "assigned",

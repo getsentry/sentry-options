@@ -45,11 +45,11 @@ experiment.checkout-color:
 | `layer` | Experiments sharing a layer are mutually exclusive. Rename the layer to reshuffle everyone in it. |
 | `unit` | Context fields that identify the subject. Every experiment in a layer must declare the same unit. |
 | `allocation` | `start` is the first slot (0-99), `size` the number of slots, i.e. percent of the layer. `{start: 0, size: 40}` covers slots 0 through 39. |
-| `arms` | One or more `{name, weight, config?}`. Weights are relative integers; `config` is free-form JSON your code reads. |
+| `arms` | One or more `{name, weight, config?}`. Weights are relative integers up to 1,000,000,000; `config` is free-form JSON your code reads. |
 | `enabled` | Optional, default `true`. When `false`, subjects in the allocation are reported as `disabled` and get no arm. The allocation stays reserved. |
 | `owner`, `description`, `created_at` | Same shape as on feature flags; only `owner.team` is required. |
 
-Validation rejects allocations that run past slot 99, overlapping allocations in a layer, differing units in a layer, duplicate arm names, and arms whose weights sum to 0. The message names the experiments involved.
+Validation rejects allocations that run past slot 99, overlapping allocations in a layer, differing units in a layer, duplicate arm names, and an enabled experiment whose weights sum to 0 (a paused one may zero them). The message names the experiments involved.
 
 ### Sharing a layer
 
@@ -88,7 +88,7 @@ let assignment = experiments("seer").assign("checkout-color", &context);
 if assignment.in_arm("treatment") { /* ... */ }
 ```
 
-`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. In Python, a context that cannot be converted (a non-string key, `NaN`) also comes back as `unassigned` from `assign`. The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`).
+`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. In Python, a context that cannot be converted (a non-string key, `NaN`) comes back as `unassigned` from `assign`, while `try_assign` raises the conversion error (`ValueError`). The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`).
 
 An `Assignment` carries:
 
@@ -103,7 +103,7 @@ An `Assignment` carries:
 
 ## Exposure
 
-The library decides assignments; it does not record them. Log an exposure when the subject actually receives the treatment, once per subject per experiment, using `assignment.to_dict()` (Python) or `assignment.to_json()` (Rust). It is one flat record with stable keys: `namespace, experiment, layer, unit, subject, slot, status, arm, excluded_by, reason`. `config` is left out on purpose. Checking an assignment is free and silent; only the log call marks an exposure.
+The library decides assignments; it does not record them. Log an exposure when the subject actually receives the treatment, once per subject per experiment, using `assignment.to_dict()` (Python) or `assignment.to_json()` (Rust). It is one flat record with stable keys: `namespace, experiment, layer, unit, subject, slot, status, arm, excluded_by, reason`. `unit` is the list of unit fields; `subject` is those values joined with `:`. `config` is left out on purpose. Checking an assignment is free and silent; only the log call marks an exposure.
 
 Eligibility is not part of the experiment. Gate with a feature flag first, then assign.
 
@@ -121,7 +121,7 @@ with override_options("seer", {
     assert experiments("seer").assign("checkout-color", {"organization_id": 1}).arm == "treatment"
 ```
 
-`experiment()` builds a valid value with `allocation {start: 0, size: 100}` and `enabled: true` unless told otherwise. An experiment override is checked against the other experiments in its layer when it is set, so an overlapping allocation fails right there; give it free slots or a layer name nothing else uses. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
+`experiment()` builds a valid value with `allocation {start: 0, size: 100}` and `enabled: true` unless told otherwise. The overrides in one `override_options` call are checked together against the layer when they are set, so an overlapping batch fails right there and nothing is applied; give each free slots or a layer name nothing else uses. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
 
 ## How the hash works
 

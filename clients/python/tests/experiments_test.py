@@ -95,7 +95,7 @@ def test_to_dict_is_the_exposure_record():
         'namespace': NAMESPACE,
         'experiment': 'checkout-color',
         'layer': 'checkout',
-        'unit': 'organization_id',
+        'unit': ['organization_id'],
         'subject': '5',
         'slot': 3,
         'status': 'assigned',
@@ -103,6 +103,14 @@ def test_to_dict_is_the_exposure_record():
         'excluded_by': None,
         'reason': None,
     }
+
+
+def test_excluded_assignment_record_has_unit_list():
+    record = experiments(NAMESPACE).assign('checkout-color', {'organization_id': 16}).to_dict()
+    assert record['arm'] is None
+    assert record['excluded_by'] == 'checkout-copy'
+    assert record['status'] == 'excluded'
+    assert record['unit'] == ['organization_id']
 
 
 def test_repr_mentions_experiment_status_and_arm():
@@ -164,6 +172,65 @@ def test_override_with_overlapping_allocation_raises():
             },
         ):
             pass
+
+
+def test_override_batch_with_mutual_overlap_raises():
+    with pytest.raises(SchemaError, match='overlap'):
+        with override_options(
+            NAMESPACE,
+            {
+                'experiment.checkout-color': experiment(
+                    layer='checkout',
+                    unit=['organization_id'],
+                    arms={'control': 50, 'treatment': 50},
+                    start=0,
+                    size=50,
+                ),
+                'experiment.checkout-copy': experiment(
+                    layer='checkout',
+                    unit=['organization_id'],
+                    arms={'short': 50, 'long': 50},
+                    start=40,
+                    size=30,
+                ),
+            },
+        ):
+            pass
+    a = experiments(NAMESPACE).assign('checkout-color', {'organization_id': 1})
+    assert (a.status, a.arm) == ('assigned', 'control')
+
+
+def test_override_batch_can_reallocate_siblings():
+    with override_options(
+        NAMESPACE,
+        {
+            'experiment.checkout-color': experiment(
+                layer='checkout',
+                unit=['organization_id'],
+                arms={'control': 50, 'treatment': 50},
+                start=0,
+                size=50,
+            ),
+            'experiment.checkout-copy': experiment(
+                layer='checkout',
+                unit=['organization_id'],
+                arms={'short': 50, 'long': 50},
+                start=50,
+                size=30,
+            ),
+        },
+    ):
+        assert experiments(NAMESPACE).layer('checkout') == [
+            {'experiment': 'checkout-color', 'start': 0, 'size': 50, 'enabled': True},
+            {'experiment': 'checkout-copy', 'start': 50, 'size': 30, 'enabled': True},
+        ]
+        # Org 16 hashes to slot 58, now inside checkout-copy's [50, 80).
+        a = experiments(NAMESPACE).assign('checkout-copy', {'organization_id': 16})
+        assert (a.slot, a.status) == (58, 'assigned')
+    assert experiments(NAMESPACE).layer('checkout') == [
+        {'experiment': 'checkout-color', 'start': 0, 'size': 40, 'enabled': True},
+        {'experiment': 'checkout-copy', 'start': 40, 'size': 30, 'enabled': True},
+    ]
 
 
 def test_assign_with_unconvertible_context_is_unassigned():
