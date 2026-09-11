@@ -234,6 +234,10 @@ A `FeatureContext` carries arbitrary key→value data plus an optional set of `i
 
 `identity_fields` therefore decide what a percentage rollout is bucketed by. Setting them to a stable entity such as `["organization_id"]` keeps a 50% rollout consistent per-org across requests and services; leaving them unset makes bucketing depend on the entire context. This mirrors flagpole's model — context fields are for *targeting*, identity fields are for stable *bucketing*.
 
+## Experiment assignment
+
+`experiment.`-prefixed options are validated against the built-in `Experiment` definition (`sentry-options-validation/src/experiment-schema-defs.json`) plus cross-key checks that allocations in a layer are disjoint and share a unit. At runtime the client parses every `experiment.*` value of a namespace into an indexed set once per values snapshot and hashes the subject twice with its own SHA-1 scheme, separate from the feature-flag identity hash. Test overrides bypass that cache. Details in [Experiments](./experiments.md).
+
 ## Schema Evolution & Validation
 
 The `validate-schema` reusable workflow runs on schema PRs and enforces (`sentry-options-cli/src/schema_evolution.rs`):
