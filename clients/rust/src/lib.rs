@@ -1,18 +1,26 @@
 //! Options client for reading validated configuration values.
 
+pub mod experiments;
 pub mod features;
 
+pub use experiments::{
+    Assignment, AssignmentStatus, ExperimentChecker, ExperimentContext, ExperimentError,
+    experiments,
+};
 pub use features::{FeatureChecker, FeatureContext, FeatureError, features};
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use arc_swap::ArcSwap;
+use sentry_options_validation::experiments::{EXPERIMENT_KEY_PREFIX, ExperimentSet};
 pub use sentry_options_validation::{
-    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, feature_property,
+    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, experiment_property, feature_property,
 };
 use sentry_options_validation::{
-    SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
+    SchemaRegistry, ValidationError, ValuesByNamespace, ValuesStore, resolve_options_dir,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -44,9 +52,23 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 /// Options store for reading configuration values.
 pub struct Options {
     store: ValuesStore,
+    experiment_sets: ArcSwap<HashMap<String, CachedExperimentSet>>,
+}
+
+#[derive(Clone)]
+struct CachedExperimentSet {
+    snapshot: Arc<ValuesByNamespace>,
+    set: Arc<ExperimentSet>,
 }
 
 impl Options {
+    fn from_store(store: ValuesStore) -> Self {
+        Self {
+            store,
+            experiment_sets: ArcSwap::from_pointee(HashMap::new()),
+        }
+    }
+
     /// Returns a builder for constructing an [`Options`] instance or
     /// initializing the global store.
     ///
@@ -112,9 +134,7 @@ impl Options {
         if let Some(cb) = callback {
             builder = builder.with_callback(cb);
         }
-        Ok(Self {
-            store: builder.build()?,
-        })
+        Ok(Self::from_store(builder.build()?))
     }
 
     /// Get an option value, returning the schema default if not set.
@@ -174,6 +194,59 @@ impl Options {
             })?;
 
         Ok(default.clone())
+    }
+
+    /// The namespace's experiments, rebuilt only when the values snapshot changes.
+    /// Test overrides bypass the cache so they are visible immediately.
+    pub(crate) fn experiment_set(
+        &self,
+        namespace: &str,
+    ) -> std::result::Result<Arc<ExperimentSet>, ExperimentError> {
+        if self.store.registry().get(namespace).is_none() {
+            return Err(OptionsError::UnknownNamespace(namespace.to_string()).into());
+        }
+        let overrides = testing::overrides_with_prefix(namespace, EXPERIMENT_KEY_PREFIX);
+        let snapshot: Arc<ValuesByNamespace> = Arc::clone(&self.store.load());
+        if overrides.is_empty()
+            && let Some(cached) = self.experiment_sets.load().get(namespace)
+            && Arc::ptr_eq(&cached.snapshot, &snapshot)
+        {
+            return Ok(Arc::clone(&cached.set));
+        }
+
+        let mut entries: HashMap<String, Value> = snapshot
+            .get(namespace)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter(|(key, _)| key.starts_with(EXPERIMENT_KEY_PREFIX))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let bypass_cache = !overrides.is_empty();
+        entries.extend(overrides);
+
+        let set = ExperimentSet::from_values(entries.iter())
+            .map(Arc::new)
+            .map_err(|issues| ExperimentError::InvalidValue {
+                namespace: namespace.to_string(),
+                message: issues.iter().map(|issue| format!("\n\t{issue}")).collect(),
+            })?;
+        if !bypass_cache {
+            self.experiment_sets.rcu(|current| {
+                let mut next = HashMap::clone(current);
+                next.insert(
+                    namespace.to_string(),
+                    CachedExperimentSet {
+                        snapshot: Arc::clone(&snapshot),
+                        set: Arc::clone(&set),
+                    },
+                );
+                next
+            });
+        }
+        Ok(set)
     }
 
     /// Validate that a key exists in the schema and the value matches the expected type.

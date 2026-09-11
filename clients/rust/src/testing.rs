@@ -46,6 +46,21 @@ pub fn get_override(namespace: &str, key: &str) -> Option<Value> {
     })
 }
 
+pub(crate) fn overrides_with_prefix(namespace: &str, prefix: &str) -> HashMap<String, Value> {
+    OVERRIDES.with(|overrides| {
+        overrides
+            .borrow()
+            .get(namespace)
+            .map(|ns| {
+                ns.iter()
+                    .filter(|(key, _)| key.starts_with(prefix))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
 /// Clear an override for a specific namespace and key.
 pub fn clear_override(namespace: &str, key: &str) {
     OVERRIDES.with(|o| {

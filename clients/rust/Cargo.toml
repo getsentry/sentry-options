@@ -29,6 +29,10 @@ name = "features_bench"
 harness = false
 
 [[bench]]
+name = "experiments_bench"
+harness = false
+
+[[bench]]
 name = "isset_bench"
 harness = false
 
