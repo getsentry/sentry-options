@@ -141,6 +141,11 @@ impl fmt::Display for ExperimentIssue {
     }
 }
 
+/// Renders issues as an indented, newline-prefixed block for error messages.
+pub fn issues_message(issues: &[ExperimentIssue]) -> String {
+    issues.iter().map(|issue| format!("\n\t{issue}")).collect()
+}
+
 /// Every experiment of one namespace, indexed by name and by layer.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ExperimentSet {
@@ -240,10 +245,6 @@ impl ExperimentSet {
             .find(|member| member.allocation.contains(slot))
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.experiments.is_empty()
-    }
-
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut names: Vec<&str> = self.experiments.keys().map(String::as_str).collect();
         names.sort_unstable();
@@ -268,7 +269,8 @@ fn check_definition(key: &str, def: &ExperimentDefinition, issues: &mut Vec<Expe
             });
         }
     }
-    if def.total_weight() == 0 {
+    // A paused experiment (enabled: false) is allowed to zero every weight.
+    if def.enabled && def.total_weight() == 0 {
         issues.push(ExperimentIssue::ZeroTotalWeight {
             key: key.to_string(),
         });
@@ -436,6 +438,24 @@ mod tests {
                     key: "experiment.zero".into()
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn zero_total_weight_only_fails_when_enabled() {
+        let mut disabled = experiment("l", 0, 10);
+        disabled["enabled"] = json!(false);
+        disabled["arms"] = json!([{"name": "a", "weight": 0}]);
+        assert!(set_from(vec![("experiment.disabled", disabled)]).is_ok());
+
+        let mut enabled = experiment("m", 0, 10);
+        enabled["arms"] = json!([{"name": "a", "weight": 0}]);
+        let err = set_from(vec![("experiment.enabled", enabled)]).unwrap_err();
+        assert_eq!(
+            err,
+            vec![ExperimentIssue::ZeroTotalWeight {
+                key: "experiment.enabled".into()
+            }]
         );
     }
 

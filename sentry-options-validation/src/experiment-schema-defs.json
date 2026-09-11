@@ -78,7 +78,8 @@
       "weight": {
         "type": "integer",
         "minimum": 0,
-        "description": "Relative share of the experiment's subjects. Weights need not sum to 100."
+        "maximum": 1000000000,
+        "description": "Relative share of the experiment's subjects. Weights need not sum to 100. Up to 1,000,000,000."
       },
       "config": {
         "type": "object",

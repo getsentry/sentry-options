@@ -250,7 +250,7 @@ impl NamespaceSchema {
         } else {
             Err(ValidationError::ValueError {
                 namespace: self.namespace.clone(),
-                errors: issues.iter().map(|issue| format!("\n\t{issue}")).collect(),
+                errors: experiments::issues_message(&issues),
             })
         }
     }
@@ -4175,6 +4175,16 @@ Error: \"version\" is a required property"
             missing_owner.as_object_mut().unwrap().remove("owner");
             let result = registry
                 .validate_values("test", &json!({"experiment.checkout-color": missing_owner}));
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn arm_weight_above_the_cap_is_rejected() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let mut over = experiment("checkout", 0, 40);
+            over["arms"] = json!([{"name": "control", "weight": 1_000_000_001}]);
+            let result =
+                registry.validate_values("test", &json!({"experiment.checkout-color": over}));
             assert!(matches!(result, Err(ValidationError::ValueError { .. })));
         }
 
