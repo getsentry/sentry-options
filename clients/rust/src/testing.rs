@@ -299,6 +299,38 @@ mod tests {
         );
     }
 
+    fn experiment(start: u32, size: u32) -> Value {
+        json!({
+            "owner": {"team": "testing"},
+            "layer": "checkout",
+            "unit": ["organization_id"],
+            "allocation": {"start": start, "size": size},
+            "arms": [{"name": "control", "weight": 50}, {"name": "treatment", "weight": 50}]
+        })
+    }
+
+    #[test]
+    fn test_override_with_overlapping_allocation_is_rejected() {
+        crate::init().unwrap();
+        match override_options(&[(
+            "sentry-options-testing",
+            "experiment.checkout-color",
+            experiment(30, 30),
+        )]) {
+            Err(e) => assert!(e.to_string().contains("overlap")),
+            Ok(_) => panic!("overlapping override should be rejected"),
+        }
+
+        assert!(
+            override_options(&[(
+                "sentry-options-testing",
+                "experiment.checkout-color",
+                experiment(70, 30),
+            )])
+            .is_ok()
+        );
+    }
+
     #[test]
     fn test_always_off_forces_feature_off() {
         crate::init().unwrap();

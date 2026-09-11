@@ -196,6 +196,29 @@ impl Options {
         Ok(default.clone())
     }
 
+    /// Experiment-prefixed values for a namespace with thread-local overrides applied.
+    fn experiment_entries(
+        &self,
+        namespace: &str,
+        snapshot: &ValuesByNamespace,
+    ) -> HashMap<String, Value> {
+        let mut entries: HashMap<String, Value> = snapshot
+            .get(namespace)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter(|(key, _)| key.starts_with(EXPERIMENT_KEY_PREFIX))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        entries.extend(testing::overrides_with_prefix(
+            namespace,
+            EXPERIMENT_KEY_PREFIX,
+        ));
+        entries
+    }
+
     /// The namespace's experiments, rebuilt only when the values snapshot changes.
     /// Test overrides bypass the cache so they are visible immediately.
     pub(crate) fn experiment_set(
@@ -214,18 +237,8 @@ impl Options {
             return Ok(Arc::clone(&cached.set));
         }
 
-        let mut entries: HashMap<String, Value> = snapshot
-            .get(namespace)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter(|(key, _)| key.starts_with(EXPERIMENT_KEY_PREFIX))
-                    .map(|(key, value)| (key.clone(), value.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
         let bypass_cache = !overrides.is_empty();
-        entries.extend(overrides);
+        let entries = self.experiment_entries(namespace, &snapshot);
 
         let set = ExperimentSet::from_values(entries.iter())
             .map(Arc::new)
@@ -258,6 +271,18 @@ impl Options {
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
         schema.validate_option(key, value)?;
+
+        if key.starts_with(EXPERIMENT_KEY_PREFIX) {
+            let snapshot: Arc<ValuesByNamespace> = Arc::clone(&self.store.load());
+            let mut entries = self.experiment_entries(namespace, &snapshot);
+            entries.insert(key.to_string(), value.clone());
+            ExperimentSet::from_values(entries.iter()).map_err(|issues| {
+                OptionsError::Schema(ValidationError::ValueError {
+                    namespace: namespace.to_string(),
+                    errors: issues.iter().map(|issue| format!("\n\t{issue}")).collect(),
+                })
+            })?;
+        }
 
         Ok(())
     }

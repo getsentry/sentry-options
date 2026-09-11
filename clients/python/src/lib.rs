@@ -331,10 +331,11 @@ struct PyExperimentChecker {
 #[pymethods]
 impl PyExperimentChecker {
     fn assign(&self, experiment: &str, context: &Bound<'_, PyDict>) -> PyResult<PyAssignment> {
-        let context = context_from_py(context)?;
-        Ok(PyAssignment {
-            inner: self.inner.assign(experiment, &context),
-        })
+        let inner = match context_from_py(context) {
+            Ok(context) => self.inner.assign(experiment, &context),
+            Err(e) => RustAssignment::unassigned(&self.namespace, experiment, e.to_string()),
+        };
+        Ok(PyAssignment { inner })
     }
 
     fn try_assign(&self, experiment: &str, context: &Bound<'_, PyDict>) -> PyResult<PyAssignment> {

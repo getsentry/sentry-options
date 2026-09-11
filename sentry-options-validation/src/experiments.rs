@@ -29,7 +29,7 @@ pub struct Allocation {
 impl Allocation {
     /// First slot after the allocation.
     pub fn end(&self) -> u32 {
-        self.start + self.size
+        self.start.saturating_add(self.size)
     }
 
     pub fn contains(&self, slot: u32) -> bool {
@@ -61,7 +61,10 @@ impl ExperimentDefinition {
     }
 
     pub fn total_weight(&self) -> u64 {
-        self.arms.iter().map(|arm| arm.weight).sum()
+        self.arms
+            .iter()
+            .map(|arm| arm.weight)
+            .fold(0, u64::saturating_add)
     }
 }
 
@@ -464,6 +467,33 @@ mod tests {
             range.to_string(),
             "experiment.a: allocation start 90 + size 20 runs past the last slot (99); shrink size or move start"
         );
+    }
+
+    #[test]
+    fn allocation_end_saturates_instead_of_overflowing() {
+        assert_eq!(
+            Allocation {
+                start: u32::MAX,
+                size: 1
+            }
+            .end(),
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn total_weight_saturates_instead_of_overflowing() {
+        let def = ExperimentDefinition::from_value(&json!({
+            "layer": "l",
+            "unit": ["organization_id"],
+            "allocation": {"start": 0, "size": 100},
+            "arms": [
+                {"name": "a", "weight": u64::MAX},
+                {"name": "b", "weight": u64::MAX}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(def.total_weight(), u64::MAX);
     }
 
     #[test]

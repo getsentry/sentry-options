@@ -6,6 +6,7 @@ from sentry_options import experiment_property
 from sentry_options import ExperimentChecker
 from sentry_options import ExperimentError
 from sentry_options import experiments
+from sentry_options import SchemaError
 from sentry_options import UnknownNamespaceError
 from sentry_options.testing import experiment
 from sentry_options.testing import override_options
@@ -146,6 +147,50 @@ def test_override_validates_experiment_shape():
     with pytest.raises(Exception):
         with override_options(NAMESPACE, {'experiment.checkout-color': {'layer': 'x'}}):
             pass
+
+
+def test_override_with_overlapping_allocation_raises():
+    with pytest.raises(SchemaError, match='overlap'):
+        with override_options(
+            NAMESPACE,
+            {
+                'experiment.checkout-color': experiment(
+                    layer='checkout',
+                    unit=['organization_id'],
+                    arms={'control': 50, 'treatment': 50},
+                    start=30,
+                    size=30,
+                ),
+            },
+        ):
+            pass
+
+
+def test_assign_with_unconvertible_context_is_unassigned():
+    a = experiments(NAMESPACE).assign('checkout-color', {'organization_id': float('nan')})
+    assert a.status == 'unassigned'
+    assert isinstance(a.reason, str) and a.reason
+    with pytest.raises(ValueError):
+        experiments(NAMESPACE).try_assign('checkout-color', {'organization_id': float('nan')})
+
+
+def test_documented_reference_hash_matches_extension():
+    import hashlib
+
+    def bucket(components: list[str], modulus: int) -> int:
+        h = hashlib.sha1()
+        for c in components:
+            b = c.encode()
+            h.update(len(b).to_bytes(8, 'big'))
+            h.update(b)
+        return int.from_bytes(h.digest()[:8], 'big') % modulus
+
+    slot = bucket(['layer', NAMESPACE, 'checkout', '1'], 100)
+    assert slot == 6
+    assert slot == experiments(NAMESPACE).assign('checkout-color', {'organization_id': 1}).slot
+
+    assert bucket(['experiment', NAMESPACE, 'checkout-color', '5'], 100) >= 50
+    assert experiments(NAMESPACE).assign('checkout-color', {'organization_id': 5}).arm == 'treatment'
 
 
 def test_testing_experiment_builder_defaults():

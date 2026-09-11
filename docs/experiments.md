@@ -88,7 +88,7 @@ let assignment = experiments("seer").assign("checkout-color", &context);
 if assignment.in_arm("treatment") { /* ... */ }
 ```
 
-`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`).
+`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. In Python, a context that cannot be converted (a non-string key, `NaN`) also comes back as `unassigned` from `assign`. The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`).
 
 An `Assignment` carries:
 
@@ -121,7 +121,7 @@ with override_options("seer", {
     assert experiments("seer").assign("checkout-color", {"organization_id": 1}).arm == "treatment"
 ```
 
-`experiment()` builds a valid value with `allocation {start: 0, size: 100}` and `enabled: true` unless told otherwise. An override is validated together with the other experiments in its layer, so give it free slots or a layer name nothing else uses. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
+`experiment()` builds a valid value with `allocation {start: 0, size: 100}` and `enabled: true` unless told otherwise. An experiment override is checked against the other experiments in its layer when it is set, so an overlapping allocation fails right there; give it free slots or a layer name nothing else uses. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
 
 ## How the hash works
 

@@ -66,7 +66,8 @@ pub struct Assignment {
 }
 
 impl Assignment {
-    fn unassigned(namespace: &str, experiment: &str, reason: String) -> Self {
+    /// An `Unassigned` result carrying why nothing could be decided.
+    pub fn unassigned(namespace: &str, experiment: &str, reason: String) -> Self {
         Self {
             namespace: namespace.to_string(),
             experiment: experiment.to_string(),
@@ -367,6 +368,35 @@ mod tests {
             (a.status, a.slot, a.arm),
             (AssignmentStatus::Disabled, Some(13), None)
         );
+    }
+
+    #[test]
+    fn excluded_by_disabled_sibling() {
+        let mut sibling = definition("split", 0, 50, &[("control", 100)]);
+        sibling["enabled"] = json!(false);
+        let set = set(vec![
+            ("experiment.sibling", sibling),
+            (
+                "experiment.other",
+                definition("split", 50, 50, &[("a", 50), ("b", 50)]),
+            ),
+        ]);
+        let org = (0..)
+            .find(|&org| {
+                assign_in(&set, NS, "other", &ctx(org))
+                    .unwrap()
+                    .slot
+                    .unwrap()
+                    < 50
+            })
+            .unwrap();
+
+        let other = assign_in(&set, NS, "other", &ctx(org)).unwrap();
+        assert_eq!(other.status, AssignmentStatus::Excluded);
+        assert_eq!(other.excluded_by.as_deref(), Some("sibling"));
+
+        let sibling = assign_in(&set, NS, "sibling", &ctx(org)).unwrap();
+        assert_eq!(sibling.status, AssignmentStatus::Disabled);
     }
 
     #[test]
