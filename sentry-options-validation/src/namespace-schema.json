@@ -24,9 +24,20 @@
           },
           "required": ["$ref"],
           "additionalProperties": false
+        },
+        "^experiment\\.": {
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/Experiment"
+            }
+          },
+          "required": ["$ref"],
+          "additionalProperties": false
         }
       },
-      "required": ["^feature\\."],
+      "anyOf": [{ "required": ["^feature\\."] }, { "required": ["^experiment\\."] }],
       "additionalProperties": false
     },
     "properties": {
@@ -43,7 +54,18 @@
           "required": ["$ref"],
           "additionalProperties": false
         },
-        "^(?!feature\\.)": {
+        "^experiment\\.": {
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/Experiment"
+            }
+          },
+          "required": ["$ref"],
+          "additionalProperties": false
+        },
+        "^(?!feature\\.|experiment\\.)": {
           "type": "object",
           "properties": {
             "type": {
