@@ -583,6 +583,17 @@ fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) ->
     Ok(())
 }
 
+/// Validate this thread's experiment overrides for a namespace as one layer
+/// (used by testing.py after a batch of overrides is applied).
+#[pyfunction]
+fn _validate_experiments(namespace: String) -> PyResult<()> {
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
+    opts.validate_experiment_overrides(&namespace)
+        .map_err(options_err)
+}
+
 /// Python module definition.
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -620,5 +631,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_set_override, m)?)?;
     m.add_function(wrap_pyfunction!(_clear_override, m)?)?;
     m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
+    m.add_function(wrap_pyfunction!(_validate_experiments, m)?)?;
     Ok(())
 }

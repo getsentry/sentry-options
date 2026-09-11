@@ -15,7 +15,9 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use sentry_options_validation::experiments::{EXPERIMENT_KEY_PREFIX, ExperimentSet};
+use sentry_options_validation::experiments::{
+    EXPERIMENT_KEY_PREFIX, ExperimentSet, issues_message,
+};
 pub use sentry_options_validation::{
     DEFAULT_REFRESH_THRESHOLD, PropagationCallback, experiment_property, feature_property,
 };
@@ -196,12 +198,15 @@ impl Options {
         Ok(default.clone())
     }
 
-    /// Experiment-prefixed values for a namespace with thread-local overrides applied.
-    fn experiment_entries(
+    /// Builds a namespace's experiment set from `snapshot` spliced with this
+    /// thread's experiment `overrides`; the bool is whether any override applied.
+    fn build_experiment_set(
         &self,
         namespace: &str,
         snapshot: &ValuesByNamespace,
-    ) -> HashMap<String, Value> {
+        overrides: HashMap<String, Value>,
+    ) -> std::result::Result<(Arc<ExperimentSet>, bool), ExperimentError> {
+        let had_overrides = !overrides.is_empty();
         let mut entries: HashMap<String, Value> = snapshot
             .get(namespace)
             .map(|values| {
@@ -212,11 +217,14 @@ impl Options {
                     .collect()
             })
             .unwrap_or_default();
-        entries.extend(testing::overrides_with_prefix(
-            namespace,
-            EXPERIMENT_KEY_PREFIX,
-        ));
-        entries
+        entries.extend(overrides);
+        let set = ExperimentSet::from_values(entries.iter())
+            .map(Arc::new)
+            .map_err(|issues| ExperimentError::InvalidValue {
+                namespace: namespace.to_string(),
+                message: issues_message(&issues),
+            })?;
+        Ok((set, had_overrides))
     }
 
     /// The namespace's experiments, rebuilt only when the values snapshot changes.
@@ -237,16 +245,8 @@ impl Options {
             return Ok(Arc::clone(&cached.set));
         }
 
-        let bypass_cache = !overrides.is_empty();
-        let entries = self.experiment_entries(namespace, &snapshot);
-
-        let set = ExperimentSet::from_values(entries.iter())
-            .map(Arc::new)
-            .map_err(|issues| ExperimentError::InvalidValue {
-                namespace: namespace.to_string(),
-                message: issues.iter().map(|issue| format!("\n\t{issue}")).collect(),
-            })?;
-        if !bypass_cache {
+        let (set, had_overrides) = self.build_experiment_set(namespace, &snapshot, overrides)?;
+        if !had_overrides {
             self.experiment_sets.rcu(|current| {
                 let mut next = HashMap::clone(current);
                 next.insert(
@@ -262,6 +262,30 @@ impl Options {
         Ok(set)
     }
 
+    /// Validate this thread's experiment overrides for `namespace` against the
+    /// snapshot as one layer, so a batch is checked after it is fully applied.
+    pub fn validate_experiment_overrides(&self, namespace: &str) -> Result<()> {
+        if self.store.registry().get(namespace).is_none() {
+            return Err(OptionsError::UnknownNamespace(namespace.to_string()));
+        }
+        let overrides = testing::overrides_with_prefix(namespace, EXPERIMENT_KEY_PREFIX);
+        let snapshot: Arc<ValuesByNamespace> = Arc::clone(&self.store.load());
+        match self.build_experiment_set(namespace, &snapshot, overrides) {
+            Ok(_) => Ok(()),
+            Err(ExperimentError::InvalidValue { namespace, message }) => {
+                Err(OptionsError::Schema(ValidationError::ValueError {
+                    namespace,
+                    errors: message,
+                }))
+            }
+            Err(ExperimentError::Options(inner)) => Err(inner),
+            Err(other) => Err(OptionsError::Schema(ValidationError::ValueError {
+                namespace: namespace.to_string(),
+                errors: other.to_string(),
+            })),
+        }
+    }
+
     /// Validate that a key exists in the schema and the value matches the expected type.
     pub fn validate_override(&self, namespace: &str, key: &str, value: &Value) -> Result<()> {
         let schema = self
@@ -271,19 +295,6 @@ impl Options {
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
         schema.validate_option(key, value)?;
-
-        if key.starts_with(EXPERIMENT_KEY_PREFIX) {
-            let snapshot: Arc<ValuesByNamespace> = Arc::clone(&self.store.load());
-            let mut entries = self.experiment_entries(namespace, &snapshot);
-            entries.insert(key.to_string(), value.clone());
-            ExperimentSet::from_values(entries.iter()).map_err(|issues| {
-                OptionsError::Schema(ValidationError::ValueError {
-                    namespace: namespace.to_string(),
-                    errors: issues.iter().map(|issue| format!("\n\t{issue}")).collect(),
-                })
-            })?;
-        }
-
         Ok(())
     }
 

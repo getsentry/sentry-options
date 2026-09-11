@@ -129,16 +129,15 @@ impl Drop for OverrideGuard {
 /// // when _guard goes out of scope, overrides are restored
 /// ```
 pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGuard> {
-    // Validate all overrides before applying any
     let opts = GLOBAL_OPTIONS
         .get()
         .ok_or(crate::OptionsError::NotInitialized)?;
+    // Shape-check every key before touching thread-local state.
     for (ns, key, value) in overrides {
         opts.validate_override(ns, key, value)?;
     }
 
     let mut previous = Vec::with_capacity(overrides.len());
-
     OVERRIDES.with(|o| {
         let mut map = o.borrow_mut();
         for (ns, key, value) in overrides {
@@ -149,8 +148,18 @@ pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGua
                 .insert(key.to_string(), value.clone());
         }
     });
+    let guard = OverrideGuard { previous };
 
-    Ok(OverrideGuard { previous })
+    // With the whole batch applied, validate each namespace's experiments as one
+    // layer. On error the guard drops here, restoring the previous values.
+    let mut namespaces: Vec<&str> = overrides.iter().map(|(ns, _, _)| *ns).collect();
+    namespaces.sort_unstable();
+    namespaces.dedup();
+    for ns in namespaces {
+        opts.validate_experiment_overrides(ns)?;
+    }
+
+    Ok(guard)
 }
 
 /// A feature value that is enabled for every context.
@@ -329,6 +338,45 @@ mod tests {
             )])
             .is_ok()
         );
+    }
+
+    fn org_ctx(org: i64) -> HashMap<String, Value> {
+        HashMap::from([("organization_id".to_string(), json!(org))])
+    }
+
+    #[test]
+    fn test_override_batch_with_mutual_overlap_is_rejected_and_restores() {
+        crate::init().unwrap();
+        let ns = "sentry-options-testing";
+        let result = override_options(&[
+            (ns, "experiment.checkout-color", experiment(0, 50)),
+            (ns, "experiment.checkout-copy", experiment(40, 30)),
+        ]);
+        match result {
+            Err(e) => assert!(e.to_string().contains("overlap"), "{e}"),
+            Ok(_) => panic!("mutually overlapping batch should be rejected"),
+        }
+
+        // The failed batch left nothing behind: org 1 keeps its on-disk arm.
+        let restored = crate::experiments(ns).assign("checkout-color", &org_ctx(1));
+        assert_eq!(restored.status, crate::AssignmentStatus::Assigned);
+        assert_eq!(restored.arm.as_deref(), Some("control"));
+    }
+
+    #[test]
+    fn test_override_batch_can_reallocate_siblings() {
+        crate::init().unwrap();
+        let ns = "sentry-options-testing";
+        let _guard = override_options(&[
+            (ns, "experiment.checkout-color", experiment(0, 50)),
+            (ns, "experiment.checkout-copy", experiment(50, 30)),
+        ])
+        .expect("disjoint reallocation should be accepted");
+
+        // Org 16 hashes to slot 58, now inside checkout-copy's [50, 80).
+        let a = crate::experiments(ns).assign("checkout-copy", &org_ctx(16));
+        assert_eq!(a.slot, Some(58));
+        assert_eq!(a.status, crate::AssignmentStatus::Assigned);
     }
 
     #[test]
