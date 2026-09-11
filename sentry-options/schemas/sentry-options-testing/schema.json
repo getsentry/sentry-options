@@ -75,6 +75,10 @@
     },
     "feature.organizations:rollout-mid": {
         "$ref": "#/definitions/Feature"
-    }
+    },
+    "experiment.checkout-color": { "$ref": "#/definitions/Experiment" },
+    "experiment.checkout-copy": { "$ref": "#/definitions/Experiment" },
+    "experiment.paused-experiment": { "$ref": "#/definitions/Experiment" },
+    "experiment.unconfigured-experiment": { "$ref": "#/definitions/Experiment" }
   }
 }

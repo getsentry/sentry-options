@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from typing import Union
 
+from sentry_options._core import Assignment
+from sentry_options._core import experiment_property
+from sentry_options._core import ExperimentChecker
+from sentry_options._core import ExperimentError
+from sentry_options._core import experiments
 from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
@@ -30,6 +35,11 @@ OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
 
 __all__ = [
     'init',
+    'Assignment',
+    'experiment_property',
+    'experiments',
+    'ExperimentChecker',
+    'ExperimentError',
     'feature_property',
     'features',
     'FeatureChecker',

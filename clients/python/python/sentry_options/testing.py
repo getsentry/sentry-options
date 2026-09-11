@@ -52,6 +52,30 @@ def always_off() -> Feature:
     }
 
 
+# An experiment value (owner/layer/unit/allocation/enabled/arms).
+Experiment = dict[str, Any]
+
+
+def experiment(
+    *,
+    layer: str,
+    unit: list[str],
+    arms: dict[str, int],
+    start: int = 0,
+    size: int = 100,
+    enabled: bool = True,
+    team: str = 'testing',
+) -> Experiment:
+    return {
+        'owner': {'team': team},
+        'layer': layer,
+        'unit': unit,
+        'allocation': {'start': start, 'size': size},
+        'enabled': enabled,
+        'arms': [{'name': name, 'weight': weight} for name, weight in arms.items()],
+    }
+
+
 @contextlib.contextmanager
 def override_options(
     namespace: str,
@@ -93,4 +117,11 @@ def override_options(
                 _set_override(namespace, key, prev)
 
 
-__all__ = ['Feature', 'always_off', 'always_on', 'override_options']
+__all__ = [
+    'Experiment',
+    'Feature',
+    'always_off',
+    'always_on',
+    'experiment',
+    'override_options',
+]

@@ -115,12 +115,13 @@ from sentry_options.testing import experiment, override_options
 with override_options("seer", {
     "experiment.checkout-color": experiment(
         layer="checkout", unit=["organization_id"], arms={"control": 0, "treatment": 100},
+        start=70, size=30,
     ),
 }):
     assert experiments("seer").assign("checkout-color", {"organization_id": 1}).arm == "treatment"
 ```
 
-`experiment()` builds a valid value with `allocation {start: 0, size: 100}` and `enabled: true` unless told otherwise. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
+`experiment()` builds a valid value with `allocation {start: 0, size: 100}` and `enabled: true` unless told otherwise. An override is validated together with the other experiments in its layer, so give it free slots or a layer name nothing else uses. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
 
 ## How the hash works
 
