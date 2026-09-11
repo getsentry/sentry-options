@@ -1,18 +1,28 @@
 //! Options client for reading validated configuration values.
 
+pub mod experiments;
 pub mod features;
 
+pub use experiments::{
+    Assignment, AssignmentStatus, ExperimentChecker, ExperimentContext, ExperimentError,
+    experiments,
+};
 pub use features::{FeatureChecker, FeatureContext, FeatureError, features};
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use arc_swap::ArcSwap;
+use sentry_options_validation::experiments::{
+    EXPERIMENT_KEY_PREFIX, ExperimentSet, issues_message,
+};
 pub use sentry_options_validation::{
-    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, feature_property,
+    DEFAULT_REFRESH_THRESHOLD, PropagationCallback, experiment_property, feature_property,
 };
 use sentry_options_validation::{
-    SchemaRegistry, ValidationError, ValuesStore, resolve_options_dir,
+    SchemaRegistry, ValidationError, ValuesByNamespace, ValuesStore, resolve_options_dir,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -44,9 +54,23 @@ pub type Result<T> = std::result::Result<T, OptionsError>;
 /// Options store for reading configuration values.
 pub struct Options {
     store: ValuesStore,
+    experiment_sets: ArcSwap<HashMap<String, CachedExperimentSet>>,
+}
+
+#[derive(Clone)]
+struct CachedExperimentSet {
+    snapshot: Arc<ValuesByNamespace>,
+    set: Arc<ExperimentSet>,
 }
 
 impl Options {
+    fn from_store(store: ValuesStore) -> Self {
+        Self {
+            store,
+            experiment_sets: ArcSwap::from_pointee(HashMap::new()),
+        }
+    }
+
     /// Returns a builder for constructing an [`Options`] instance or
     /// initializing the global store.
     ///
@@ -112,9 +136,7 @@ impl Options {
         if let Some(cb) = callback {
             builder = builder.with_callback(cb);
         }
-        Ok(Self {
-            store: builder.build()?,
-        })
+        Ok(Self::from_store(builder.build()?))
     }
 
     /// Get an option value, returning the schema default if not set.
@@ -176,6 +198,94 @@ impl Options {
         Ok(default.clone())
     }
 
+    /// Builds a namespace's experiment set from `snapshot` spliced with this
+    /// thread's experiment `overrides`; the bool is whether any override applied.
+    fn build_experiment_set(
+        &self,
+        namespace: &str,
+        snapshot: &ValuesByNamespace,
+        overrides: HashMap<String, Value>,
+    ) -> std::result::Result<(Arc<ExperimentSet>, bool), ExperimentError> {
+        let had_overrides = !overrides.is_empty();
+        let mut entries: HashMap<String, Value> = snapshot
+            .get(namespace)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter(|(key, _)| key.starts_with(EXPERIMENT_KEY_PREFIX))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        entries.extend(overrides);
+        let set = ExperimentSet::from_values(entries.iter())
+            .map(Arc::new)
+            .map_err(|issues| ExperimentError::InvalidValue {
+                namespace: namespace.to_string(),
+                message: issues_message(&issues),
+            })?;
+        Ok((set, had_overrides))
+    }
+
+    /// The namespace's experiments, rebuilt only when the values snapshot changes.
+    /// Test overrides bypass the cache so they are visible immediately.
+    pub(crate) fn experiment_set(
+        &self,
+        namespace: &str,
+    ) -> std::result::Result<Arc<ExperimentSet>, ExperimentError> {
+        if self.store.registry().get(namespace).is_none() {
+            return Err(OptionsError::UnknownNamespace(namespace.to_string()).into());
+        }
+        let overrides = testing::overrides_with_prefix(namespace, EXPERIMENT_KEY_PREFIX);
+        let snapshot: Arc<ValuesByNamespace> = Arc::clone(&self.store.load());
+        if overrides.is_empty()
+            && let Some(cached) = self.experiment_sets.load().get(namespace)
+            && Arc::ptr_eq(&cached.snapshot, &snapshot)
+        {
+            return Ok(Arc::clone(&cached.set));
+        }
+
+        let (set, had_overrides) = self.build_experiment_set(namespace, &snapshot, overrides)?;
+        if !had_overrides {
+            self.experiment_sets.rcu(|current| {
+                let mut next = HashMap::clone(current);
+                next.insert(
+                    namespace.to_string(),
+                    CachedExperimentSet {
+                        snapshot: Arc::clone(&snapshot),
+                        set: Arc::clone(&set),
+                    },
+                );
+                next
+            });
+        }
+        Ok(set)
+    }
+
+    /// Validate this thread's experiment overrides for `namespace` against the
+    /// snapshot as one layer, so a batch is checked after it is fully applied.
+    pub fn validate_experiment_overrides(&self, namespace: &str) -> Result<()> {
+        if self.store.registry().get(namespace).is_none() {
+            return Err(OptionsError::UnknownNamespace(namespace.to_string()));
+        }
+        let overrides = testing::overrides_with_prefix(namespace, EXPERIMENT_KEY_PREFIX);
+        let snapshot: Arc<ValuesByNamespace> = Arc::clone(&self.store.load());
+        match self.build_experiment_set(namespace, &snapshot, overrides) {
+            Ok(_) => Ok(()),
+            Err(ExperimentError::InvalidValue { namespace, message }) => {
+                Err(OptionsError::Schema(ValidationError::ValueError {
+                    namespace,
+                    errors: message,
+                }))
+            }
+            Err(ExperimentError::Options(inner)) => Err(inner),
+            Err(other) => Err(OptionsError::Schema(ValidationError::ValueError {
+                namespace: namespace.to_string(),
+                errors: other.to_string(),
+            })),
+        }
+    }
+
     /// Validate that a key exists in the schema and the value matches the expected type.
     pub fn validate_override(&self, namespace: &str, key: &str, value: &Value) -> Result<()> {
         let schema = self
@@ -185,7 +295,6 @@ impl Options {
             .ok_or_else(|| OptionsError::UnknownNamespace(namespace.to_string()))?;
 
         schema.validate_option(key, value)?;
-
         Ok(())
     }
 

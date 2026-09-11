@@ -21,6 +21,7 @@ The first half of this document covers runtime options. The second half covers f
     - [Rust](#rust-3)
   - [Setting a feature flag value locally](#setting-a-feature-flag-value-locally)
   - [Adding a feature flag](#adding-a-feature-flag)
+  - [Adding an experiment](#adding-an-experiment)
   - [Setting a feature flag value](#setting-a-feature-flag-value)
 
 ## Reading an option
@@ -424,6 +425,10 @@ If your service registers its flags in code and you don't want to repeat the lis
 ```
 
 Any `feature.`-prefixed key is then accepted and validated against `Feature`. The tradeoff is that a typo'd flag name in a values file no longer gets flagged as unknown, so this only pays off when something else already owns the names.
+
+## Adding an experiment
+
+Experiments are `experiment.`-prefixed options that split subjects into weighted arms with mutual exclusion via layers. See [Experiments](./experiments.md).
 
 ## Setting a feature flag value
 

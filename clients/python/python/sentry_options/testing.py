@@ -17,6 +17,7 @@ from typing import Any
 from sentry_options import OptionValue
 from sentry_options._core import _clear_override
 from sentry_options._core import _set_override
+from sentry_options._core import _validate_experiments
 from sentry_options._core import _validate_option
 
 # A feature flag value (the `Feature` object: owner/created_at/enabled/segments).
@@ -52,6 +53,30 @@ def always_off() -> Feature:
     }
 
 
+# An experiment value (owner/layer/unit/allocation/enabled/arms).
+Experiment = dict[str, Any]
+
+
+def experiment(
+    *,
+    layer: str,
+    unit: list[str],
+    arms: dict[str, int],
+    start: int = 0,
+    size: int = 100,
+    enabled: bool = True,
+    team: str = 'testing',
+) -> Experiment:
+    return {
+        'owner': {'team': team},
+        'layer': layer,
+        'unit': unit,
+        'allocation': {'start': start, 'size': size},
+        'enabled': enabled,
+        'arms': [{'name': name, 'weight': weight} for name, weight in arms.items()],
+    }
+
+
 @contextlib.contextmanager
 def override_options(
     namespace: str,
@@ -74,7 +99,7 @@ def override_options(
 
     Note: Overrides are thread-local. They won't apply to spawned threads.
     """
-    # Validate all overrides before applying any
+    # Shape-check every key before touching thread-local state.
     for key, value in overrides.items():
         _validate_option(namespace, key, value)
 
@@ -82,9 +107,7 @@ def override_options(
     for key, value in overrides.items():
         previous[key] = _set_override(namespace, key, value)
 
-    try:
-        yield
-    finally:
+    def restore() -> None:
         for key in overrides:
             prev = previous[key]
             if prev is None:
@@ -92,5 +115,25 @@ def override_options(
             else:
                 _set_override(namespace, key, prev)
 
+    # With the whole batch applied, check the layer; an overlapping batch fails
+    # here and nothing is left applied.
+    try:
+        _validate_experiments(namespace)
+    except Exception:
+        restore()
+        raise
 
-__all__ = ['Feature', 'always_off', 'always_on', 'override_options']
+    try:
+        yield
+    finally:
+        restore()
+
+
+__all__ = [
+    'Experiment',
+    'Feature',
+    'always_off',
+    'always_on',
+    'experiment',
+    'override_options',
+]
