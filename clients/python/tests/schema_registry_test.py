@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from conftest import make_options_dir
 from sentry_options import SchemaError
 from sentry_options import SchemaRegistry
