@@ -206,7 +206,7 @@ jobs:
     needs: check-cli-changes
     uses: ./.github/workflows/validate-schema.yml
     secrets:
-      SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
+      SENTRY_READONLYBOT_PRIVATE_KEY: ${{ secrets.SENTRY_READONLYBOT_PRIVATE_KEY }}
     with:
       schemas-path: sentry-options/schemas
       build-from-source: ${{ needs.check-cli-changes.outputs.build-from-source == 'true' }}
