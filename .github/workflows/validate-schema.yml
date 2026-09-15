@@ -16,8 +16,8 @@ on:
         type: boolean
         default: false
     secrets:
-      SENTRY_INTERNAL_APP_PRIVATE_KEY:
-        description: "Private key for the sentry-options-automator GitHub App. Only used when a schema deletion is detected, to check out sentry-options-automator."
+      SENTRY_READONLYBOT_PRIVATE_KEY:
+        description: "Private key for the `Sentry Readonly Bot` GitHub App. Only used when a schema deletion is detected, to check out sentry-options-automator."
         required: false
 
 permissions:
@@ -76,13 +76,15 @@ jobs:
         if: steps.validate.outputs.deletions != '' && inputs.build-from-source
         run: cp "${{ github.workspace }}/target/release/sentry-options-cli" /usr/local/bin/sentry-options-cli
 
-      - name: Generate token for sentry-options-automator
+      - name: Generate readonly token for sentry-options-automator
         id: app-token
         if: steps.validate.outputs.deletions != ''
-        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
-          app_id: ${{ vars.SENTRY_INTERNAL_APP_ID }}
-          private_key: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.SENTRY_READONLY_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.SENTRY_READONLYBOT_PRIVATE_KEY }}
+          repositories: |
+            getsentry/sentry-options-automator
 
       - name: Checkout sentry-options-automator (option-values only)
         if: steps.validate.outputs.deletions != ''
