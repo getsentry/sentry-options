@@ -1,13 +1,15 @@
 //! Python bindings for sentry-options using PyO3.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
-    OptionsError as RustOptionsError,
+    OptionsError as RustOptionsError, SchemaRegistry as RustSchemaRegistry,
+    ValidationError as RustValidationError,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -133,6 +135,24 @@ fn options_err(err: RustOptionsError) -> PyErr {
     }
 }
 
+/// Convert a standalone schema-registry error to the public Python hierarchy.
+///
+/// `OptionsError::Schema` intentionally flattens validation failures for the
+/// existing runtime API. A caller using `SchemaRegistry` can distinguish an
+/// unknown namespace or option before it attempts any write, so preserve those
+/// useful error types here.
+fn validation_err(err: RustValidationError) -> PyErr {
+    match err {
+        RustValidationError::UnknownNamespace(namespace) => {
+            UnknownNamespaceError::new_err(format!("Unknown namespace: {}", namespace))
+        }
+        RustValidationError::UnknownOption { namespace, key } => UnknownOptionError::new_err(
+            format!("Unknown option '{}' in namespace '{}'", key, namespace),
+        ),
+        err => SchemaError::new_err(err.to_string()),
+    }
+}
+
 fn feature_err(err: RustFeatureError) -> PyErr {
     match err {
         RustFeatureError::NotInitialized => {
@@ -186,6 +206,46 @@ impl PyFeatureContext {
 #[pyclass(name = "FeatureChecker")]
 struct PyFeatureChecker {
     inner: RustFeatureChecker,
+}
+
+/// Standalone, immutable registry for validating values against a schema snapshot.
+///
+/// Unlike the global runtime store, this does not read values or call `init()`.
+/// Tools which prepare a change can use it to check a key and JSON-compatible
+/// value before communicating with a remote system.
+#[pyclass(name = "SchemaRegistry", unsendable)]
+struct PySchemaRegistry {
+    inner: RustSchemaRegistry,
+}
+
+#[pymethods]
+impl PySchemaRegistry {
+    /// Load and validate every namespace schema in `schemas_dir`.
+    ///
+    /// `schemas_dir` must contain `{namespace}/schema.json` directories, such
+    /// as `/path/to/getsentry/sentry-options/schemas`.
+    #[staticmethod]
+    fn from_directory(schemas_dir: PathBuf) -> PyResult<Self> {
+        let inner = RustSchemaRegistry::from_directory(&schemas_dir).map_err(validation_err)?;
+        Ok(Self { inner })
+    }
+
+    /// Validate that `key` exists and `value` matches its schema in `namespace`.
+    fn validate_option(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let value = py_to_json(value)?;
+        self.inner
+            .validate_option(namespace, key, &value)
+            .map_err(validation_err)
+    }
+
+    fn __repr__(&self) -> String {
+        "SchemaRegistry(...)".to_string()
+    }
 }
 
 #[pymethods]
@@ -419,6 +479,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(feature_property, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
+    m.add_class::<PySchemaRegistry>()?;
     m.add_class::<PyFeatureContext>()?;
     m.add_class::<PyFeatureChecker>()?;
     // Exceptions

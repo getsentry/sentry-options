@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Callable, Union
+from pathlib import Path
+from typing import Callable, TypeAlias
 
-_Primitive = Union[str, int, float, bool]
-_Object = dict[str, _Primitive]
-OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
+JsonPrimitive: TypeAlias = str | int | float | bool | None
+OptionValue: TypeAlias = JsonPrimitive | list["OptionValue"] | dict[str, "OptionValue"]
 
 def init(
     on_propagation: Callable[[str, float], None] | None = None,
@@ -63,6 +63,24 @@ class NamespaceOptions:
 
     def isset(self, key: str) -> bool: ...
     """See if an option is defined and has a value set."""
+
+    def __repr__(self) -> str: ...
+
+
+class SchemaRegistry:
+    """A standalone, immutable registry loaded from a schema snapshot."""
+    @staticmethod
+    def from_directory(schemas_dir: str | Path) -> SchemaRegistry: ...
+    """
+    Load and validate schemas below ``schemas_dir``.
+
+    The directory must contain ``{namespace}/schema.json`` directories, for example
+    ``/path/to/getsentry/sentry-options/schemas``. This does not read option values
+    and does not require :func:`init`.
+    """
+
+    def validate_option(self, namespace: str, key: str, value: OptionValue) -> None: ...
+    """Ensure ``key`` exists and ``value`` matches it in ``namespace``."""
 
     def __repr__(self) -> str: ...
 
