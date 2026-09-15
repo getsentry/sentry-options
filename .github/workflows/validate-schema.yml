@@ -86,13 +86,15 @@ jobs:
           repositories: |
             getsentry/sentry-options-automator
 
-      - name: Checkout sentry-options-automator (option-values only)
+      - name: Checkout sentry-options-automator values
         if: steps.validate.outputs.deletions != ''
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: getsentry/sentry-options-automator
           token: ${{ steps.app-token.outputs.token }}
-          sparse-checkout: option-values
+          sparse-checkout: |
+            option-values
+            options
           sparse-checkout-cone-mode: true
 
       - name: Check option usage
