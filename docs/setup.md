@@ -77,7 +77,7 @@ jobs:
     needs: cli-version
     uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
     secrets:
-      SENTRY_INTERNAL_APP_PRIVATE_KEY: ${{ secrets.SENTRY_INTERNAL_APP_PRIVATE_KEY }}
+      SENTRY_READONLYBOT_PRIVATE_KEY: ${{ secrets.SENTRY_READONLYBOT_PRIVATE_KEY }}
     with:
       schemas-path: sentry-options/schemas
       cli-version: ${{ needs.cli-version.outputs.version }}
