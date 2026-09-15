@@ -371,6 +371,25 @@ impl SchemaRegistry {
         schema.validate_values(values)
     }
 
+    /// Validate one option value against the named namespace schema.
+    ///
+    /// This is the narrow validation boundary for callers that write a single
+    /// option and do not have a complete values document. It uses the same
+    /// schema parsing and validation pipeline as [`validate_values`](Self::validate_values).
+    pub fn validate_option(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: &Value,
+    ) -> ValidationResult<()> {
+        let schema = self
+            .schemas
+            .get(namespace)
+            .ok_or_else(|| ValidationError::UnknownNamespace(namespace.to_string()))?;
+
+        schema.validate_option(key, value)
+    }
+
     fn compile_namespace_validator() -> ValidationResult<jsonschema::Validator> {
         let namespace_schema_value: Value =
             serde_json::from_str(NAMESPACE_SCHEMA_JSON).map_err(|e| {

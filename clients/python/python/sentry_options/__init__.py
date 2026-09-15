@@ -7,7 +7,7 @@ The library watches for file changes and refreshes values automatically.
 """
 from __future__ import annotations
 
-from typing import Union
+from typing import TypeAlias
 
 from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
@@ -20,12 +20,12 @@ from sentry_options._core import options
 from sentry_options._core import OptionsError
 from sentry_options._core import refresh
 from sentry_options._core import SchemaError
+from sentry_options._core import SchemaRegistry
 from sentry_options._core import UnknownNamespaceError
 from sentry_options._core import UnknownOptionError
 
-_Primitive = Union[str, int, float, bool]
-_Object = dict[str, _Primitive]
-OptionValue = Union[_Primitive, _Object, list[Union[_Primitive, _Object]]]
+JsonPrimitive: TypeAlias = str | int | float | bool | None
+OptionValue: TypeAlias = JsonPrimitive | list['OptionValue'] | dict[str, 'OptionValue']
 
 
 __all__ = [
@@ -37,6 +37,8 @@ __all__ = [
     'NotInitializedError',
     'NamespaceOptions',
     'options',
+    'SchemaRegistry',
+    'JsonPrimitive',
     'OptionValue',
     'OptionsError',
     'refresh',
