@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.11
+
+### New Features ✨
+
+- Expose schema fetching from client libraries by @joshuarli in [#178](https://github.com/getsentry/sentry-options/pull/178)
+
 ## 1.2.10
 
 ### New Features ✨
