@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
-    FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
+    FeatureContext as RustFeatureContext, FeatureError as RustFeatureError,
+    FeatureMetadata as RustFeatureMetadata, Options as RustOptions,
     OptionsError as RustOptionsError,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
@@ -182,6 +183,34 @@ impl PyFeatureContext {
     }
 }
 
+/// Schema metadata shared by every feature consumer.
+#[pyclass(name = "FeatureMetadata", frozen)]
+struct PyFeatureMetadata {
+    inner: RustFeatureMetadata,
+}
+
+#[pymethods]
+impl PyFeatureMetadata {
+    #[getter]
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    #[getter]
+    fn experiment_mode(&self) -> Option<&'static str> {
+        self.inner.experiment_mode()
+    }
+
+    #[getter]
+    fn context_fields(&self) -> Vec<String> {
+        self.inner.context_fields().to_vec()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("FeatureMetadata(name={:?})", self.name())
+    }
+}
+
 /// Handle for evaluating feature flags within a specific namespace.
 #[pyclass(name = "FeatureChecker")]
 struct PyFeatureChecker {
@@ -207,6 +236,25 @@ impl PyFeatureChecker {
     ) -> PyResult<Option<bool>> {
         self.inner
             .try_has(feature_name, &context.inner)
+            .map_err(feature_err)
+    }
+
+    /// Return common schema metadata for configured features and names without values.
+    fn feature_metadata(
+        &self,
+        feature_names: Vec<String>,
+    ) -> PyResult<(Vec<PyFeatureMetadata>, Vec<String>)> {
+        self.inner
+            .feature_metadata(&feature_names)
+            .map(|(metadata, missing)| {
+                (
+                    metadata
+                        .into_iter()
+                        .map(|inner| PyFeatureMetadata { inner })
+                        .collect(),
+                    missing,
+                )
+            })
             .map_err(feature_err)
     }
 
@@ -420,6 +468,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<NamespaceOptions>()?;
     m.add_class::<PyFeatureContext>()?;
+    m.add_class::<PyFeatureMetadata>()?;
     m.add_class::<PyFeatureChecker>()?;
     // Exceptions
     m.add("OptionsError", m.py().get_type::<OptionsError>())?;

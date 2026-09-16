@@ -336,6 +336,13 @@ if features("seer").has("seer-explorer", &context) {   // don't include the "fea
 
 ```
 
+### Feature metadata
+
+`feature_metadata(names)` returns metadata for configured features plus the names without
+configured values. Each `FeatureMetadata` contains the feature name, `experiment_mode`, and
+the context fields referenced by its conditions. Services decide how those fields map to
+service-specific context loading or behavior.
+
 ## Testing with feature flags
 
 There are two things you might want to test:

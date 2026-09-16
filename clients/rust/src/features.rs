@@ -5,7 +5,7 @@
 
 use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use serde_json::Value;
 use sha1::{Digest, Sha1};
@@ -168,10 +168,64 @@ struct Segment {
     conditions: Vec<Condition>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExperimentMode {
+    Simple,
+}
+
+impl ExperimentMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Simple => "simple",
+        }
+    }
+}
+
+/// For example, this definition:
+///
+/// ```yaml
+/// feature.my-feature:
+///   experiment_mode: simple
+///   segments:
+///     - conditions:
+///         - property: subscription_plan-tier
+///           operator: in
+///           value: [am1]
+/// ```
+///
+/// produces metadata with:
+///
+/// ```json
+/// name: "my-feature"
+/// experiment_mode: "simple"
+/// context_fields: ["subscription_plan-tier"]
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FeatureMetadata {
+    name: String,
+    experiment_mode: Option<ExperimentMode>,
+    context_fields: Vec<String>,
+}
+
+impl FeatureMetadata {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn experiment_mode(&self) -> Option<&'static str> {
+        self.experiment_mode.map(ExperimentMode::as_str)
+    }
+
+    pub fn context_fields(&self) -> &[String] {
+        &self.context_fields
+    }
+}
+
 #[derive(Debug)]
 struct Feature {
     enabled: bool,
     segments: Vec<Segment>,
+    experiment_mode: Option<ExperimentMode>,
 }
 
 impl Feature {
@@ -187,7 +241,16 @@ impl Feature {
             .iter()
             .filter_map(Segment::from_json)
             .collect();
-        Some(Feature { enabled, segments })
+        let experiment_mode = match value.get("experiment_mode") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(mode)) if mode == "simple" => Some(ExperimentMode::Simple),
+            Some(_) => return None,
+        };
+        Some(Feature {
+            enabled,
+            segments,
+            experiment_mode,
+        })
     }
 
     fn matches(&self, context: &FeatureContext) -> bool {
@@ -491,20 +554,9 @@ impl FeatureChecker {
         feature_name: &str,
         context: &FeatureContext,
     ) -> Result<Option<bool>, FeatureError> {
-        let opts = self.options.ok_or(FeatureError::NotInitialized)?;
-        let key = format!("feature.{feature_name}");
-
-        let feature_val = match opts.get(&self.namespace, &key) {
-            Ok(v) => v,
-            // A feature the schema knows about but that has no value set is absent,
-            // not an error: nothing has been rolled out yet.
-            Err(crate::OptionsError::UnknownOption { .. }) => return Ok(None),
-            Err(e) => return Err(e.into()),
+        let Some(feature) = self.load_feature(feature_name)? else {
+            return Ok(None);
         };
-
-        let feature = Feature::from_json(&feature_val)
-            .ok_or_else(|| FeatureError::InvalidValue { key: key.clone() })?;
-
         let result = feature.matches(context);
         tracing::debug!(
             feature = feature_name,
@@ -513,6 +565,53 @@ impl FeatureChecker {
             "Feature match result"
         );
         Ok(Some(result))
+    }
+
+    /// Return common schema metadata for configured features and names without values.
+    pub fn feature_metadata(
+        &self,
+        feature_names: &[String],
+    ) -> Result<(Vec<FeatureMetadata>, Vec<String>), FeatureError> {
+        let mut metadata = Vec::new();
+        let mut missing = Vec::new();
+        for feature_name in feature_names {
+            match self.load_feature(feature_name)? {
+                Some(feature) => {
+                    let context_fields = feature
+                        .segments
+                        .iter()
+                        .flat_map(|segment| &segment.conditions)
+                        .map(|condition| condition.property.clone())
+                        .collect::<BTreeSet<_>>()
+                        .into_iter()
+                        .collect();
+                    metadata.push(FeatureMetadata {
+                        name: feature_name.clone(),
+                        experiment_mode: feature.experiment_mode,
+                        context_fields,
+                    });
+                }
+                None => missing.push(feature_name.clone()),
+            }
+        }
+        Ok((metadata, missing))
+    }
+
+    fn load_feature(&self, feature_name: &str) -> Result<Option<Feature>, FeatureError> {
+        let opts = self.options.ok_or(FeatureError::NotInitialized)?;
+        let key = format!("feature.{feature_name}");
+
+        let feature_val = match opts.get(&self.namespace, &key) {
+            Ok(value) => value,
+            // A feature the schema knows about but that has no value set is absent,
+            // not an error: nothing has been rolled out yet.
+            Err(crate::OptionsError::UnknownOption { .. }) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+
+        Feature::from_json(&feature_val)
+            .map(Some)
+            .ok_or(FeatureError::InvalidValue { key })
     }
 }
 
@@ -1640,6 +1739,29 @@ mod tests {
 
         let result = checker.try_has("organizations:test-feature", &FeatureContext::new());
         assert_eq!(result.unwrap(), Some(false));
+    }
+
+    #[test]
+    fn test_feature_metadata() {
+        let condition = in_condition("subscription_plan", r#""business""#);
+        let mut feature: Value =
+            serde_json::from_str(&feature_json(true, 100, &condition)).unwrap();
+        feature["experiment_mode"] = json!("simple");
+        let (opts, _temp) = setup_feature_options(&feature.to_string());
+        let checker = checker(opts, "test");
+
+        let (metadata, missing) = checker
+            .feature_metadata(&[
+                "organizations:test-feature".to_string(),
+                "organizations:missing".to_string(),
+            ])
+            .unwrap();
+
+        assert_eq!(missing, vec!["organizations:missing"]);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].name(), "organizations:test-feature");
+        assert_eq!(metadata[0].experiment_mode(), Some("simple"));
+        assert_eq!(metadata[0].context_fields(), &["subscription_plan"]);
     }
 
     #[test]

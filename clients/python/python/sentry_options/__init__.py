@@ -12,6 +12,7 @@ from typing import Union
 from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
+from sentry_options._core import FeatureMetadata
 from sentry_options._core import features
 from sentry_options._core import init
 from sentry_options._core import NamespaceOptions
@@ -33,6 +34,7 @@ __all__ = [
     'feature_property',
     'features',
     'FeatureChecker',
+    'FeatureMetadata',
     'FeatureContext',
     'NotInitializedError',
     'NamespaceOptions',

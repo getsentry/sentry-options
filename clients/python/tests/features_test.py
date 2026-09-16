@@ -204,3 +204,22 @@ def test_try_has_raises_on_unknown_namespace() -> None:
 
     # ...white has() returns false for this case
     assert features('not-a-namespace').has('organizations:enabled-feature', ctx) is False
+
+
+def test_feature_metadata() -> None:
+    metadata, missing = features(NAMESPACE).feature_metadata(
+        [
+            'organizations:enabled-feature',
+            'organizations:rollout-mid',
+            'organizations:missing',
+        ],
+    )
+    metadata_by_name = {feature.name: feature for feature in metadata}
+
+    assert missing == ['organizations:missing']
+    assert metadata_by_name['organizations:enabled-feature'].experiment_mode == 'simple'
+    assert metadata_by_name['organizations:enabled-feature'].context_fields == [
+        'organization_id',
+    ]
+    assert metadata_by_name['organizations:rollout-mid'].experiment_mode is None
+    assert metadata_by_name['organizations:rollout-mid'].context_fields == ['is_trial']

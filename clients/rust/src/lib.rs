@@ -2,7 +2,7 @@
 
 pub mod features;
 
-pub use features::{FeatureChecker, FeatureContext, FeatureError, features};
+pub use features::{FeatureChecker, FeatureContext, FeatureError, FeatureMetadata, features};
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};

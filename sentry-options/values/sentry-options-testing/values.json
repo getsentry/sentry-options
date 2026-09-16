@@ -8,6 +8,7 @@
       "enabled": true,
       "owner": {"team": "test-team"},
       "created_at": "2024-01-01",
+      "experiment_mode": "simple",
       "segments": [
         {
           "name": "org-segment",

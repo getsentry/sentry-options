@@ -67,6 +67,17 @@ class NamespaceOptions:
     def __repr__(self) -> str: ...
 
 
+class FeatureMetadata:
+    """Common schema metadata for a configured feature."""
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def experiment_mode(self) -> str | None: ...
+    @property
+    def context_fields(self) -> list[str]: ...
+
+
 class FeatureChecker:
     """
     Interface for checking features flags against a context object.
@@ -81,6 +92,10 @@ class FeatureChecker:
 
         The latter return values would all have been swallowed into ``false`` in ``has``.
         """
+    def feature_metadata(
+        self, feature_names: list[str]
+    ) -> tuple[list[FeatureMetadata], list[str]]:
+        """Common schema metadata for configured features and names without values."""
     def __repr__(self) -> str: ...
 
 
