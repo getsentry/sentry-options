@@ -1,4 +1,18 @@
 # Changelog
+## 1.2.10
+
+### New Features ✨
+
+- (python) Expose standalone schema validation by @joshuarli in [#175](https://github.com/getsentry/sentry-options/pull/175)
+
+### Internal Changes 🔧
+
+- Checkout option value symlink targets by @sentry-junior in [#177](https://github.com/getsentry/sentry-options/pull/177)
+
+### Other
+
+- SEC-1901: use readonly bot for workflow by @Jeffreyhung in [#176](https://github.com/getsentry/sentry-options/pull/176)
+
 ## 1.2.9
 
 ### New Features ✨
