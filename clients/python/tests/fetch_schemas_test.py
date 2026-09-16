@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from sentry_options import OptionsError, fetch_schemas
+import pytest
 
 
 def _empty_repos_config(path: Path) -> None:

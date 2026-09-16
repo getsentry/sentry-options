@@ -147,10 +147,7 @@ fn try_fetch_repo_schemas(
     let temp_dir = tempfile::tempdir()?;
     let repo_path = temp_dir.path().join("repo");
     let repo_str = repo_path.to_str().ok_or_else(|| {
-        SchemaFetchError::Validation(format!(
-            "{}: temp path contains invalid UTF-8",
-            repo_name
-        ))
+        SchemaFetchError::Validation(format!("{}: temp path contains invalid UTF-8", repo_name))
     })?;
 
     git(
@@ -288,6 +285,10 @@ mod tests {
         };
 
         let error = fetch_schemas(&config, out_dir.path()).unwrap_err();
-        assert!(error.to_string().contains("Output directory already exists"));
+        assert!(
+            error
+                .to_string()
+                .contains("Output directory already exists")
+        );
     }
 }

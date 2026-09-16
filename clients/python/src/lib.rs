@@ -9,8 +9,7 @@ use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
     OptionsError as RustOptionsError, SchemaRegistry as RustSchemaRegistry,
-    ValidationError as RustValidationError,
-    fetch_schemas_from_file,
+    ValidationError as RustValidationError, fetch_schemas_from_file,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
