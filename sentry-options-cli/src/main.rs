@@ -1,7 +1,6 @@
 mod loader;
 mod option_usage;
 mod output;
-mod repo_schema_config;
 mod schema_evolution;
 mod schema_retriever;
 
@@ -54,6 +53,9 @@ pub enum AppError {
 
     #[error("Git command failed: {0}")]
     Git(String),
+
+    #[error("Schema fetch error: {0}")]
+    SchemaFetch(String),
 }
 
 /// defines the CLI for sentry-options validation and processing
@@ -297,8 +299,8 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
 }
 
 fn cli_fetch_schemas(config: String, out: String, quiet: bool) -> Result<()> {
-    let config = repo_schema_config::RepoSchemaConfigs::from_file(Path::new(&config))?;
-    schema_retriever::fetch_all_schemas(&config, Path::new(&out), quiet)?;
+    sentry_options::fetch_schemas_from_file(Path::new(&config), Path::new(&out))
+        .map_err(|error| AppError::SchemaFetch(error.to_string()))?;
     if !quiet {
         tracing::info!(path = %out, "Successfully fetched schemas");
     }

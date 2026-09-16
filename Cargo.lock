@@ -1452,6 +1452,7 @@ dependencies = [
  "criterion",
  "num",
  "sentry-options-validation",
+ "serde",
  "serde_json",
  "sha1",
  "tempfile",
@@ -1465,6 +1466,7 @@ version = "1.2.10"
 dependencies = [
  "chrono",
  "clap",
+ "sentry-options",
  "sentry-options-validation",
  "serde",
  "serde_json",

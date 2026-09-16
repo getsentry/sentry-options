@@ -9,7 +9,7 @@ use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
     OptionsError as RustOptionsError, SchemaRegistry as RustSchemaRegistry,
-    ValidationError as RustValidationError,
+    ValidationError as RustValidationError, fetch_schemas_from_file,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -357,6 +357,16 @@ fn refresh(py: Python<'_>) -> PyResult<bool> {
     py.detach(|| opts.refresh()).map_err(options_err)
 }
 
+/// Fetch schema snapshots from the repositories listed in `repos.json`.
+///
+/// This is an explicit tooling operation; normal options initialization and
+/// reads remain entirely file-based.
+#[pyfunction]
+fn fetch_schemas(config: PathBuf, output: PathBuf, py: Python<'_>) -> PyResult<()> {
+    py.detach(|| fetch_schemas_from_file(&config, &output))
+        .map_err(|error| OptionsError::new_err(error.to_string()))
+}
+
 /// Return the value a namespace schema pairs with each ``feature.<name>`` key,
 /// i.e. ``{"$ref": "#/definitions/Feature"}``, for assembling a schema in memory.
 #[pyfunction]
@@ -476,6 +486,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(options, m)?)?;
     m.add_function(wrap_pyfunction!(features, m)?)?;
     m.add_function(wrap_pyfunction!(refresh, m)?)?;
+    m.add_function(wrap_pyfunction!(fetch_schemas, m)?)?;
     m.add_function(wrap_pyfunction!(feature_property, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;

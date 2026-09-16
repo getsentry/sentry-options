@@ -13,6 +13,7 @@ from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
 from sentry_options._core import features
+from sentry_options._core import fetch_schemas
 from sentry_options._core import init
 from sentry_options._core import NamespaceOptions
 from sentry_options._core import NotInitializedError
@@ -32,6 +33,7 @@ __all__ = [
     'init',
     'feature_property',
     'features',
+    'fetch_schemas',
     'FeatureChecker',
     'FeatureContext',
     'NotInitializedError',
