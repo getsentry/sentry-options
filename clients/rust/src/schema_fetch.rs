@@ -33,6 +33,8 @@ pub type SchemaFetchResult<T> = std::result::Result<T, SchemaFetchError>;
 #[serde(deny_unknown_fields)]
 pub struct RepoSchemaConfig {
     pub url: String,
+    /// Optional repository pin retained for compatibility with `repos.json`.
+    /// Schema snapshots currently follow the repository's default branch.
     #[allow(dead_code)]
     #[serde(default)]
     pub sha: Option<String>,
@@ -62,7 +64,7 @@ pub fn fetch_schemas(config: &RepoSchemaConfigs, out_dir: &Path) -> SchemaFetchR
     }
     fs::create_dir_all(out_dir)?;
 
-    // Sort repo names for deterministic error reporting and logging.
+    // Sort repo names for deterministic error reporting.
     let mut repo_names: Vec<_> = config.repos.keys().collect();
     repo_names.sort();
 
