@@ -250,7 +250,7 @@ The `validate-schema` reusable workflow runs on schema PRs and enforces (`sentry
 
 New namespaces must be named `{repo}` (exact) or `{repo}-*` (prefixed with `{repo}-`).
 
-Two CLI paths feed validation: `validate-schema-changes` diffs a schema between a base and head SHA (the PR), and `fetch-schemas` pulls each service's schema from the `url`/`path` declared in the automator's `repos.json` so values can be validated against it.
+Two paths feed validation: `validate-schema-changes` diffs a schema between a base and head SHA (the PR), while the shared schema-fetch library pulls each service's schema from the `url`/`path` declared in the automator's `repos.json` so values can be validated against it. The `fetch-schemas` CLI is a thin wrapper around that library, as is the explicit Python `sentry_options.fetch_schemas()` helper. Runtime initialization and reads remain file-based and do not fetch schemas.
 
 ## The Injector (ops)
 

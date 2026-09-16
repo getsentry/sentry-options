@@ -48,6 +48,14 @@ refresh inline.
 Raises NotInitializedError if ``init()`` has not been called.
 """
 
+def fetch_schemas(config: str | Path, output: str | Path) -> None: ...
+"""
+Fetch schema snapshots from the repositories listed in ``repos.json``.
+
+This is an explicit tooling operation. It does not affect the runtime options
+store or make schema loading network-dependent.
+"""
+
 def options(namespace: str) -> NamespaceOptions: ...
 """Create NamespaceOptions for a given options namespace"""
 
