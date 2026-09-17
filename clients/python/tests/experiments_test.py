@@ -220,6 +220,35 @@ def test_definition_revision_ignores_owner_and_description():
     assert r1 == r2
 
 
+def test_restarting_with_old_settings_has_a_distinct_experiment_identity():
+    records = []
+    for experiment_name, model in [
+        ('model-test-v1', 'model-a'),
+        ('model-test-v2', 'model-b'),
+        ('model-test-v3', 'model-a'),
+    ]:
+        definition = experiment(arms={'control': 1, 'treatment': 1}, size=100)
+        definition['arms'][1]['config'] = {'model': model}
+        with override_options(
+            NAMESPACE, {
+                'experiment-layer.checkout': experiment_layer(
+                    unit=['organization_id'], experiments={experiment_name: definition},
+                ),
+            },
+        ):
+            assignment = experiments(NAMESPACE).assign(experiment_name, {'organization_id': 1})
+            records.append(assignment.exposure('seer'))
+
+    assert all(record['status'] == 'assigned' for record in records)
+    assert len({record['subject'] for record in records}) == 1
+    assert records[0]['definition_revision'] == records[2]['definition_revision']
+    assert records[0]['definition_revision'] != records[1]['definition_revision']
+    assert len({
+        (record['namespace'], record['experiment'], record['subject'])
+        for record in records
+    }) == 3
+
+
 def test_unassigned_has_no_definition_revision():
     a = experiments(NAMESPACE).assign('unconfigured-experiment', {'organization_id': 1})
     assert a.status == 'unassigned'

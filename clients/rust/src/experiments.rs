@@ -607,6 +607,39 @@ mod tests {
     }
 
     #[test]
+    fn new_experiment_name_reshuffles_arms_without_changing_membership() {
+        let experiment_definition =
+            definition("models", 10, 40, &[("control", 1), ("treatment", 1)]);
+        let original = set(vec![("model-test-v1", experiment_definition.clone())]);
+        let restarted = set(vec![("model-test-v3", experiment_definition)]);
+        let mut assigned_count = 0;
+        let mut switched_count = 0;
+
+        for organization_id in 0..5_000 {
+            let context = ctx(organization_id);
+            let before = assign_in(&original, NS, "model-test-v1", &context).unwrap();
+            let after = assign_in(&restarted, NS, "model-test-v3", &context).unwrap();
+
+            assert_eq!(before.status, after.status);
+            assert_eq!(before.slot, after.slot);
+            assert_eq!(before.subject, after.subject);
+            assert_eq!(before.definition_revision, after.definition_revision);
+            assert_ne!(before.experiment, after.experiment);
+
+            if before.is_assigned() {
+                assigned_count += 1;
+                if before.arm != after.arm {
+                    switched_count += 1;
+                }
+            }
+        }
+
+        assert!(assigned_count > 1_000);
+        assert!(switched_count * 100 > assigned_count * 40);
+        assert!(switched_count * 100 < assigned_count * 60);
+    }
+
+    #[test]
     fn changing_weights_does_not_change_membership() {
         let even = set(vec![(
             "s",
