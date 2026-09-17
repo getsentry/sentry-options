@@ -10,6 +10,7 @@ Sentry's internal runtime option and feature-flag platform. Options are defined 
 | ----------------------------------------- | ------------------------------------------------------------------------- |
 | [Setup](./docs/setup.md)                  | Add `sentry-options` to a new repo                                        |
 | [Working with options](./docs/options.md) | Adding/deleting options, using options, setting option values, testing    |
+| [Experiments](./docs/experiments.md)      | Salted multi-arm experiments with layers: declaring, configuring, reading, exposure |
 | [Architecture](./docs/architecture.md)    | Technical reference: schema format, values & targets, runtime model, feature-flag evaluation |
 
 ## Quick Reference

@@ -14,7 +14,10 @@ use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegist
 
 use loader::{ensure_no_duplicate_keys, load_and_validate};
 use option_usage::check_option_usage;
-use output::{OutputFormat, generate_configmap, generate_json, write_configmap_yaml, write_json};
+use output::{
+    OutputFormat, generate_configmap, generate_json, validate_merged_values, write_configmap_yaml,
+    write_json,
+};
 
 /// Result type for operations
 pub type Result<T> = std::result::Result<T, AppError>;
@@ -235,6 +238,7 @@ fn cli_validate_values(schemas: String, root: String, quiet: bool) -> Result<()>
     let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
     let grouped = load_and_validate(&root, &schema_registry)?;
     ensure_no_duplicate_keys(&grouped)?;
+    validate_merged_values(&grouped, &schema_registry)?;
 
     if !quiet {
         tracing::info!("Values validation successful");
@@ -247,6 +251,7 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
 
     let grouped = load_and_validate(&args.root, &schema_registry)?;
     ensure_no_duplicate_keys(&grouped)?;
+    validate_merged_values(&grouped, &schema_registry)?;
 
     let generated_at = chrono::Utc::now().to_rfc3339();
 

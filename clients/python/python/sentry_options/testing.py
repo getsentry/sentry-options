@@ -17,6 +17,7 @@ from typing import Any
 from sentry_options import OptionValue
 from sentry_options._core import _clear_override
 from sentry_options._core import _set_override
+from sentry_options._core import _validate_experiments
 from sentry_options._core import _validate_option
 
 # A feature flag value (the `Feature` object: owner/created_at/enabled/segments).
@@ -52,6 +53,42 @@ def always_off() -> Feature:
     }
 
 
+Experiment = dict[str, Any]
+Layer = dict[str, Any]
+
+
+def experiment(
+    *,
+    arms: dict[str, int],
+    start: int = 0,
+    size: int = 20,
+    enabled: bool = True,
+    team: str = 'testing',
+    description: str | None = None,
+) -> Experiment:
+    value: Experiment = {
+        'owner': {'team': team},
+        'allocation': {'start': start, 'size': size},
+        'enabled': enabled,
+        'arms': [{'name': name, 'weight': weight} for name, weight in arms.items()],
+    }
+    if description is not None:
+        value['description'] = description
+    return value
+
+
+def experiment_layer(
+    *,
+    unit: list[str],
+    experiments: dict[str, Experiment],
+    description: str | None = None,
+) -> Layer:
+    value: Layer = {'unit': unit, 'experiments': experiments}
+    if description is not None:
+        value['description'] = description
+    return value
+
+
 @contextlib.contextmanager
 def override_options(
     namespace: str,
@@ -74,7 +111,7 @@ def override_options(
 
     Note: Overrides are thread-local. They won't apply to spawned threads.
     """
-    # Validate all overrides before applying any
+    # Shape-check every key before touching thread-local state.
     for key, value in overrides.items():
         _validate_option(namespace, key, value)
 
@@ -82,9 +119,7 @@ def override_options(
     for key, value in overrides.items():
         previous[key] = _set_override(namespace, key, value)
 
-    try:
-        yield
-    finally:
+    def restore() -> None:
         for key in overrides:
             prev = previous[key]
             if prev is None:
@@ -92,5 +127,25 @@ def override_options(
             else:
                 _set_override(namespace, key, prev)
 
+    try:
+        _validate_experiments(namespace)
+    except Exception:
+        restore()
+        raise
 
-__all__ = ['Feature', 'always_off', 'always_on', 'override_options']
+    try:
+        yield
+    finally:
+        restore()
+
+
+__all__ = [
+    'Experiment',
+    'Feature',
+    'Layer',
+    'always_off',
+    'always_on',
+    'experiment',
+    'experiment_layer',
+    'override_options',
+]

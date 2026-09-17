@@ -22,11 +22,18 @@ use std::sync::{
 };
 use std::time::{Duration, Instant, SystemTime};
 
+pub mod experiments;
+
+use experiments::EXPERIMENT_LAYER_KEY_PREFIX;
+
 /// Embedded meta-schema for validating sentry-options schema files
 const NAMESPACE_SCHEMA_JSON: &str = include_str!("namespace-schema.json");
 
 /// Embedded Feature type definitions for injecting into namespace schemas that contain feature flags
 const FEATURE_SCHEMA_DEFS_JSON: &str = include_str!("feature-schema-defs.json");
+
+const EXPERIMENT_SCHEMA_DEFS_JSON: &str = include_str!("experiment-schema-defs.json");
+const EXPERIMENT_LAYER_KEY_PATTERN: &str = "^experiment-layer\\.";
 
 const SCHEMA_FILE_NAME: &str = "schema.json";
 const VALUES_FILE_NAME: &str = "values.json";
@@ -166,6 +173,21 @@ pub fn feature_property() -> Value {
     json!({ "$ref": "#/definitions/Feature" })
 }
 
+pub fn experiment_layer_property() -> Value {
+    json!({ "$ref": "#/definitions/ExperimentLayer" })
+}
+
+fn parse_defs(source: &str, name: &str) -> ValidationResult<serde_json::Map<String, Value>> {
+    let value: Value = serde_json::from_str(source)
+        .map_err(|e| ValidationError::InternalError(format!("Invalid {name} JSON: {e}")))?;
+    match value {
+        Value::Object(map) => Ok(map),
+        _ => Err(ValidationError::InternalError(format!(
+            "{name} must be a JSON object"
+        ))),
+    }
+}
+
 /// Metadata for a single option in a namespace schema
 #[derive(Debug, Clone)]
 pub struct OptionMetadata {
@@ -187,6 +209,8 @@ pub struct NamespaceSchema {
     /// `feature.`-prefixed key is accepted. The set of valid names then lives in the
     /// consuming service's code, not here.
     open_features: bool,
+    experiment_keys: HashSet<String>,
+    open_experiments: bool,
     validator: jsonschema::Validator,
 }
 
@@ -200,9 +224,7 @@ impl NamespaceSchema {
     /// Returns error if values don't match the schema
     pub fn validate_values(&self, values: &Value) -> ValidationResult<()> {
         let output = self.validator.evaluate(values);
-        if output.flag().valid {
-            Ok(())
-        } else {
+        if !output.flag().valid {
             let errors: Vec<String> = output
                 .iter_errors()
                 .map(|e| {
@@ -213,9 +235,18 @@ impl NamespaceSchema {
                     )
                 })
                 .collect();
-            Err(ValidationError::ValueError {
+            return Err(ValidationError::ValueError {
                 namespace: self.namespace.clone(),
                 errors: errors.join(""),
+            });
+        }
+        let issues = experiments::validate_experiments(values);
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationError::ValueError {
+                namespace: self.namespace.clone(),
+                errors: experiments::issues_message(&issues),
             })
         }
     }
@@ -229,7 +260,9 @@ impl NamespaceSchema {
     /// Whether `key` is a known key in this namespace, runtime
     /// option or feature flag.
     pub fn is_known_key(&self, key: &str) -> bool {
-        self.options.contains_key(key) || self.accepts_feature_key(key)
+        self.options.contains_key(key)
+            || self.accepts_feature_key(key)
+            || self.accepts_experiment_key(key)
     }
 
     /// Whether `key` is a feature this namespace declares, either by name or by
@@ -239,11 +272,18 @@ impl NamespaceSchema {
             || (self.open_features && key.starts_with(FEATURE_KEY_PREFIX))
     }
 
+    fn accepts_experiment_key(&self, key: &str) -> bool {
+        self.experiment_keys.contains(key)
+            || (self.open_experiments && key.starts_with(EXPERIMENT_LAYER_KEY_PREFIX))
+    }
+
     /// Whether a values key belongs to this namespace, i.e. survives loading rather
     /// than being stripped as unknown. Unlike `is_known_key` this covers every
     /// declared property, not just those with option metadata.
     pub fn accepts_key(&self, key: &str) -> bool {
-        self.all_keys.contains(key) || self.accepts_feature_key(key)
+        self.all_keys.contains(key)
+            || self.accepts_feature_key(key)
+            || self.accepts_experiment_key(key)
     }
 
     /// Validate a single key-value pair against the schema.
@@ -523,16 +563,18 @@ impl SchemaRegistry {
         // Extract option metadata and validate types.
         let mut options = HashMap::new();
         let mut feature_keys = HashSet::new();
+        let mut experiment_keys = HashSet::new();
         let mut all_keys = HashSet::new();
         // A `patternProperties` entry for the feature prefix declares features by
         // pattern instead of listing every name, so any `feature.`-prefixed key is
         // accepted and validated against the spliced-in Feature definition.
-        let open_features = schema
-            .get("patternProperties")
-            .and_then(|p| p.as_object())
-            .is_some_and(|p| p.contains_key(FEATURE_KEY_PATTERN));
+        let pattern_properties = schema.get("patternProperties").and_then(|p| p.as_object());
+        let open_features = pattern_properties.is_some_and(|p| p.contains_key(FEATURE_KEY_PATTERN));
+        let open_experiments =
+            pattern_properties.is_some_and(|p| p.contains_key(EXPERIMENT_LAYER_KEY_PATTERN));
 
         let mut has_feature_keys = open_features;
+        let mut has_experiment_keys = open_experiments;
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (prop_name, prop_value) in properties {
                 all_keys.insert(prop_name.clone());
@@ -541,6 +583,10 @@ impl SchemaRegistry {
                 if prop_name.starts_with(FEATURE_KEY_PREFIX) {
                     has_feature_keys = true;
                     feature_keys.insert(prop_name.clone());
+                }
+                if prop_name.starts_with(EXPERIMENT_LAYER_KEY_PREFIX) {
+                    has_experiment_keys = true;
+                    experiment_keys.insert(prop_name.clone());
                 }
                 if let (Some(prop_type), Some(default_value)) = (
                     prop_value.get("type").and_then(|t| t.as_str()),
@@ -559,19 +605,15 @@ impl SchemaRegistry {
             }
         }
 
-        // If an options schema includes a feature flag, splice in the definitions
-        // so that values can be validated.
-        if has_feature_keys {
-            let feature_defs: Value =
-                serde_json::from_str(FEATURE_SCHEMA_DEFS_JSON).map_err(|e| {
-                    ValidationError::InternalError(format!(
-                        "Invalid feature-schema-defs JSON: {}",
-                        e
-                    ))
-                })?;
-
+        // If an options schema includes a feature or experiment key, splice in both
+        // definition sets (Experiment references the shared Owner def) so values validate.
+        if has_feature_keys || has_experiment_keys {
+            let mut definitions = parse_defs(FEATURE_SCHEMA_DEFS_JSON, "feature-schema-defs")?;
+            let experiment_defs =
+                parse_defs(EXPERIMENT_SCHEMA_DEFS_JSON, "experiment-schema-defs")?;
+            definitions.extend(experiment_defs);
             if let Some(obj) = schema.as_object_mut() {
-                obj.insert("definitions".to_string(), feature_defs);
+                obj.insert("definitions".to_string(), Value::Object(definitions));
             }
         }
 
@@ -588,6 +630,8 @@ impl SchemaRegistry {
             feature_keys,
             all_keys,
             open_features,
+            experiment_keys,
+            open_experiments,
             validator,
         }))
     }
@@ -4075,5 +4119,221 @@ Error: \"version\" is a required property"
             registry.validate_values("test", &json!({"config": {"host": "x", "extra": "y"}})),
             Err(ValidationError::ValueError { .. })
         ));
+    }
+
+    mod experiment_tests {
+        use super::*;
+
+        const EXPERIMENT_SCHEMA: &str = r##"{
+            "version": "1.0",
+            "type": "object",
+            "properties": {
+                "int-option": {"type": "integer", "default": 1, "description": "x"},
+                "experiment-layer.checkout": { "$ref": "#/definitions/ExperimentLayer" }
+            }
+        }"##;
+
+        fn experiment(start: u32, size: u32) -> Value {
+            json!({
+                "owner": {"team": "growth"},
+                "allocation": {"start": start, "size": size},
+                "arms": [
+                    {"name": "control", "weight": 50},
+                    {"name": "treatment", "weight": 50, "config": {"color": "green"}}
+                ]
+            })
+        }
+
+        fn layer(experiments: Value) -> Value {
+            json!({"unit": ["organization_id"], "experiments": experiments})
+        }
+
+        fn registry_with(schema: &str) -> (TempDir, SchemaRegistry) {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_schema(&temp_dir, "test", schema);
+            let registry = SchemaRegistry::from_directory(temp_dir.path()).unwrap();
+            (temp_dir, registry)
+        }
+
+        #[test]
+        fn experiment_keys_need_no_default_and_are_known() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let schema = registry.get("test").unwrap();
+            assert!(schema.get_default("experiment-layer.checkout").is_none());
+            assert!(schema.is_known_key("experiment-layer.checkout"));
+            assert!(schema.accepts_key("experiment-layer.checkout"));
+            assert!(!schema.is_known_key("experiment-layer.unknown"));
+        }
+
+        #[test]
+        fn valid_experiment_values_pass() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "experiment-layer.checkout": layer(json!({
+                        "checkout-color": experiment(0, 40),
+                        "checkout-copy": experiment(40, 30)
+                    }))
+                }),
+            );
+            assert!(result.is_ok(), "{result:?}");
+        }
+
+        #[test]
+        fn experiment_shape_is_validated() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let bad = layer(json!({
+                "checkout-color": {
+                    "owner": {"team": "growth"},
+                    "allocation": {"start": 100, "size": 10},
+                    "arms": [{"name": "control", "weight": 1}]
+                }
+            }));
+            let result =
+                registry.validate_values("test", &json!({"experiment-layer.checkout": bad}));
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+
+            let missing_owner = layer(json!({
+                "checkout-color": {
+                    "allocation": {"start": 0, "size": 40},
+                    "arms": [{"name": "control", "weight": 1}]
+                }
+            }));
+            let result = registry
+                .validate_values("test", &json!({"experiment-layer.checkout": missing_owner}));
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn arm_weight_above_the_cap_is_rejected() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let over = layer(json!({
+                "checkout-color": {
+                    "owner": {"team": "growth"},
+                    "allocation": {"start": 0, "size": 40},
+                    "arms": [{"name": "control", "weight": 1_000_000_001i64}]
+                }
+            }));
+            let result =
+                registry.validate_values("test", &json!({"experiment-layer.checkout": over}));
+            assert!(matches!(result, Err(ValidationError::ValueError { .. })));
+        }
+
+        #[test]
+        fn overlapping_allocations_are_rejected_with_a_helpful_message() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let err = registry
+                .validate_values(
+                    "test",
+                    &json!({
+                        "experiment-layer.checkout": layer(json!({
+                            "checkout-color": experiment(0, 50),
+                            "checkout-copy": experiment(30, 30)
+                        }))
+                    }),
+                )
+                .unwrap_err();
+            let message = err.to_string();
+            assert!(message.contains("experiment-layer.checkout"), "{message}");
+            assert!(message.contains("overlap"), "{message}");
+            assert!(message.contains("free slots:"), "{message}");
+        }
+
+        #[test]
+        fn single_key_validate_option_checks_shape() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let schema = registry.get("test").unwrap();
+            assert!(
+                schema
+                    .validate_option(
+                        "experiment-layer.checkout",
+                        &layer(json!({"checkout-color": experiment(0, 40)}))
+                    )
+                    .is_ok()
+            );
+            assert!(
+                schema
+                    .validate_option(
+                        "experiment-layer.checkout",
+                        &json!({"unit": ["organization_id"]})
+                    )
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn open_experiments_accept_any_experiment_key() {
+            let schema = json!({
+                "version": "1.0",
+                "type": "object",
+                "patternProperties": { "^experiment-layer\\.": experiment_layer_property() }
+            })
+            .to_string();
+            let (_dir, registry) = registry_with(&schema);
+            let ns = registry.get("test").unwrap();
+            assert!(ns.accepts_key("experiment-layer.anything"));
+            assert!(!ns.accepts_key("feature.anything"));
+            assert!(
+                registry
+                    .validate_values(
+                        "test",
+                        &json!({"experiment-layer.anything": layer(json!({"e": experiment(0, 10)}))})
+                    )
+                    .is_ok()
+            );
+            assert!(
+                registry
+                    .validate_values(
+                        "test",
+                        &json!({"experiment-layer.anything": {"unit": ["l"]}})
+                    )
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn features_and_experiments_coexist() {
+            let schema = r##"{
+                "version": "1.0",
+                "type": "object",
+                "properties": {
+                    "feature.organizations:fury-mode": { "$ref": "#/definitions/Feature" },
+                    "experiment-layer.checkout": { "$ref": "#/definitions/ExperimentLayer" }
+                }
+            }"##;
+            let (_dir, registry) = registry_with(schema);
+            let result = registry.validate_values(
+                "test",
+                &json!({
+                    "feature.organizations:fury-mode": {
+                        "owner": {"team": "hybrid-cloud"},
+                        "segments": [],
+                        "created_at": "2024-01-01"
+                    },
+                    "experiment-layer.checkout": layer(json!({"checkout-color": experiment(0, 40)}))
+                }),
+            );
+            assert!(result.is_ok(), "{result:?}");
+        }
+
+        #[test]
+        fn experiment_layer_property_matches_meta_schema() {
+            let schema = json!({
+                "version": "1.0",
+                "type": "object",
+                "properties": { "experiment-layer.x": experiment_layer_property() }
+            })
+            .to_string();
+            let (_dir, registry) = registry_with(&schema);
+            assert!(registry.get("test").is_some());
+        }
+
+        #[test]
+        fn experiment_keys_are_not_schema_evolution_options() {
+            let (_dir, registry) = registry_with(EXPERIMENT_SCHEMA);
+            let schema = registry.get("test").unwrap();
+            assert_eq!(schema.options.len(), 1);
+        }
     }
 }

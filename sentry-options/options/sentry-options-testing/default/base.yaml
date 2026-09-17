@@ -3,3 +3,29 @@ options:
   float-option: 1.2
   int-option: 123
   bool-option: false
+  experiment-layer.checkout:
+    description: Checkout page tests
+    unit: [organization_id]
+    experiments:
+      checkout-color:
+        owner: { team: testing }
+        description: Button color test
+        allocation: { start: 0, size: 40 }
+        arms:
+          - { name: control, weight: 50 }
+          - { name: treatment, weight: 50, config: { color: green } }
+      checkout-copy:
+        owner: { team: testing }
+        allocation: { start: 40, size: 30 }
+        arms:
+          - { name: short, weight: 50 }
+          - { name: long, weight: 50 }
+  experiment-layer.paused:
+    unit: [run_id]
+    experiments:
+      paused-experiment:
+        owner: { team: testing }
+        allocation: { start: 0, size: 100 }
+        enabled: false
+        arms:
+          - { name: control, weight: 100 }
