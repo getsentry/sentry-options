@@ -129,6 +129,21 @@ if assignment.status != "unassigned":
 model = assignment.config["model"] if assignment.in_arm("treatment") else DEFAULT_MODEL
 ```
 
+**Let the check do the logging.** In a service, wrap the lines above in one helper so that checking an experiment records the exposure and nobody logs by hand next to a conditional:
+
+```python
+def expose(experiment, context):
+    assignment = experiments("seer").assign(experiment, context)
+    if assignment.status != "unassigned":
+        exposures.emit(assignment.exposure("seer"))
+    return assignment
+
+if expose("gemini-high", {"run_id": run.id}).in_arm("treatment"):
+    ...
+```
+
+The row is written before the answer comes back, so every arm is logged on the same line by construction. Call the helper at the conditional where the arm changes behaviour, not at startup, so subjects that never reach the treatment are never counted. A conditional that runs many times per subject can skip repeats with a small in-process cache keyed on experiment, subject, `definition_revision`, and status; that is an optimization, and duplicates from other workers or retries change nothing because analysis takes the first `assigned` row.
+
 **Compare arm to arm.** The primary comparison is between the arms of the experiment. The layer holdout is a layer-level baseline — what the layer as a whole does to its subjects — not the control arm of any one experiment.
 
 **Keep writing decision records.** The same helper at the same trigger also writes `holdout`, `excluded`, and `disabled` rows, tagged by `status`. They are not exposures; they exist for auditing — proving mutual exclusion inside a layer, checking that holdout and allocation sizes match the configuration, confirming a paused experiment really was paused, and debugging why a given subject saw no treatment. `unassigned` is never written: an unknown experiment or missing context is an application bug, so log it to your error tracker instead.
@@ -161,7 +176,7 @@ Because `allocation_start` and `allocation_size` ride on every row, exposures an
 
 **A new revision keeps the same split; a new name gives a fresh one.** `definition_revision` is computed from the definition, so it changes on its own whenever the layer, unit, allocation, arms, their weights or config, or `enabled` changes; nobody bumps it by hand. It is a hash, not a counter: order revisions by `recorded_at`, and note that restoring earlier settings restores the earlier revision. A new revision does not re-randomize anyone, because the arm hash is seeded by the experiment name: subjects who stay in the allocation go through the same split and carry their treatment history with them. When you re-run an earlier setup, or want a fresh randomization, end the experiment and start one under a new name; the layer, unit, and allocation can stay, so the same subjects take part.
 
-**Call `assign` once per subject, at the trigger.** For a unit that occurs once (a run id) that is the whole story: one trigger, one call, one row, nothing to persist and no first-time check. Later steps in the same run that need the arm should receive it from the trigger rather than re-calling `assign`. A unit that recurs across calls (an org id, a user id) gets the same answer as long as the definition has not changed; keeping such subjects stable across a shrink would need a persisted per-subject decision, which the library does not provide and which is out of scope for now.
+**Record once per subject, at the trigger; ask as often as you like.** For a unit that occurs once (a run id) that is the whole story: one trigger, one row, nothing to persist. Later steps in the same run that need the arm can simply ask again: the answer is the same unless the definition changed in between. Pass the arm along from the trigger only when a mid-run definition change must not flip a subject. A unit that recurs across calls (an org id, a user id) gets the same answer as long as the definition has not changed; keeping such subjects stable across a shrink would need a persisted per-subject decision, which the library does not provide and which is out of scope for now.
 
 **A kill switch is a separate flag.** To stop the treatment behaviour for subjects already exposed, gate the behaviour with a feature flag checked at the trigger. `enabled: false` pauses assignment — new calls return `disabled` — but it is not a behaviour kill switch and should not be used as one.
 
