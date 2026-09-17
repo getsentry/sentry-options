@@ -22,3 +22,5 @@ tracing-subscriber = { version = "0.3.23", features = ["fmt"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+sentry-options = { path = "../clients/rust" }
+serde_json.workspace = true

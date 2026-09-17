@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
+from sentry_options._core import Assignment
+from sentry_options._core import experiment_layer_property
+from sentry_options._core import ExperimentChecker
+from sentry_options._core import ExperimentError
+from sentry_options._core import experiments
 from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
@@ -31,6 +36,11 @@ OptionValue: TypeAlias = JsonPrimitive | list['OptionValue'] | dict[str, 'Option
 
 __all__ = [
     'init',
+    'Assignment',
+    'experiment_layer_property',
+    'experiments',
+    'ExperimentChecker',
+    'ExperimentError',
     'feature_property',
     'features',
     'fetch_schemas',
