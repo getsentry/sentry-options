@@ -75,7 +75,7 @@ experiment-layer.checkout:
       allocation: { start: 40, size: 30 }   # slots 40-69; 70-99 stay holdout
 ```
 
-If the layer is full, either shrink a running experiment (safe: remaining subjects keep their arms) or, if the two experiments are unrelated, give the new one its own layer.
+If the layer is full, wait for a running experiment to end or, if the two experiments are unrelated, give the new one its own layer. Shrinking a running experiment to make room keeps the remaining subjects in their arms but ends its phase; see "Assignment lifetime".
 
 To end an experiment, remove it from the layer's `experiments`; its slots become holdout. For long-lived units like organizations, the next experiment placed on those slots inherits a cohort that was just treated. Rename the layer (for example `experiment-layer.checkout-v2`) when that matters.
 
@@ -124,9 +124,9 @@ The library decides assignments; it does not record them. Sentry and Seer each s
 
 ```python
 assignment = experiments("seer").assign("gemini-high", {"run_id": run.id})
-exposures.emit(assignment.exposure("seer"))
-if assignment.is_assigned:
-    model = assignment.config["model"]
+if assignment.status != "unassigned":
+    exposures.emit(assignment.exposure("seer"))
+model = assignment.config["model"] if assignment.in_arm("treatment") else DEFAULT_MODEL
 ```
 
 **Compare arm to arm.** The primary comparison is between the arms of the experiment. The layer holdout is a layer-level baseline — what the layer as a whole does to its subjects — not the control arm of any one experiment.

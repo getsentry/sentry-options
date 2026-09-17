@@ -153,6 +153,9 @@ impl fmt::Display for ExperimentIssue {
         let prefix = EXPERIMENT_LAYER_KEY_PREFIX;
         match self {
             Self::InvalidDefinition { key, message } => write!(f, "{key}: {message}"),
+            Self::AllocationOutOfRange { key, size: 0, .. } => {
+                write!(f, "{key}: allocation size must be at least 1")
+            }
             Self::AllocationOutOfRange { key, start, size } => write!(
                 f,
                 "{key}: allocation start {start} + size {size} runs past the last slot ({}); shrink size or move start",
@@ -652,6 +655,10 @@ mod tests {
                 start: 0,
                 size: 0
             }]
+        );
+        assert_eq!(
+            err[0].to_string(),
+            "experiment-layer.l: a: allocation size must be at least 1"
         );
     }
 

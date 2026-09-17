@@ -195,46 +195,17 @@ fn context_from_py(context: &Bound<'_, PyDict>) -> PyResult<ExperimentContext> {
 }
 
 fn context_value_to_json(field: &str, obj: &Bound<'_, PyAny>) -> PyResult<Value> {
-    if obj.is_none() {
-        Ok(Value::Null)
-    } else if let Ok(b) = obj.extract::<bool>() {
-        Ok(Value::Bool(b))
-    } else if obj.is_instance_of::<PyInt>() {
-        if let Ok(i) = obj.extract::<i64>() {
-            Ok(Value::Number(i.into()))
-        } else if let Ok(u) = obj.extract::<u64>() {
-            Ok(Value::Number(u.into()))
-        } else {
-            Err(PyValueError::new_err(format!(
-                "Context field '{field}' has an integer too large to be used as an experiment unit value; pass it as a string instead"
-            )))
-        }
-    } else if let Ok(f) = obj.extract::<f64>() {
-        Ok(Value::Number(serde_json::Number::from_f64(f).ok_or_else(
-            || PyValueError::new_err("Cannot convert NaN or Infinity to JSON"),
-        )?))
-    } else if let Ok(s) = obj.extract::<String>() {
-        Ok(Value::String(s))
-    } else if let Ok(list) = obj.cast::<PyList>() {
-        let items: Result<Vec<Value>, _> = list
-            .iter()
-            .map(|item| context_value_to_json(field, &item))
-            .collect();
-        Ok(Value::Array(items?))
-    } else if let Ok(dict) = obj.cast::<PyDict>() {
-        let mut map = serde_json::Map::new();
-        for (k, v) in dict.iter() {
-            let key: String = k
-                .extract()
-                .map_err(|_| PyValueError::new_err("Dict keys must be strings"))?;
-            map.insert(key, context_value_to_json(field, &v)?);
-        }
-        Ok(Value::Object(map))
-    } else {
-        Err(PyValueError::new_err(
-            "Unsupported type for experiment context",
-        ))
+    if obj.is_instance_of::<PyInt>() && obj.extract::<i64>().is_err() {
+        return obj
+            .extract::<u64>()
+            .map(|u| Value::Number(u.into()))
+            .map_err(|_| {
+                PyValueError::new_err(format!(
+                    "Context field '{field}' has an integer too large to be used as an experiment unit value; pass it as a string instead"
+                ))
+            });
     }
+    py_to_json(obj)
 }
 
 /// Feature evaluation context holding arbitrary key-value data.
