@@ -356,6 +356,28 @@ def test_assign_with_unconvertible_context_is_unassigned():
         experiments(NAMESPACE).try_assign('checkout-color', {'organization_id': float('nan')})
 
 
+def test_assign_rejects_oversized_int_context():
+    huge = 2 ** 70
+    assert experiments(NAMESPACE).assign('checkout-color', {'organization_id': huge}).status == 'unassigned'
+    with pytest.raises(ValueError, match='organization_id'):
+        experiments(NAMESPACE).try_assign('checkout-color', {'organization_id': huge})
+
+
+def test_assign_accepts_max_i64_context_deterministically():
+    ctx = {'organization_id': 2 ** 63 - 1}
+    first = experiments(NAMESPACE).assign('checkout-color', ctx)
+    second = experiments(NAMESPACE).assign('checkout-color', ctx)
+    assert first.subject is not None
+    assert (first.status, first.arm, first.slot, first.subject) == (
+        second.status, second.arm, second.slot, second.subject,
+    )
+
+
+def test_assign_accepts_huge_int_passed_as_string():
+    a = experiments(NAMESPACE).try_assign('checkout-color', {'organization_id': str(2 ** 70)})
+    assert a.subject is not None
+
+
 def test_documented_reference_hash_matches_extension():
     import hashlib
 

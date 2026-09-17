@@ -101,7 +101,7 @@ let assignment = experiments("seer").assign("checkout-color", &context);
 if assignment.in_arm("treatment") { /* ... */ }
 ```
 
-`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. In Python, a context that cannot be converted (a non-string key, `NaN`) comes back as `unassigned` from `assign`, while `try_assign` raises the conversion error: a non-string key raises `TypeError`, and `NaN`/`Infinity` raise `ValueError`. The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`).
+`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. In Python, a context that cannot be converted (a non-string key, `NaN`) comes back as `unassigned` from `assign`, while `try_assign` raises the conversion error: a non-string key raises `TypeError`, and `NaN`/`Infinity` raise `ValueError`. The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`). An integer too large to fit in 64 bits raises `ValueError` rather than silently becoming a float; pass such an id as a string.
 
 An `Assignment` carries:
 
