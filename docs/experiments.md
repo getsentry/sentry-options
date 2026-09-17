@@ -79,6 +79,28 @@ If the layer is full, wait for a running experiment to end or, if the two experi
 
 To end an experiment, remove it from the layer's `experiments`; its slots become holdout. For long-lived units like organizations, the next experiment placed on those slots inherits a cohort that was just treated. Rename the layer (for example `experiment-layer.checkout-v2`) when that matters.
 
+### Overriding a layer for one target
+
+Values in `{target}/values.yaml` (for example `de` or a single tenant) replace the `default` value key by key, and a layer is one key. An override therefore replaces the whole layer for that target: nothing inside it is merged with the default. Repeat every experiment that should keep running there, not just the one you are changing.
+
+```yaml
+# option-values/seer/default/values.yaml
+experiment-layer.checkout:
+  unit: [organization_id]
+  experiments:
+    checkout-color: { owner: { team: growth }, allocation: { start: 0, size: 40 }, arms: [...] }
+    checkout-copy: { owner: { team: growth }, allocation: { start: 40 }, arms: [...] }
+
+# option-values/seer/de/values.yaml: pause checkout-color in de only
+experiment-layer.checkout:
+  unit: [organization_id]
+  experiments:
+    checkout-color: { owner: { team: growth }, allocation: { start: 0, size: 40 }, arms: [...], enabled: false }
+    checkout-copy: { owner: { team: growth }, allocation: { start: 40 }, arms: [...] }   # omit this and de stops running it
+```
+
+This keeps a target's layer fully visible in one place, and the overridden layer is validated on its own, so overlaps are still caught. A changed definition also gets its own `definition_revision`, so rows from that target are told apart in analysis.
+
 ## Reading an experiment
 
 Python:
