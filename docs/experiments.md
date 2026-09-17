@@ -17,7 +17,7 @@ Every experiment belongs to exactly one layer. A standalone experiment is a laye
 Experiments live inside a layer. In `sentry-options/schemas/{namespace}/schema.json`, declare the layer:
 
 ```json
-"experiment-layer.checkout": {
+"experiment-layer.autofix": {
   "$ref": "#/definitions/ExperimentLayer"
 }
 ```
@@ -29,19 +29,19 @@ or, to declare layers by pattern, `"patternProperties": { "^experiment-layer\\."
 In the automator's `option-values/{namespace}/{target}/values.yaml`, everything in a layer sits in one block, so you always see a layer's neighbours and their slots before adding to it:
 
 ```yaml
-experiment-layer.checkout:
-  description: Checkout page tests
-  unit: [organization_id]
+experiment-layer.autofix:
+  description: Autofix experiments
+  unit: [run_id]
   experiments:
-    checkout-color:
-      owner: { team: growth }
-      description: Green vs blue checkout button
+    autofix-model:
+      owner: { team: seer }
+      description: Candidate vs default model
       allocation: { start: 0, size: 40 }
       arms:
         - { name: control, weight: 50 }
-        - { name: treatment, weight: 50, config: { color: green } }
-    checkout-copy:
-      owner: { team: growth }
+        - { name: treatment, weight: 50, config: { model: candidate } }
+    autofix-prompt:
+      owner: { team: seer }
       allocation: { start: 40 }
       arms:
         - { name: short, weight: 50 }
@@ -66,18 +66,18 @@ Validation rejects allocations that run past slot 99, allocations of zero slots,
 Because the whole layer is one block, adding a second experiment means editing the block and picking free slots the validator prints for you:
 
 ```yaml
-experiment-layer.checkout:
-  unit: [organization_id]
+experiment-layer.autofix:
+  unit: [run_id]
   experiments:
-    checkout-color:
+    autofix-model:
       allocation: { start: 0, size: 40 }    # slots 0-39
-    checkout-copy:
+    autofix-prompt:
       allocation: { start: 40, size: 30 }   # slots 40-69; 70-99 stay holdout
 ```
 
 If the layer is full, wait for a running experiment to end or, if the two experiments are unrelated, give the new one its own layer. Shrinking a running experiment to make room keeps the remaining subjects in their arms but ends its phase; see "Assignment lifetime".
 
-To end an experiment, remove it from the layer's `experiments`; its slots become holdout. For long-lived units like organizations, the next experiment placed on those slots inherits a cohort that was just treated. Rename the layer (for example `experiment-layer.checkout-v2`) when that matters.
+To end an experiment, remove it from the layer's `experiments`; its slots become holdout. For long-lived units like organizations, the next experiment placed on those slots inherits a cohort that was just treated. Rename the layer (for example `experiment-layer.autofix-v2`) when that matters.
 
 ### Overriding a layer for one target
 
@@ -85,18 +85,18 @@ Values in `{target}/values.yaml` (for example `de` or a single tenant) replace t
 
 ```yaml
 # option-values/seer/default/values.yaml
-experiment-layer.checkout:
-  unit: [organization_id]
+experiment-layer.autofix:
+  unit: [run_id]
   experiments:
-    checkout-color: { owner: { team: growth }, allocation: { start: 0, size: 40 }, arms: [...] }
-    checkout-copy: { owner: { team: growth }, allocation: { start: 40 }, arms: [...] }
+    autofix-model: { owner: { team: seer }, allocation: { start: 0, size: 40 }, arms: [...] }
+    autofix-prompt: { owner: { team: seer }, allocation: { start: 40 }, arms: [...] }
 
-# option-values/seer/de/values.yaml: pause checkout-color in de only
-experiment-layer.checkout:
-  unit: [organization_id]
+# option-values/seer/de/values.yaml: pause autofix-model in de only
+experiment-layer.autofix:
+  unit: [run_id]
   experiments:
-    checkout-color: { owner: { team: growth }, allocation: { start: 0, size: 40 }, arms: [...], enabled: false }
-    checkout-copy: { owner: { team: growth }, allocation: { start: 40 }, arms: [...] }   # omit this and de stops running it
+    autofix-model: { owner: { team: seer }, allocation: { start: 0, size: 40 }, arms: [...], enabled: false }
+    autofix-prompt: { owner: { team: seer }, allocation: { start: 40 }, arms: [...] }   # omit this and de stops running it
 ```
 
 This keeps a target's layer fully visible in one place, and the overridden layer is validated on its own, so overlaps are still caught. The merged values for each target are validated too, so an experiment name reused across layers is caught even when those layers sit in different files. A changed definition also gets its own `definition_revision`, so rows from that target are told apart in analysis.
@@ -108,9 +108,9 @@ Python:
 ```python
 from sentry_options import experiments
 
-assignment = experiments("seer").assign("checkout-color", {"organization_id": org_id})
+assignment = experiments("seer").assign("autofix-model", {"run_id": run_id})
 if assignment.in_arm("treatment"):
-    color = assignment.config["color"]
+    model = assignment.config["model"]
 ```
 
 Rust:
@@ -118,8 +118,8 @@ Rust:
 ```rust
 use sentry_options::{experiments, ExperimentContext};
 
-let context = ExperimentContext::from([("organization_id".to_string(), org_id.into())]);
-let assignment = experiments("seer").assign("checkout-color", &context);
+let context = ExperimentContext::from([("run_id".to_string(), run_id.into())]);
+let assignment = experiments("seer").assign("autofix-model", &context);
 if assignment.in_arm("treatment") { /* ... */ }
 ```
 
@@ -134,7 +134,7 @@ An `Assignment` carries:
 | `slot`, `layer`, `unit`, `subject` | Where the subject landed; `subject` is the JSON array of the unit values, e.g. `["1","77"]`, so it stays one column and cannot collide |
 | `excluded_by` | The owning experiment when `excluded` |
 
-`experiments(ns).layer("checkout")` lists a layer's members with their allocations, useful for tooling and tests.
+`experiments(ns).layer("autofix")` lists a layer's members with their allocations, useful for tooling and tests.
 
 ## Exposure
 
@@ -145,7 +145,7 @@ The library decides assignments; it does not record them. Sentry and Seer each s
 **Log at the trigger, for every arm.** Write the row at the point in the code where the arm changes behaviour, and write it there for every arm, control included, on the same code line. Do not write it when `assign` is called: being assigned is not being exposed. This symmetry is the whole point. If control were logged somewhere else, or not at all, the arms would be counted under different conditions and the comparison would already be biased before analysis starts.
 
 ```python
-assignment = experiments("seer").assign("gemini-high", {"run_id": run.id})
+assignment = experiments("seer").assign("autofix-model", {"run_id": run.id})
 if assignment.status != "unassigned":
     exposures.emit(assignment.exposure("seer"))
 model = assignment.config["model"] if assignment.in_arm("treatment") else DEFAULT_MODEL
@@ -160,7 +160,7 @@ def expose(experiment, context):
         exposures.emit(assignment.exposure("seer"))
     return assignment
 
-if expose("gemini-high", {"run_id": run.id}).in_arm("treatment"):
+if expose("autofix-model", {"run_id": run.id}).in_arm("treatment"):
     ...
 ```
 
