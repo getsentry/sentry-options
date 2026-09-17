@@ -182,6 +182,129 @@ fn yaml_to_json_to_client_assignments_and_reload() {
     );
 }
 
+fn seed_schema(dir: &Path) {
+    let src = repo_root().join("sentry-options");
+    let schema_dst = dir.join("schemas").join(NS);
+    fs::create_dir_all(&schema_dst).unwrap();
+    fs::copy(
+        src.join("schemas").join(NS).join("schema.json"),
+        schema_dst.join("schema.json"),
+    )
+    .unwrap();
+}
+
+fn write_yaml(dir: &Path, target: &str, name: &str, body: &str) {
+    let dst = dir.join("options").join(NS).join(target);
+    fs::create_dir_all(&dst).unwrap();
+    fs::write(dst.join(name), body).unwrap();
+}
+
+fn write_values(dir: &Path) -> std::process::Output {
+    let out = dir.join("gen");
+    Command::new(BIN)
+        .args([
+            "write",
+            "--schemas",
+            dir.join("schemas").to_str().unwrap(),
+            "--root",
+            dir.join("options").to_str().unwrap(),
+            "--output-format",
+            "json",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap()
+}
+
+fn layer_yaml(layer: &str, unit: &str, experiment: &str, size: u32) -> String {
+    format!(
+        "options:\n  experiment-layer.{layer}:\n    unit: [{unit}]\n    experiments:\n      {experiment}:\n        owner: {{ team: testing }}\n        allocation: {{ start: 0, size: {size} }}\n        arms:\n          - {{ name: control, weight: 1 }}\n"
+    )
+}
+
+#[test]
+fn same_experiment_in_two_layers_same_target_fails() {
+    let dir = TempDir::new().unwrap();
+    seed_schema(dir.path());
+    write_yaml(
+        dir.path(),
+        "default",
+        "a.yaml",
+        &layer_yaml("checkout", "organization_id", "shared", 10),
+    );
+    write_yaml(
+        dir.path(),
+        "default",
+        "b.yaml",
+        &layer_yaml("paused", "run_id", "shared", 10),
+    );
+
+    let output = validate_values(dir.path());
+    assert!(!output.status.success(), "merged duplicate should fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("target 'default'"), "stderr was: {stderr}");
+    assert!(
+        stderr.contains("declared in both experiment-layer.checkout and experiment-layer.paused"),
+        "stderr was: {stderr}"
+    );
+
+    let write = write_values(dir.path());
+    assert!(!write.status.success(), "write should fail too");
+}
+
+#[test]
+fn same_experiment_across_default_and_target_fails_only_on_merge() {
+    let dir = TempDir::new().unwrap();
+    seed_schema(dir.path());
+    write_yaml(
+        dir.path(),
+        "default",
+        "base.yaml",
+        &layer_yaml("checkout", "organization_id", "x", 10),
+    );
+    write_yaml(
+        dir.path(),
+        "de",
+        "override.yaml",
+        &layer_yaml("paused", "run_id", "x", 10),
+    );
+
+    let output = validate_values(dir.path());
+    assert!(!output.status.success(), "merged de should fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("target 'de'"), "stderr was: {stderr}");
+    assert!(
+        stderr.contains("declared in both experiment-layer.checkout and experiment-layer.paused"),
+        "stderr was: {stderr}"
+    );
+}
+
+#[test]
+fn overriding_a_whole_layer_for_one_target_passes() {
+    let dir = TempDir::new().unwrap();
+    seed_schema(dir.path());
+    write_yaml(
+        dir.path(),
+        "default",
+        "base.yaml",
+        &layer_yaml("checkout", "organization_id", "checkout-color", 40),
+    );
+    write_yaml(
+        dir.path(),
+        "de",
+        "override.yaml",
+        &layer_yaml("checkout", "organization_id", "checkout-color", 60),
+    );
+
+    let output = validate_values(dir.path());
+    assert!(
+        output.status.success(),
+        "a whole-layer override replaces the key and is not a duplicate; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn overlapping_allocation_fails_validation() {
     let dir = TempDir::new().unwrap();

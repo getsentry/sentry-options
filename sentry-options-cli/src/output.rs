@@ -5,7 +5,7 @@ use std::{
 };
 
 use clap::ValueEnum;
-use sentry_options_validation::validate_k8s_name_component;
+use sentry_options_validation::{SchemaRegistry, validate_k8s_name_component};
 use serde::Serialize;
 
 use crate::{AppError, FileData, NamespaceMap, OptionsMap, Result};
@@ -85,6 +85,27 @@ fn merge_options_for_target(
     }
 
     Ok(merged.into_iter().collect())
+}
+
+/// Per-file validation can't see cross-layer rules (an experiment name reused by layers
+/// in different files), so re-check the merged default + target view.
+pub fn validate_merged_values(maps: &NamespaceMap, schema_registry: &SchemaRegistry) -> Result<()> {
+    for (namespace, targets) in maps {
+        for target in targets.keys() {
+            let merged = merge_options_for_target(maps, namespace, target)?;
+            let values_json = serde_json::to_value(&merged)?;
+            let values_json = schema_registry.strip_unknown_keys(namespace, &values_json);
+            schema_registry
+                .validate_values(namespace, &values_json)
+                .map_err(|e| {
+                    AppError::Validation(format!(
+                        "In merged values for namespace '{}', target '{}': {}",
+                        namespace, target, e
+                    ))
+                })?;
+        }
+    }
+    Ok(())
 }
 
 fn merge_all_options(maps: NamespaceMap) -> Result<Vec<MergedOptions>> {

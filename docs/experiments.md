@@ -99,7 +99,7 @@ experiment-layer.checkout:
     checkout-copy: { owner: { team: growth }, allocation: { start: 40 }, arms: [...] }   # omit this and de stops running it
 ```
 
-This keeps a target's layer fully visible in one place, and the overridden layer is validated on its own, so overlaps are still caught. A changed definition also gets its own `definition_revision`, so rows from that target are told apart in analysis.
+This keeps a target's layer fully visible in one place, and the overridden layer is validated on its own, so overlaps are still caught. The merged values for each target are validated too, so an experiment name reused across layers is caught even when those layers sit in different files. A changed definition also gets its own `definition_revision`, so rows from that target are told apart in analysis.
 
 ## Reading an experiment
 
