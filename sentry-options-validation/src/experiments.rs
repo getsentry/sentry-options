@@ -8,7 +8,6 @@ use sha1::{Digest, Sha1};
 pub const EXPERIMENT_LAYER_KEY_PREFIX: &str = "experiment-layer.";
 pub const LAYER_SLOTS: u32 = 100;
 pub const DEFAULT_ALLOCATION_SIZE: u32 = 20;
-pub const MIN_ALLOCATION_SIZE: u32 = 10;
 pub const MAX_ARMS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -123,10 +122,6 @@ pub enum ExperimentIssue {
         start: u32,
         size: u32,
     },
-    AllocationTooSmall {
-        key: String,
-        size: u32,
-    },
     TooManyArms {
         key: String,
         count: usize,
@@ -162,10 +157,6 @@ impl fmt::Display for ExperimentIssue {
                 f,
                 "{key}: allocation start {start} + size {size} runs past the last slot ({}); shrink size or move start",
                 LAYER_SLOTS - 1
-            ),
-            Self::AllocationTooSmall { key, size } => write!(
-                f,
-                "{key}: allocation size {size} is below the minimum of {MIN_ALLOCATION_SIZE}; raise it or omit size to default to {DEFAULT_ALLOCATION_SIZE}"
             ),
             Self::TooManyArms { key, count } => write!(
                 f,
@@ -361,13 +352,7 @@ fn free_slots(members: &[LayerMember]) -> String {
 }
 
 fn check_definition(key: &str, def: &ExperimentDefinition, issues: &mut Vec<ExperimentIssue>) {
-    if def.allocation.size < MIN_ALLOCATION_SIZE {
-        issues.push(ExperimentIssue::AllocationTooSmall {
-            key: key.to_string(),
-            size: def.allocation.size,
-        });
-    }
-    if def.allocation.end() > LAYER_SLOTS {
+    if def.allocation.size == 0 || def.allocation.end() > LAYER_SLOTS {
         issues.push(ExperimentIssue::AllocationOutOfRange {
             key: key.to_string(),
             start: def.allocation.start,
@@ -643,17 +628,29 @@ mod tests {
     }
 
     #[test]
-    fn rejects_allocation_below_minimum_size() {
+    fn accepts_allocation_of_one_slot() {
+        assert!(
+            set_from(vec![(
+                "experiment-layer.l",
+                layer("organization_id", vec![("a", experiment(0, 1))]),
+            )])
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_zero_size_allocation() {
         let err = set_from(vec![(
             "experiment-layer.l",
-            layer("organization_id", vec![("a", experiment(0, 5))]),
+            layer("organization_id", vec![("a", experiment(0, 0))]),
         )])
         .unwrap_err();
         assert_eq!(
             err,
-            vec![ExperimentIssue::AllocationTooSmall {
+            vec![ExperimentIssue::AllocationOutOfRange {
                 key: "experiment-layer.l: a".into(),
-                size: 5
+                start: 0,
+                size: 0
             }]
         );
     }

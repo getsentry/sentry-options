@@ -52,14 +52,14 @@ experiment-layer.checkout:
 | --- | --- |
 | `unit` (layer) | Context fields that identify the subject. Lives on the layer; every experiment in it shares the unit. |
 | `experiments` (layer) | The layer's experiments, keyed by name. At least one; each claims a disjoint allocation. |
-| `allocation` | `start` is the first slot (0-99), `size` the number of slots, i.e. percent of the layer. `size` defaults to 20 and may not go below 10. `{start: 0, size: 40}` covers slots 0 through 39. |
+| `allocation` | `start` is the first slot (0-99), `size` the number of slots, i.e. percent of the layer. `size` is any whole number from 1 to 100 and defaults to 20. `{start: 0, size: 40}` covers slots 0 through 39. |
 | `arms` | 1 to 10 `{name, weight, config?}`. Weights are relative integers up to 1,000,000,000; `config` is free-form JSON your code reads. |
 | `enabled` | Optional, default `true`. When `false`, subjects in the allocation are reported as `disabled` and get no arm. The allocation stays reserved. |
 | `owner`, `description`, `created_at` | Same shape as on feature flags; only `owner.team` is required. |
 
-The default allocation is 20 slots because that is what reaches significance on current Autofix traffic in about a week. Rough sample size per arm is `n ≈ 16 × p × (1 − p) / effect²`; at a 30% baseline a 5-point lift needs about 1,350 subjects per arm. In the week of Sep 9 2026 Autofix ran about 1,450 runs and 290 orgs a day, so a two-arm, run-unit experiment on 20% of a layer collects roughly 145 runs per arm per day and clears 1,350 in about nine days. Take the default and leave the rest of the layer free for the next experiment; raise `size` only when you need the traffic sooner and can spare the slots, and never drop below the floor of 10.
+The default allocation is 20 slots because that is what reaches significance on current Autofix traffic in about a week. Rough sample size per arm is `n ≈ 16 × p × (1 − p) / effect²`; at a 30% baseline a 5-point lift needs about 1,350 subjects per arm. In the week of Sep 9 2026 Autofix ran about 1,450 runs and 290 orgs a day, so a two-arm, run-unit experiment on 20% of a layer collects roughly 145 runs per arm per day and clears 1,350 in about nine days. Take the default and leave the rest of the layer free for the next experiment; raise `size` only when you need the traffic sooner and can spare the slots. Anything from 1 to 100 is allowed. Below about 10 slots an experiment on Autofix-scale traffic will take months to reach significance, so go that low only when the traffic is large enough that the sizing formula above says it works.
 
-Validation rejects allocations that run past slot 99, allocations smaller than 10, overlapping allocations in a layer, an experiment name declared in two layers, duplicate arm names, and an enabled experiment whose weights sum to 0 (a paused one may zero them). The overlap message names the two experiments, their slot ranges, and the layer's free slots.
+Validation rejects allocations that run past slot 99, allocations of zero slots, overlapping allocations in a layer, an experiment name declared in two layers, duplicate arm names, and an enabled experiment whose weights sum to 0 (a paused one may zero them). The overlap message names the two experiments, their slot ranges, and the layer's free slots.
 
 ### Sharing a layer
 

@@ -425,14 +425,27 @@ def test_testing_experiment_builder_defaults():
     }
 
 
-def test_size_below_minimum_is_rejected():
+def test_zero_size_is_rejected():
     with pytest.raises(SchemaError):
         with override_options(
             NAMESPACE, {
                 'experiment-layer.checkout': experiment_layer(
                     unit=['organization_id'],
-                    experiments={'checkout-color': experiment(arms={'control': 50, 'treatment': 50}, start=0, size=5)},
+                    experiments={'checkout-color': experiment(arms={'control': 50, 'treatment': 50}, start=0, size=0)},
                 ),
             },
         ):
             pass
+
+
+def test_one_slot_size_is_accepted():
+    with override_options(
+        NAMESPACE, {
+            'experiment-layer.checkout': experiment_layer(
+                unit=['organization_id'],
+                experiments={'checkout-color': experiment(arms={'control': 50, 'treatment': 50}, start=0, size=1)},
+            ),
+        },
+    ):
+        checker = experiments(NAMESPACE)
+        assert checker.assign('checkout-color', {'organization_id': 1}) is not None
