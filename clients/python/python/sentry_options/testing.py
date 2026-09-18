@@ -111,7 +111,6 @@ def override_options(
 
     Note: Overrides are thread-local. They won't apply to spawned threads.
     """
-    # Shape-check every key before touching thread-local state.
     for key, value in overrides.items():
         _validate_option(namespace, key, value)
 

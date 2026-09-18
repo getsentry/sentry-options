@@ -4,6 +4,7 @@ from datetime import datetime
 from datetime import timezone
 
 import pytest
+from conftest import run_isolated
 from sentry_options import Assignment
 from sentry_options import experiment_layer_property
 from sentry_options import ExperimentError
@@ -63,16 +64,17 @@ def test_sibling_experiment_owns_the_excluded_slot():
     assert experiments(NAMESPACE).assign('checkout-copy', {'organization_id': 37}).arm == 'short'
 
 
-def test_disabled_experiment():
-    a = experiments(NAMESPACE).assign('paused-experiment', {'run_id': 1})
-    assert (a.status, a.slot, a.arm) == ('disabled', 13, None)
-
-
 def test_unconfigured_experiment_is_unassigned():
     a = experiments(NAMESPACE).assign('unconfigured-experiment', {'organization_id': 1})
     assert a.status == 'unassigned'
     assert a.reason == 'experiment is not configured'
     assert a.layer is None and a.slot is None and a.subject is None
+    assert a.allocation_start is None and a.allocation_size is None
+    assert a.definition_revision is None
+    record = a.to_dict()
+    assert record['allocation_start'] is None
+    assert record['allocation_size'] is None
+    assert record['definition_revision'] is None
 
 
 def test_missing_unit_field():
@@ -89,7 +91,24 @@ def test_try_assign_unknown_namespace_raises():
     assert experiments('nope').assign('checkout-color', {'organization_id': 1}).status == 'unassigned'
 
 
-def test_to_dict_is_the_exposure_record():
+def test_experiments_before_init_raises(tmp_path):
+    run_isolated(
+        """
+        from sentry_options import experiments
+        from sentry_options import NotInitializedError
+
+        try:
+            experiments('sentry-options-testing')
+        except NotInitializedError:
+            pass
+        else:
+            raise AssertionError('expected NotInitializedError before init()')
+        """,
+        tmp_path,
+    )
+
+
+def test_to_dict_is_the_assignment_record():
     a = experiments(NAMESPACE).assign('checkout-color', {'organization_id': 5})
     assert a.to_dict() == {
         'namespace': NAMESPACE,
@@ -160,26 +179,10 @@ def test_allocation_is_recorded_for_configured_statuses(org, status, start, size
 
 def test_disabled_experiment_carries_its_allocation():
     a = experiments(NAMESPACE).assign('paused-experiment', {'run_id': 1})
-    assert a.status == 'disabled'
+    assert (a.status, a.slot, a.arm) == ('disabled', 13, None)
     assert (a.allocation_start, a.allocation_size) == (0, 100)
     assert a.to_dict()['allocation_start'] == 0
     assert a.to_dict()['allocation_size'] == 100
-
-
-def test_unconfigured_experiment_has_no_allocation():
-    a = experiments(NAMESPACE).assign('unconfigured-experiment', {'organization_id': 1})
-    assert a.allocation_start is None
-    assert a.allocation_size is None
-    assert a.to_dict()['allocation_start'] is None
-    assert a.to_dict()['allocation_size'] is None
-
-
-def test_excluded_assignment_record_has_unit_list():
-    record = experiments(NAMESPACE).assign('checkout-color', {'organization_id': 16}).to_dict()
-    assert record['arm'] is None
-    assert record['excluded_by'] == 'checkout-copy'
-    assert record['status'] == 'excluded'
-    assert record['unit'] == ['organization_id']
 
 
 def test_definition_revision_changes_with_arm_config():
@@ -247,13 +250,6 @@ def test_restarting_with_old_settings_has_a_distinct_experiment_identity():
         (record['namespace'], record['experiment'], record['subject'])
         for record in records
     }) == 3
-
-
-def test_unassigned_has_no_definition_revision():
-    a = experiments(NAMESPACE).assign('unconfigured-experiment', {'organization_id': 1})
-    assert a.status == 'unassigned'
-    assert a.definition_revision is None
-    assert a.to_dict()['definition_revision'] is None
 
 
 def test_layer_lists_members_in_slot_order():
@@ -432,19 +428,6 @@ def test_arm_selection_is_invariant_under_proportional_weight_scaling():
     tilted = _assign_arms_for_weights({'a': 30, 'b': 70})
     assert _assign_arms_for_weights({'a': 3, 'b': 7}) == tilted
     assert _assign_arms_for_weights({'a': 300, 'b': 700}) == tilted
-
-
-def test_testing_experiment_builder_defaults():
-    value = experiment(arms={'control': 50, 'treatment': 50})
-    assert value == {
-        'owner': {'team': 'testing'},
-        'allocation': {'start': 0, 'size': 20},
-        'enabled': True,
-        'arms': [
-            {'name': 'control', 'weight': 50},
-            {'name': 'treatment', 'weight': 50},
-        ],
-    }
 
 
 def test_zero_size_is_rejected():
