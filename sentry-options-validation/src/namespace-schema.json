@@ -24,9 +24,20 @@
           },
           "required": ["$ref"],
           "additionalProperties": false
+        },
+        "^experiment-layer\\.": {
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/ExperimentLayer"
+            }
+          },
+          "required": ["$ref"],
+          "additionalProperties": false
         }
       },
-      "required": ["^feature\\."],
+      "anyOf": [{ "required": ["^feature\\."] }, { "required": ["^experiment-layer\\."] }],
       "additionalProperties": false
     },
     "properties": {
@@ -43,7 +54,18 @@
           "required": ["$ref"],
           "additionalProperties": false
         },
-        "^(?!feature\\.)": {
+        "^experiment-layer\\.": {
+          "type": "object",
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "#/definitions/ExperimentLayer"
+            }
+          },
+          "required": ["$ref"],
+          "additionalProperties": false
+        },
+        "^(?!feature\\.|experiment-layer\\.)": {
           "type": "object",
           "properties": {
             "type": {

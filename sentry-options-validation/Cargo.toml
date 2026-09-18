@@ -12,6 +12,7 @@ serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 jsonschema.workspace = true
+sha1.workspace = true
 tempfile.workspace = true
 arc-swap.workspace = true
 chrono.workspace = true

@@ -75,6 +75,9 @@
     },
     "feature.organizations:rollout-mid": {
         "$ref": "#/definitions/Feature"
-    }
+    },
+    "experiment-layer.checkout": { "$ref": "#/definitions/ExperimentLayer" },
+    "experiment-layer.paused": { "$ref": "#/definitions/ExperimentLayer" },
+    "experiment-layer.unconfigured-experiment": { "$ref": "#/definitions/ExperimentLayer" }
   }
 }
