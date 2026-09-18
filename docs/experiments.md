@@ -75,7 +75,7 @@ experiment-layer.autofix:
       allocation: { start: 40, size: 30 }   # slots 40-69; 70-99 stay holdout
 ```
 
-If the layer is full, wait for a running experiment to end or, if the two experiments are unrelated, give the new one its own layer. Shrinking a running experiment to make room keeps the remaining subjects in their arms but ends its phase.
+If the layer is full, wait for a running experiment to end or, if the two experiments are unrelated, give the new one its own layer. Shrinking a running experiment to make room keeps the remaining subjects in their arms but ends its phase; see "Assignment lifetime".
 
 To end an experiment, remove it from the layer's `experiments`; its slots become holdout. For long-lived units like organizations, the next experiment placed on those slots inherits a cohort that was just treated. Rename the layer (for example `experiment-layer.autofix-v2`) when that matters.
 
@@ -100,3 +100,158 @@ experiment-layer.autofix:
 ```
 
 This keeps a target's layer fully visible in one place, and the overridden layer is validated on its own, so overlaps are still caught. The merged values for each target are validated too, so an experiment name reused across layers is caught even when those layers sit in different files. A changed definition also gets its own `definition_revision`, so rows from that target are told apart in analysis.
+
+## Reading an experiment
+
+Python:
+
+```python
+from sentry_options import experiments
+
+assignment = experiments("seer").assign("autofix-model", {"run_id": run_id})
+if assignment.in_arm("treatment"):
+    model = assignment.config["model"]
+```
+
+Rust:
+
+```rust
+use sentry_options::{experiments, ExperimentContext};
+
+let context = ExperimentContext::from([("run_id".to_string(), run_id.into())]);
+let assignment = experiments("seer").assign("autofix-model", &context);
+if assignment.in_arm("treatment") { /* ... */ }
+```
+
+`assign` never raises; `try_assign` raises `ExperimentError` (or the usual options errors) instead of returning an `unassigned` result. In Python, a context that cannot be converted (a non-string key, `NaN`) comes back as `unassigned` from `assign`, while `try_assign` raises the conversion error: a non-string key raises `TypeError`, and `NaN`/`Infinity` raise `ValueError`. The context is a plain mapping; only the fields named in `unit` are read. String values are used verbatim, numbers and booleans are rendered as JSON (`123`, `1.5`, `true`). An integer too large to fit in 64 bits raises `ValueError` rather than silently becoming a float; pass such an id as a string.
+
+An `Assignment` carries:
+
+| Field | Value |
+| --- | --- |
+| `status` | `assigned`, `excluded` (slot owned by another experiment in the layer), `holdout` (slot free), `disabled` (in the allocation but `enabled: false`), `unassigned` (not configured, not initialized, or a missing unit field; see `reason`) |
+| `arm`, `config` | Set only when `assigned` |
+| `slot`, `layer`, `unit`, `subject` | Where the subject landed; `subject` is the JSON array of the unit values, e.g. `["1","77"]`, so it stays one column and cannot collide |
+| `excluded_by` | The owning experiment when `excluded` |
+
+`experiments(ns).layer("autofix")` lists a layer's members with their allocations, useful for tooling and tests.
+
+## Exposure
+
+The library decides assignments; it does not record them. Sentry and Seer each send rows to their own sink, so the row has to carry the same shape and the same meaning from both. Build it with `assignment.exposure("seer")` (`Assignment.exposure(service)`, Python and Rust alike) rather than assembling it by hand. It is `to_dict()` (Python) or `to_json()` (Rust) plus three keys: `record_version`, `service`, and `recorded_at` (UTC, RFC 3339; stamped with the current time). The full record is `namespace, experiment, layer, unit, subject, slot, allocation_start, allocation_size, definition_revision, status, arm, excluded_by, reason, record_version, service, recorded_at`, where `unit` is the list of unit fields and `subject` is the JSON array of the unit values, so it stays one column and cannot collide. `definition_revision` is a short content hash of the experiment definition that changes whenever the layer, unit, allocation, arms, their weights or config, or `enabled` changes, so the warehouse can split an analysis at a revision boundary. `config` is left out on purpose.
+
+**Only `assigned` rows are exposures.** The analysis entry for a subject is the first row with status `assigned` per `(namespace, experiment, subject, definition_revision)`, where `subject` is the JSON array of the unit values, so two composite subjects never collide into one key. Later `assigned` rows for the same subject are ignored, and a row with any other status is never counted as an exposure.
+
+**Log at the trigger, for every arm.** Write the row at the point in the code where the arm changes behaviour, and write it there for every arm, control included, on the same code line. Do not write it when `assign` is called: being assigned is not being exposed. This symmetry is the whole point. If control were logged somewhere else, or not at all, the arms would be counted under different conditions and the comparison would already be biased before analysis starts.
+
+```python
+assignment = experiments("seer").assign("autofix-model", {"run_id": run.id})
+if assignment.status != "unassigned":
+    exposures.emit(assignment.exposure("seer"))
+model = assignment.config["model"] if assignment.in_arm("treatment") else DEFAULT_MODEL
+```
+
+**Let the check do the logging.** In a service, wrap the lines above in one helper so that checking an experiment records the exposure and nobody logs by hand next to a conditional:
+
+```python
+def expose(experiment, context):
+    assignment = experiments("seer").assign(experiment, context)
+    if assignment.status != "unassigned":
+        exposures.emit(assignment.exposure("seer"))
+    return assignment
+
+if expose("autofix-model", {"run_id": run.id}).in_arm("treatment"):
+    ...
+```
+
+The row is written before the answer comes back, so every arm is logged on the same line by construction. Call the helper at the conditional where the arm changes behaviour, not at startup, so subjects that never reach the treatment are never counted. A conditional that runs many times per subject can skip repeats with a small in-process cache keyed on experiment, subject, `definition_revision`, and status; that is an optimization, and duplicates from other workers or retries change nothing because analysis takes the first `assigned` row.
+
+**Compare arm to arm.** The primary comparison is between the arms of the experiment. The layer holdout is a layer-level baseline — what the layer as a whole does to its subjects — not the control arm of any one experiment.
+
+**Keep writing decision records.** The same helper at the same trigger also writes `holdout`, `excluded`, and `disabled` rows, tagged by `status`. They are not exposures; they exist for auditing — proving mutual exclusion inside a layer, checking that holdout and allocation sizes match the configuration, confirming a paused experiment really was paused, and debugging why a given subject saw no treatment. `unassigned` is never written: an unknown experiment or missing context is an application bug, so log it to your error tracker instead.
+
+Dedupe before writing is an optimization, not part of the contract, because the analysis takes the first `assigned` row anyway. A service that dedupes (Sentry's 24h window) and one that does not (Seer, one row per run) reach the same result, as long as dedupe stays within a `definition_revision`: once the definition changes, the next `assigned` row is a distinct entry and must be written. `record_version` bumps only when a field is renamed, removed, or changes meaning; adding fields does not bump it, and warehouse models should key on it. The library never sends anything; the send (BigQuery, Amplitude, a Sentry span, a log line) belongs to the service.
+
+Eligibility is not part of the experiment. Gate with a feature flag first, then assign.
+
+## Changing an allocation mid-experiment
+
+An allocation sometimes has to change while an experiment runs: shrinking one to free slots for a sibling in the same layer, or widening a winner to more traffic. Assignment stays stable across the change because the slot depends only on layer and unit, never on the allocation, and the arm depends only on the experiment and unit, never on membership. A subject whose slot stays inside the allocation keeps both its slot and its arm; only subjects whose slot leaves the allocation change status.
+
+Take a shrink from `{start 0, size 50}` to `{start 0, size 33}`, moving the experiment from slots 0-49 to slots 0-32:
+
+| Slot range | Before | After | Cohort |
+| --- | --- | --- | --- |
+| 0-32 | in | in | stayed in for the whole window |
+| 33-49 | in | out | fell out at the change |
+| 50-99 | out | out | never in this experiment |
+
+To analyze a window that spans the change, restrict it to the slots inside both the old and the new allocation (their intersection, slots 0-32 here) for a cohort with one consistent experience. Slots that fell out (33-49) are a separate cohort: analyze them in the pre-change window only, or drop them. Growth is the mirror image: newly added slots have a shorter history, so either start their clock at the change or restrict the analysis to the original slots.
+
+Because `allocation_start` and `allocation_size` ride on every row, exposures and decision records alike, the cutover is visible directly in the data, with no manual join against the values repo history. The change also bumps `definition_revision` — allocation is part of the hash — so the windows on either side are distinct revisions even though no subject's slot or arm moved, and this intersection is how you read one cohort across a pure grow. Prefer changing `size` and leaving `start` where it is: moving `start` reshuffles nobody but shifts the intersection and so shrinks the cohort you can analyze across the change.
+
+## Assignment lifetime
+
+**Assignment is per call, not stored.** Mutual exclusion inside a layer holds per subject, per namespace, per values snapshot, per call. `assign` is a pure function of the subject and the current definition; the library stores nothing, so a later call can answer differently if the definition changed in between.
+
+**Ramp up, never ramp down.** Within a phase you can grow the allocation or pause it (`enabled: false`). Shrinking the allocation, or changing arms, weights, unit, or layer, ends the phase: the `definition_revision` changes and the new revision is analyzed as a new experiment. A grow changes the revision too — allocation is part of the hash — so analysis restarts at each ramp unless the analyst deliberately reads across a pure grow using the slot intersection from "Changing an allocation mid-experiment". Never shrink expecting old subjects to be kept.
+
+**A new revision keeps the same split; a new name gives a fresh one.** `definition_revision` is computed from the definition, so it changes on its own whenever the layer, unit, allocation, arms, their weights or config, or `enabled` changes; nobody bumps it by hand. It is a hash, not a counter: order revisions by `recorded_at`, and note that restoring earlier settings restores the earlier revision. A new revision does not re-randomize anyone, because the arm hash is seeded by the experiment name: subjects who stay in the allocation go through the same split and carry their treatment history with them. When you re-run an earlier setup, or want a fresh randomization, end the experiment and start one under a new name; the layer, unit, and allocation can stay, so the same subjects take part.
+
+**Record once per subject, at the trigger; ask as often as you like.** For a unit that occurs once (a run id) that is the whole story: one trigger, one row, nothing to persist. Later steps in the same run that need the arm can simply ask again: the answer is the same unless the definition changed in between. Pass the arm along from the trigger only when a mid-run definition change must not flip a subject. A unit that recurs across calls (an org id, a user id) gets the same answer as long as the definition has not changed; keeping such subjects stable across a shrink would need a persisted per-subject decision, which the library does not provide and which is out of scope for now.
+
+**A kill switch is a separate flag.** To stop the treatment behaviour for subjects already exposed, gate the behaviour with a feature flag checked at the trigger. `enabled: false` pauses assignment — new calls return `disabled` — but it is not a behaviour kill switch and should not be used as one.
+
+## Ending an experiment
+
+Two ways to stop. Pause with `enabled: false` to stop reversibly: the allocation stays reserved and callers in it come back `disabled`. Delete the experiment from its `experiment-layer.<layer>` block (and the layer key once its last experiment is gone) to end it and free the slots. Pause is not a behaviour kill switch, though: it stops new assignments, not treatment already running, so to turn treatment off for subjects mid-flight, gate the behaviour with a feature flag (see "Assignment lifetime").
+
+To end one cleanly:
+
+- Ship the winner the ordinary way, as a plain option, feature flag, or code, so the behaviour no longer depends on the experiment.
+- Delete the experiment from its `experiment-layer.<layer>` block (and the layer key once its last experiment is gone) in the values and the schema, values first or together. Experiment keys are exempt from the schema-evolution checks, so no deprecation dance is needed.
+- The layer's slots free up for the next experiment once the value is gone.
+
+The moment the value is gone, `assign` returns `unassigned` with reason `"experiment is not configured"`, `is_assigned` is `false` and `config` is `None`, so code branching on `is_assigned` falls through to its default path with no deploy. Exposure stops too: an `unassigned` result is never written, let alone counted.
+
+To hand everyone the winner today but delete the code next week, keep the experiment and make the winner's arm the only arm (or weight the loser `0`). Everyone in the allocation gets its config, but it still blocks siblings in the layer, so do not park it there.
+
+Never reuse an experiment name for a different test. Both hashes are seeded by namespace and name, so a fresh experiment reusing a name and unit reproduces the old assignment exactly and inherits its imbalance. Pick a new name; the layer can stay.
+
+In the warehouse, the ended experiment's rows stay valid: the analysis window ends at the deletion, and each row's `allocation_start` and `allocation_size` already say what was live.
+
+## How the hash works
+
+Both hashes are SHA-1 over a list of components, each written as its byte length (8 bytes, big-endian) followed by its bytes; the first 8 digest bytes are read big-endian as a 64-bit `point`.
+
+- slot = `point`(`"layer"`, namespace, layer, unit values...) mod 100.
+- arm = `point`(`"experiment"`, namespace, experiment, unit values...) placed on the fixed `0..2^64` domain. Walking arms in declared order and accumulating their weights, the first arm whose running total `cum` satisfies `point / 2^64 < cum / total` owns the subject. The point never depends on the weights, so scaling every weight by the same factor (50:50 to 1:1) reassigns nobody; reordering arms or inserting one does reshuffle.
+
+Reference implementation:
+
+```python
+import hashlib
+
+def point(components: list[str]) -> int:
+    h = hashlib.sha1()
+    for c in components:
+        b = c.encode()
+        h.update(len(b).to_bytes(8, "big"))
+        h.update(b)
+    return int.from_bytes(h.digest()[:8], "big")
+
+def slot(components: list[str]) -> int:
+    return point(components) % 100
+
+def arm(components: list[str], arms: list[tuple[str, int]]) -> str | None:
+    total = sum(weight for _, weight in arms)
+    p = point(components)
+    cum = 0
+    for name, weight in arms:
+        cum += weight
+        if p * total < (cum << 64):
+            return name
+    return None
+```
+
+The length prefix keeps names containing `:` from colliding. This hash is separate from the one feature flags use for rollouts, which stays byte-for-byte unchanged.
