@@ -9,6 +9,7 @@ pub const EXPERIMENT_LAYER_KEY_PREFIX: &str = "experiment-layer.";
 pub const LAYER_SLOTS: u32 = 100;
 pub const DEFAULT_ALLOCATION_SIZE: u32 = 20;
 pub const MAX_ARMS: usize = 10;
+pub const MAX_ARM_WEIGHT: u64 = 1_000_000_000;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Arm {
@@ -133,6 +134,11 @@ pub enum ExperimentIssue {
         key: String,
         arm: String,
     },
+    ArmWeightTooLarge {
+        key: String,
+        arm: String,
+        weight: u64,
+    },
     Overlap {
         layer: String,
         first: String,
@@ -170,6 +176,10 @@ impl fmt::Display for ExperimentIssue {
                 "{key}: arm weights sum to 0; give at least one arm a weight, or set enabled: false to pause"
             ),
             Self::DuplicateArm { key, arm } => write!(f, "{key}: arm '{arm}' is declared twice"),
+            Self::ArmWeightTooLarge { key, arm, weight } => write!(
+                f,
+                "{key}: arm '{arm}' weight {weight} exceeds the maximum of {MAX_ARM_WEIGHT}; lower it to at most {MAX_ARM_WEIGHT}"
+            ),
             Self::Overlap {
                 layer,
                 first,
@@ -227,8 +237,6 @@ impl ExperimentSet {
 
         for (layer_name, value) in entries {
             let layer_key = format!("{EXPERIMENT_LAYER_KEY_PREFIX}{layer_name}");
-            // A flat `experiment.<name>` shorthand meaning "its own layer" could be
-            // added here later; today every experiment lives in a layer block.
             let layer = match LayerDefinition::from_value(value) {
                 Ok(layer) => layer,
                 Err(message) => {
@@ -374,6 +382,13 @@ fn check_definition(key: &str, def: &ExperimentDefinition, issues: &mut Vec<Expe
             issues.push(ExperimentIssue::DuplicateArm {
                 key: key.to_string(),
                 arm: arm.name.clone(),
+            });
+        }
+        if arm.weight > MAX_ARM_WEIGHT {
+            issues.push(ExperimentIssue::ArmWeightTooLarge {
+                key: key.to_string(),
+                arm: arm.name.clone(),
+                weight: arm.weight,
             });
         }
     }
@@ -684,6 +699,38 @@ mod tests {
                 key: "experiment-layer.l: a".into(),
                 count: 11
             }]
+        );
+    }
+
+    #[test]
+    fn rejects_arm_weight_over_the_maximum() {
+        let mut over = experiment(0, 10);
+        over["arms"] = json!([{"name": "a", "weight": MAX_ARM_WEIGHT + 1}]);
+        let err = set_from(vec![(
+            "experiment-layer.l",
+            layer("organization_id", vec![("a", over)]),
+        )])
+        .unwrap_err();
+        assert_eq!(
+            err,
+            vec![ExperimentIssue::ArmWeightTooLarge {
+                key: "experiment-layer.l: a".into(),
+                arm: "a".into(),
+                weight: MAX_ARM_WEIGHT + 1
+            }]
+        );
+    }
+
+    #[test]
+    fn accepts_arm_weight_at_the_maximum() {
+        let mut at = experiment(0, 10);
+        at["arms"] = json!([{"name": "a", "weight": MAX_ARM_WEIGHT}]);
+        assert!(
+            set_from(vec![(
+                "experiment-layer.l",
+                layer("organization_id", vec![("a", at)]),
+            )])
+            .is_ok()
         );
     }
 
