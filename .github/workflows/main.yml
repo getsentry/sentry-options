@@ -246,6 +246,9 @@ jobs:
         working-directory: clients/python
         run: uv run maturin develop
 
+      - name: Build CLI for the end-to-end test
+        run: cargo build -p sentry-options-cli
+
       - name: Run tests
         working-directory: clients/python
         run: uv run pytest tests -xvs
