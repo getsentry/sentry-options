@@ -213,7 +213,6 @@ impl Options {
             .map(|values| {
                 values
                     .iter()
-                    .filter(|(key, _)| key.starts_with(EXPERIMENT_LAYER_KEY_PREFIX))
                     .map(|(key, value)| (key.clone(), value.clone()))
                     .collect()
             })

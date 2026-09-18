@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use serde::Serialize;
 use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 
@@ -13,7 +14,8 @@ pub type ExperimentContext = HashMap<String, Value>;
 
 pub const EXPOSURE_RECORD_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AssignmentStatus {
     Assigned,
     Excluded,
@@ -34,7 +36,7 @@ impl AssignmentStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Assignment {
     pub namespace: String,
     pub experiment: String,
@@ -47,6 +49,7 @@ pub struct Assignment {
     pub definition_revision: Option<String>,
     pub status: AssignmentStatus,
     pub arm: Option<String>,
+    #[serde(skip)]
     pub config: Option<Value>,
     pub excluded_by: Option<String>,
     pub reason: Option<String>,
@@ -81,21 +84,7 @@ impl Assignment {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({
-            "namespace": self.namespace,
-            "experiment": self.experiment,
-            "layer": self.layer,
-            "unit": self.unit,
-            "subject": self.subject,
-            "slot": self.slot,
-            "allocation_start": self.allocation_start,
-            "allocation_size": self.allocation_size,
-            "definition_revision": self.definition_revision,
-            "status": self.status.as_str(),
-            "arm": self.arm,
-            "excluded_by": self.excluded_by,
-            "reason": self.reason,
-        })
+        serde_json::to_value(self).expect("Assignment serializes")
     }
 
     pub fn exposure(&self, service: &str) -> Value {
@@ -141,13 +130,15 @@ fn bucket(components: &[&str], modulus: u64) -> u64 {
     digest_point(components) % modulus
 }
 
+fn fraction_below(point: u64, cum: u128, total: u64) -> bool {
+    (point as u128) * (total as u128) < cum << 64
+}
+
 fn select_arm(arms: &[Arm], point: u64, total: u64) -> Option<&Arm> {
-    let point = point as u128;
-    let total = total as u128;
     let mut cum: u128 = 0;
     for arm in arms {
         cum += arm.weight as u128;
-        if point * total < cum << 64 {
+        if fraction_below(point, cum, total) {
             return Some(arm);
         }
     }
@@ -254,7 +245,15 @@ impl ExperimentChecker {
         match self.try_assign(experiment, context) {
             Ok(assignment) => assignment,
             Err(e) => {
-                tracing::debug!(experiment, error = %e, "Experiment assignment failed");
+                let namespace = self.namespace.as_str();
+                match &e {
+                    ExperimentError::MissingUnit { .. } => {
+                        tracing::debug!(namespace, experiment, error = %e, "Experiment assignment failed");
+                    }
+                    _ => {
+                        tracing::warn!(namespace, experiment, error = %e, "Experiment assignment failed");
+                    }
+                }
                 Assignment::unassigned(&self.namespace, experiment, e.to_string())
             }
         }

@@ -132,7 +132,6 @@ pub fn override_options(overrides: &[(&str, &str, Value)]) -> Result<OverrideGua
     let opts = GLOBAL_OPTIONS
         .get()
         .ok_or(crate::OptionsError::NotInitialized)?;
-    // Shape-check every key before touching thread-local state.
     for (ns, key, value) in overrides {
         opts.validate_override(ns, key, value)?;
     }
