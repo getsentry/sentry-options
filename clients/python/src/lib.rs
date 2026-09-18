@@ -6,7 +6,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use ::sentry_options::{
-    DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
+    Assignment as RustAssignment, DEFAULT_REFRESH_THRESHOLD,
+    ExperimentChecker as RustExperimentChecker, ExperimentContext,
+    ExperimentError as RustExperimentError, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
     OptionsError as RustOptionsError, SchemaRegistry as RustSchemaRegistry,
     ValidationError as RustValidationError, fetch_schemas_from_file,
@@ -49,6 +51,12 @@ pyo3::create_exception!(
     NotInitializedError,
     OptionsError,
     "Raised when options have not been initialized."
+);
+pyo3::create_exception!(
+    sentry_options,
+    ExperimentError,
+    OptionsError,
+    "Raised when experiment assignment fails."
 );
 
 /// Convert serde_json::Value to Python object.
@@ -166,6 +174,40 @@ fn feature_err(err: RustFeatureError) -> PyErr {
     }
 }
 
+fn experiment_err(e: RustExperimentError) -> PyErr {
+    match e {
+        RustExperimentError::NotInitialized => NotInitializedError::new_err(e.to_string()),
+        RustExperimentError::Options(inner) => options_err(inner),
+        RustExperimentError::MissingUnit { .. } | RustExperimentError::InvalidValue { .. } => {
+            ExperimentError::new_err(e.to_string())
+        }
+    }
+}
+
+fn context_from_py(context: &Bound<'_, PyDict>) -> PyResult<ExperimentContext> {
+    let mut map = ExperimentContext::with_capacity(context.len());
+    for (key, value) in context.iter() {
+        let key = key.extract::<String>()?;
+        let json = context_value_to_json(&key, &value)?;
+        map.insert(key, json);
+    }
+    Ok(map)
+}
+
+fn context_value_to_json(field: &str, obj: &Bound<'_, PyAny>) -> PyResult<Value> {
+    if obj.is_instance_of::<PyInt>() && obj.extract::<i64>().is_err() {
+        return obj
+            .extract::<u64>()
+            .map(|u| Value::Number(u.into()))
+            .map_err(|_| {
+                PyValueError::new_err(format!(
+                    "Context field '{field}' has an integer too large to be used as an experiment unit value; pass it as a string instead"
+                ))
+            });
+    }
+    py_to_json(obj)
+}
+
 /// Feature evaluation context holding arbitrary key-value data.
 ///
 /// Pass a dict of context data and optional identity_fields to control
@@ -272,6 +314,152 @@ impl PyFeatureChecker {
 
     fn __repr__(&self) -> String {
         "FeatureChecker(...)".to_string()
+    }
+}
+
+#[pyclass(name = "Assignment", frozen)]
+struct PyAssignment {
+    inner: RustAssignment,
+}
+
+#[pymethods]
+impl PyAssignment {
+    #[getter]
+    fn namespace(&self) -> &str {
+        &self.inner.namespace
+    }
+    #[getter]
+    fn experiment(&self) -> &str {
+        &self.inner.experiment
+    }
+    #[getter]
+    fn layer(&self) -> Option<&str> {
+        self.inner.layer.as_deref()
+    }
+    #[getter]
+    fn unit(&self) -> Vec<String> {
+        self.inner.unit.clone()
+    }
+    #[getter]
+    fn subject(&self) -> Option<&str> {
+        self.inner.subject.as_deref()
+    }
+    #[getter]
+    fn slot(&self) -> Option<u32> {
+        self.inner.slot
+    }
+    #[getter]
+    fn allocation_start(&self) -> Option<u32> {
+        self.inner.allocation_start
+    }
+    #[getter]
+    fn allocation_size(&self) -> Option<u32> {
+        self.inner.allocation_size
+    }
+    #[getter]
+    fn definition_revision(&self) -> Option<&str> {
+        self.inner.definition_revision.as_deref()
+    }
+    #[getter]
+    fn status(&self) -> &'static str {
+        self.inner.status.as_str()
+    }
+    #[getter]
+    fn arm(&self) -> Option<&str> {
+        self.inner.arm.as_deref()
+    }
+    #[getter]
+    fn config(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.inner
+            .config
+            .as_ref()
+            .map(|value| json_to_py(py, value))
+            .transpose()
+    }
+    #[getter]
+    fn excluded_by(&self) -> Option<&str> {
+        self.inner.excluded_by.as_deref()
+    }
+    #[getter]
+    fn reason(&self) -> Option<&str> {
+        self.inner.reason.as_deref()
+    }
+
+    #[getter]
+    fn is_assigned(&self) -> bool {
+        self.inner.is_assigned()
+    }
+
+    fn in_arm(&self, arm: &str) -> bool {
+        self.inner.in_arm(arm)
+    }
+
+    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        json_to_py(py, &self.inner.to_json())
+    }
+
+    fn exposure(&self, py: Python<'_>, service: &str) -> PyResult<Py<PyAny>> {
+        json_to_py(py, &self.inner.exposure(service))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Assignment(experiment={:?}, status={:?}, arm={:?}, slot={:?}, allocation_start={:?}, allocation_size={:?}, definition_revision={:?})",
+            self.inner.experiment,
+            self.inner.status.as_str(),
+            self.inner.arm,
+            self.inner.slot,
+            self.inner.allocation_start,
+            self.inner.allocation_size,
+            self.inner.definition_revision
+        )
+    }
+}
+
+#[pyclass(name = "ExperimentChecker")]
+struct PyExperimentChecker {
+    namespace: String,
+    inner: RustExperimentChecker,
+}
+
+#[pymethods]
+impl PyExperimentChecker {
+    fn assign(&self, experiment: &str, context: &Bound<'_, PyDict>) -> PyResult<PyAssignment> {
+        let inner = match context_from_py(context) {
+            Ok(context) => self.inner.assign(experiment, &context),
+            Err(e) => RustAssignment::unassigned(&self.namespace, experiment, e.to_string()),
+        };
+        Ok(PyAssignment { inner })
+    }
+
+    fn try_assign(&self, experiment: &str, context: &Bound<'_, PyDict>) -> PyResult<PyAssignment> {
+        let context = context_from_py(context)?;
+        self.inner
+            .try_assign(experiment, &context)
+            .map(|inner| PyAssignment { inner })
+            .map_err(experiment_err)
+    }
+
+    fn layer(&self, py: Python<'_>, layer: &str) -> PyResult<Py<PyAny>> {
+        let members: Vec<serde_json::Value> = self
+            .inner
+            .layer(layer)
+            .map_err(experiment_err)?
+            .into_iter()
+            .map(|member| {
+                serde_json::json!({
+                    "experiment": member.experiment,
+                    "start": member.allocation.start,
+                    "size": member.allocation.size,
+                    "enabled": member.enabled,
+                })
+            })
+            .collect();
+        json_to_py(py, &serde_json::Value::Array(members))
+    }
+
+    fn __repr__(&self) -> String {
+        format!("ExperimentChecker(namespace={:?})", self.namespace)
     }
 }
 
@@ -401,6 +589,22 @@ fn features(namespace: String) -> PyResult<PyFeatureChecker> {
     })
 }
 
+#[pyfunction]
+fn experiments(namespace: String) -> PyResult<PyExperimentChecker> {
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
+    Ok(PyExperimentChecker {
+        namespace: namespace.clone(),
+        inner: RustExperimentChecker::new(namespace, opts),
+    })
+}
+
+#[pyfunction]
+fn experiment_layer_property(py: Python<'_>) -> PyResult<Py<PyAny>> {
+    json_to_py(py, &sentry_options::experiment_layer_property())
+}
+
 /// Handle for accessing options within a specific namespace.
 #[pyclass]
 struct NamespaceOptions {
@@ -478,6 +682,15 @@ fn _validate_option(namespace: String, key: String, value: &Bound<'_, PyAny>) ->
     Ok(())
 }
 
+#[pyfunction]
+fn _validate_experiments(namespace: String) -> PyResult<()> {
+    let opts = GLOBAL_OPTIONS.get().ok_or_else(|| {
+        NotInitializedError::new_err("Options not initialized - call init() first")
+    })?;
+    opts.validate_experiment_overrides(&namespace)
+        .map_err(options_err)
+}
+
 /// Python module definition.
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -485,14 +698,18 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(init, m)?)?;
     m.add_function(wrap_pyfunction!(options, m)?)?;
     m.add_function(wrap_pyfunction!(features, m)?)?;
+    m.add_function(wrap_pyfunction!(experiments, m)?)?;
     m.add_function(wrap_pyfunction!(refresh, m)?)?;
     m.add_function(wrap_pyfunction!(fetch_schemas, m)?)?;
     m.add_function(wrap_pyfunction!(feature_property, m)?)?;
+    m.add_function(wrap_pyfunction!(experiment_layer_property, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
     m.add_class::<PySchemaRegistry>()?;
     m.add_class::<PyFeatureContext>()?;
     m.add_class::<PyFeatureChecker>()?;
+    m.add_class::<PyAssignment>()?;
+    m.add_class::<PyExperimentChecker>()?;
     // Exceptions
     m.add("OptionsError", m.py().get_type::<OptionsError>())?;
     m.add("SchemaError", m.py().get_type::<SchemaError>())?;
@@ -508,9 +725,11 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "NotInitializedError",
         m.py().get_type::<NotInitializedError>(),
     )?;
+    m.add("ExperimentError", m.py().get_type::<ExperimentError>())?;
     // Testing utilities (only called by testing.py)
     m.add_function(wrap_pyfunction!(_set_override, m)?)?;
     m.add_function(wrap_pyfunction!(_clear_override, m)?)?;
     m.add_function(wrap_pyfunction!(_validate_option, m)?)?;
+    m.add_function(wrap_pyfunction!(_validate_experiments, m)?)?;
     Ok(())
 }

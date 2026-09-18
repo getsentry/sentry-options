@@ -220,6 +220,24 @@ Never reuse an experiment name for a different test. Both hashes are seeded by n
 
 In the warehouse, the ended experiment's rows stay valid: the analysis window ends at the deletion, and each row's `allocation_start` and `allocation_size` already say what was live.
 
+## Testing
+
+```python
+from sentry_options.testing import experiment, experiment_layer, override_options
+
+with override_options("seer", {
+    "experiment-layer.checkout": experiment_layer(
+        unit=["organization_id"],
+        experiments={
+            "checkout-color": experiment(arms={"control": 0, "treatment": 100}, start=70, size=30),
+        },
+    ),
+}):
+    assert experiments("seer").assign("checkout-color", {"organization_id": 1}).arm == "treatment"
+```
+
+`experiment()` builds a valid experiment with `allocation {start: 0, size: 20}` and `enabled: true` unless told otherwise, and `experiment_layer()` wraps one or more into a layer. The overrides in one `override_options` call are checked together against the layer when they are set, so an overlapping batch fails right there and nothing is applied; give each free slots or a layer name nothing else uses. Overrides are validated against the `Experiment` shape and bypass the assignment cache, so they take effect immediately.
+
 ## How the hash works
 
 Both hashes are SHA-1 over a list of components, each written as its byte length (8 bytes, big-endian) followed by its bytes; the first 8 digest bytes are read big-endian as a 64-bit `point`.

@@ -1483,6 +1483,7 @@ dependencies = [
 name = "sentry-options-python"
 version = "1.2.11"
 dependencies = [
+ "chrono",
  "pyo3",
  "sentry-options",
  "serde_json",
