@@ -3,12 +3,50 @@
 //! Provides [`FeatureContext`] and [`FeatureChecker`] for evaluating feature
 //! flags stored in the options system.
 
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
 use std::collections::HashMap;
 
 use serde_json::Value;
 use sha1::{Digest, Sha1};
+
+/// Features created after this instant (UTC) bucket their percentage rollouts
+/// by feature name as well as by context identity, so two features at the
+/// same rollout reach different populations instead of the same low buckets.
+/// Features created at or before it, or whose `created_at` does not parse,
+/// keep bucketing on the identity alone: changing that would move their
+/// in-flight partial rollouts between organizations.
+///
+/// Must not predate the deploy of this rule, and must match
+/// `FEATURE_BUCKETING_EPOCH` in sentry's `flagpole` package.
+const FEATURE_BUCKETING_EPOCH: NaiveDateTime = NaiveDate::from_ymd_opt(2026, 10, 15)
+    .unwrap()
+    .and_time(NaiveTime::MIN);
+
+/// Parse a feature's `created_at` as UTC.
+///
+/// Accepts a date, a naive datetime with an optional fraction, or a datetime
+/// with a UTC offset; naive values are taken as UTC. Anything else, including
+/// the `"None"` that sentry's flagpole stores for a missing value, is `None`.
+fn parse_created_at(raw: &str) -> Option<NaiveDateTime> {
+    if let Ok(date) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        return Some(date.and_time(NaiveTime::MIN));
+    }
+    if let Ok(datetime) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f") {
+        return Some(datetime);
+    }
+    DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f%z")
+        .ok()
+        .map(|datetime| datetime.naive_utc())
+}
+
+/// Whether a feature with this `created_at` buckets rollouts by feature name.
+fn created_after_epoch(created_at: Option<&str>) -> bool {
+    created_at
+        .and_then(parse_created_at)
+        .is_some_and(|created_at| created_at > FEATURE_BUCKETING_EPOCH)
+}
 
 /// Produce a Python-compatible string representation for identity hashing.
 fn value_to_id_string(value: &Value) -> String {
@@ -97,15 +135,26 @@ impl FeatureContext {
         id
     }
 
+    /// The id a percentage rollout buckets this context on.
+    ///
+    /// Without a feature name this is [`id`](Self::id). With one, the name is
+    /// hashed together with the identity so each feature has its own rollout
+    /// population; see `FEATURE_BUCKETING_EPOCH` for which features use it.
+    pub fn bucket_id(&self, feature_name: Option<&str>) -> u64 {
+        match feature_name {
+            None => self.id(),
+            Some(name) => hash_identity(&format!("{name}:{}", self.identity())),
+        }
+    }
+
     /// Compute the id for a FeatureContext.
-    ///
-    /// The original python implementation used a bigint value
-    /// derived from the sha1 hash.
-    ///
-    /// This method returns a u64 which contains the lower place
-    /// values of the bigint so that our rollout modulo math is
-    /// consistent with the original python implementation.
     fn compute_id(&self) -> u64 {
+        hash_identity(&self.identity())
+    }
+
+    /// The identity fields present in the data, sorted and joined as
+    /// `key:value:key:value`.
+    fn identity(&self) -> String {
         let mut identity_fields: Vec<&String> = self
             .identity_fields
             .iter()
@@ -121,20 +170,32 @@ impl FeatureContext {
             parts.push(key.clone());
             parts.push(value_to_id_string(&self.data[key.as_str()]));
         }
-        let mut hasher = Sha1::new();
-        hasher.update(parts.join(":").as_bytes());
-        let digest = hasher.finalize();
-
-        // Create a BigInt to preserve all the 20bytes of the hash digest.
-        let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
-
-        // We only need the lower places from the big int to retain compatibility.
-        // modulo will trim off the u64 overflow, and let us break the bigint
-        // into its pieces (there will only be one).
-        let small: BigInt = bigint % 1000000000;
-        let id_parts = small.to_u64_digits().1;
-        if id_parts.is_empty() { 0 } else { id_parts[0] }
+        parts.join(":")
     }
+}
+
+/// Hash an identity string into a rollout id.
+///
+/// The original python implementation used a bigint value
+/// derived from the sha1 hash.
+///
+/// This method returns a u64 which contains the lower place
+/// values of the bigint so that our rollout modulo math is
+/// consistent with the original python implementation.
+fn hash_identity(identity: &str) -> u64 {
+    let mut hasher = Sha1::new();
+    hasher.update(identity.as_bytes());
+    let digest = hasher.finalize();
+
+    // Create a BigInt to preserve all the 20bytes of the hash digest.
+    let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
+
+    // We only need the lower places from the big int to retain compatibility.
+    // modulo will trim off the u64 overflow, and let us break the bigint
+    // into its pieces (there will only be one).
+    let small: BigInt = bigint % 1000000000;
+    let id_parts = small.to_u64_digits().1;
+    if id_parts.is_empty() { 0 } else { id_parts[0] }
 }
 
 impl Default for FeatureContext {
@@ -170,12 +231,16 @@ struct Segment {
 
 #[derive(Debug)]
 struct Feature {
+    name: String,
     enabled: bool,
     segments: Vec<Segment>,
+    /// Rollouts bucket by feature name as well as identity; see
+    /// `FEATURE_BUCKETING_EPOCH`.
+    buckets_by_feature: bool,
 }
 
 impl Feature {
-    fn from_json(value: &Value) -> Option<Self> {
+    fn from_json(name: &str, value: &Value) -> Option<Self> {
         // Default to true to align with flagpole behavior.
         let enabled = value
             .get("enabled")
@@ -187,16 +252,24 @@ impl Feature {
             .iter()
             .filter_map(Segment::from_json)
             .collect();
-        Some(Feature { enabled, segments })
+        let buckets_by_feature =
+            created_after_epoch(value.get("created_at").and_then(|v| v.as_str()));
+        Some(Feature {
+            name: name.to_string(),
+            enabled,
+            segments,
+            buckets_by_feature,
+        })
     }
 
     fn matches(&self, context: &FeatureContext) -> bool {
         if !self.enabled {
             return false;
         }
+        let feature_name = self.buckets_by_feature.then_some(self.name.as_str());
         for segment in &self.segments {
             if segment.conditions_match(context) {
-                return segment.in_rollout(context);
+                return segment.in_rollout(context, feature_name);
             }
         }
         false
@@ -221,14 +294,15 @@ impl Segment {
         self.conditions.iter().all(|c| c.matches(context))
     }
 
-    fn in_rollout(&self, context: &FeatureContext) -> bool {
+    /// `feature_name`, when given, buckets by feature as well as by identity.
+    fn in_rollout(&self, context: &FeatureContext, feature_name: Option<&str>) -> bool {
         if self.rollout == 0 {
             return false;
         }
         if self.rollout >= 100 {
             return true;
         }
-        context.id() % 100 <= self.rollout
+        context.bucket_id(feature_name) % 100 <= self.rollout
     }
 }
 
@@ -502,7 +576,7 @@ impl FeatureChecker {
             Err(e) => return Err(e.into()),
         };
 
-        let feature = Feature::from_json(&feature_val)
+        let feature = Feature::from_json(feature_name, &feature_val)
             .ok_or_else(|| FeatureError::InvalidValue { key: key.clone() })?;
 
         let result = feature.matches(context);
@@ -599,7 +673,7 @@ mod tests {
         let Ok(val) = opts.get("test", &key) else {
             return false;
         };
-        Feature::from_json(&val).is_some_and(|f| f.matches(ctx))
+        Feature::from_json(feature, &val).is_some_and(|f| f.matches(ctx))
     }
 
     #[test]
@@ -797,6 +871,87 @@ mod tests {
 
         let (opts_at, _t1) = setup_feature_options(&feature_json(true, id_mod, &cond));
         assert!(check(&opts_at, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_bucket_id_align_with_python() {
+        // Pinned against sentry's flagpole (tests/flagpole/test_evaluation_context.py)
+        // so both evaluators put a feature's rollout in the same buckets.
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", json!("bar"));
+        ctx.insert("baz", json!("barfoo"));
+        ctx.identity_fields(vec!["foo"]);
+
+        assert_eq!(ctx.bucket_id(None), ctx.id());
+        assert_eq!(ctx.bucket_id(Some("organizations:test-feature")) % 100, 11);
+        assert_eq!(ctx.bucket_id(Some("organizations:other-feature")) % 100, 40);
+
+        let ctx = FeatureContext::new();
+        assert_eq!(ctx.bucket_id(Some("organizations:test-feature")) % 100, 6);
+    }
+
+    #[test]
+    fn test_created_after_epoch() {
+        let cases = [
+            ("2026-10-15", false),
+            ("2026-10-15T00:00:01", true),
+            ("2026-10-16", true),
+            ("2026-10-15T00:00:00.000001", true),
+            ("2026-10-14T23:00:00-02:00", true),
+            ("2026-10-15T01:00:00+02:00", false),
+            ("2026-10-15T01:00:00+0200", false),
+            ("2024-01-01", false),
+            ("None", false),
+            ("not a date", false),
+        ];
+        for (created_at, expected) in cases {
+            assert_eq!(
+                created_after_epoch(Some(created_at)),
+                expected,
+                "{created_at}"
+            );
+        }
+        assert!(!created_after_epoch(None));
+    }
+
+    #[test]
+    fn test_rollout_keeps_identity_bucketing_for_features_created_before_epoch() {
+        // foo:bar is bucket 62 on identity alone
+        // (see test_feature_context_id_value_align_with_python).
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", json!("bar"));
+        ctx.identity_fields(vec!["foo"]);
+
+        let feature = |rollout: u64| {
+            let value = json!({
+                "created_at": "2024-01-01",
+                "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
+            });
+            Feature::from_json("organizations:test-feature", &value).unwrap()
+        };
+        assert!(feature(62).matches(&ctx));
+        assert!(!feature(61).matches(&ctx));
+    }
+
+    #[test]
+    fn test_rollout_buckets_by_feature_for_features_created_after_epoch() {
+        // foo:bar is bucket 11 under organizations:test-feature and 40 under
+        // organizations:other-feature (see test_bucket_id_align_with_python), so
+        // the two features at the same rollout reach different populations.
+        let mut ctx = FeatureContext::new();
+        ctx.insert("foo", json!("bar"));
+        ctx.identity_fields(vec!["foo"]);
+
+        let feature = |name: &str, rollout: u64| {
+            let value = json!({
+                "created_at": "2026-12-01",
+                "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
+            });
+            Feature::from_json(name, &value).unwrap()
+        };
+        assert!(feature("organizations:test-feature", 11).matches(&ctx));
+        assert!(!feature("organizations:test-feature", 10).matches(&ctx));
+        assert!(!feature("organizations:other-feature", 11).matches(&ctx));
     }
 
     #[test]

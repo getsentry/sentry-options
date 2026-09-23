@@ -300,7 +300,7 @@ The value of a feature flag, unlike options, is evaluated based on some sort of 
 
 **context_fields** - These may affect a features evaluation directly, such as only rolling out to a certain org.
 
-**identity_fields** - This is a **subset** of context_fields. These affect a features evaluation if it has a partial rollout. We hash specifically these fields when computing whether or not an org should be included in a rollout.
+**identity_fields** - This is a **subset** of context_fields. These affect a features evaluation if it has a partial rollout. We hash specifically these fields when computing whether or not an org should be included in a rollout. Features created after 2026-10-15 also mix their name into that hash, so each of them rolls out to its own set of orgs (see [architecture](./architecture.md#feature-flag-evaluation)).
 
 ### Python
 
