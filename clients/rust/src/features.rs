@@ -138,8 +138,9 @@ impl FeatureContext {
     /// The id a percentage rollout buckets this context on.
     ///
     /// Without a feature name this is [`id`](Self::id). With one, the name is
-    /// hashed together with the identity so each feature has its own rollout
-    /// population; see `FEATURE_BUCKETING_EPOCH` for which features use it.
+    /// hashed as one more identity entry in front of the identity fields, so
+    /// each feature has its own rollout population; see
+    /// `FEATURE_BUCKETING_EPOCH` for which features use it.
     pub fn bucket_id(&self, feature_name: Option<&str>) -> u64 {
         match feature_name {
             None => self.id(),
@@ -295,6 +296,9 @@ impl Segment {
     }
 
     /// `feature_name`, when given, buckets by feature as well as by identity.
+    /// It is an argument rather than an identity field because one context
+    /// serves every feature in a batch, and older features must keep the
+    /// identity-only bucket.
     fn in_rollout(&self, context: &FeatureContext, feature_name: Option<&str>) -> bool {
         if self.rollout == 0 {
             return false;
