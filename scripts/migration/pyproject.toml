@@ -1,0 +1,40 @@
+[project]
+name = "option-inventory"
+version = "0.0.1"
+requires-python = "==3.14.4"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.7",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 150
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E", "W", # pycodestyle
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins (shadowing builtins)
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+    "PT",     # flake8-pytest-style
+    "RET",    # flake8-return
+    "PIE",    # flake8-pie (misc lints)
+    "C4",     # flake8-comprehensions
+    "T20",    # flake8-print (flag print in library code)
+    "TCH",    # flake8-type-checking (move imports to TYPE_CHECKING)
+    "PERF",   # perflint
+    "FURB",   # refurb
+]
+ignore = [
+    "T201",   # allow print() — this is a CLI tool
+    "RET505", # allow else-after-return for clarity
+    "SIM108", # allow if/else over ternary when clearer
+    "TCH",    # don't move imports to TYPE_CHECKING — not worth the complexity for a CLI
+]
