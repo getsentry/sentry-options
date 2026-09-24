@@ -3,7 +3,7 @@
 //! Provides [`FeatureContext`] and [`FeatureChecker`] for evaluating feature
 //! flags stored in the options system.
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, SubsecRound};
 use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -42,10 +42,14 @@ fn parse_created_at(raw: &str) -> Option<NaiveDateTime> {
 }
 
 /// Whether a feature with this `created_at` buckets rollouts by feature name.
+///
+/// Digits past microseconds are dropped first, as Python's `datetime` drops
+/// them, so a `created_at` nanoseconds after the epoch agrees with sentry's
+/// flagpole.
 fn created_after_epoch(created_at: Option<&str>) -> bool {
     created_at
         .and_then(parse_created_at)
-        .is_some_and(|created_at| created_at > FEATURE_BUCKETING_EPOCH)
+        .is_some_and(|created_at| created_at.trunc_subsecs(6) > FEATURE_BUCKETING_EPOCH)
 }
 
 /// Produce a Python-compatible string representation for identity hashing.
@@ -901,6 +905,7 @@ mod tests {
             ("2026-10-15T00:00:01", true),
             ("2026-10-16", true),
             ("2026-10-15T00:00:00.000001", true),
+            ("2026-10-15T00:00:00.000000001", false),
             ("2026-10-14T23:00:00-02:00", true),
             ("2026-10-15T01:00:00+02:00", false),
             ("2026-10-15T01:00:00+0200", false),
