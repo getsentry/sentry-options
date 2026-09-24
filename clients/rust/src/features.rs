@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, SubsecRound};
 use num::bigint::{BigInt, Sign};
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -87,6 +87,9 @@ fn value_to_id_string(value: &Value) -> String {
 pub struct FeatureContext {
     data: HashMap<String, Value>,
     identity_fields: Vec<String>,
+    /// The identity string and its hash, cached until the data or identity
+    /// fields change.
+    cached_identity: OnceCell<String>,
     cached_id: Cell<Option<u64>>,
 }
 
@@ -95,6 +98,7 @@ impl FeatureContext {
         Self {
             data: HashMap::new(),
             identity_fields: Vec::new(),
+            cached_identity: OnceCell::new(),
             cached_id: Cell::new(None),
         }
     }
@@ -106,12 +110,14 @@ impl FeatureContext {
     pub fn identity_fields(&mut self, fields: Vec<&str>) {
         self.identity_fields = fields.into_iter().map(|s| s.to_string()).collect();
         self.cached_id.set(None);
+        self.cached_identity.take();
     }
 
     /// Insert a key-value pair into the context.
     pub fn insert(&mut self, key: &str, value: impl Into<Value>) {
         self.data.insert(key.to_string(), value.into());
         self.cached_id.set(None);
+        self.cached_identity.take();
     }
 
     /// Get a context value by key.
@@ -152,15 +158,7 @@ impl FeatureContext {
         }
     }
 
-    /// Compute the id for a FeatureContext.
-    ///
-    /// The original python implementation used a bigint value
-    /// derived from the sha1 hash.
-    ///
-    /// This method returns a u64 which contains the lower place
-    /// values of the bigint so that our rollout modulo math is
-    /// consistent with the original python implementation.
-    fn compute_id(&self, feature_name: Option<&str>) -> u64 {
+    fn compute_identity(&self) -> String {
         let mut identity_fields: Vec<&String> = self
             .identity_fields
             .iter()
@@ -176,11 +174,25 @@ impl FeatureContext {
             parts.push(key.clone());
             parts.push(value_to_id_string(&self.data[key.as_str()]));
         }
+        parts.join(":")
+    }
+
+    /// Compute the id for a FeatureContext.
+    ///
+    /// The original python implementation used a bigint value
+    /// derived from the sha1 hash.
+    ///
+    /// This method returns a u64 which contains the lower place
+    /// values of the bigint so that our rollout modulo math is
+    /// consistent with the original python implementation.
+    fn compute_id(&self, feature_name: Option<&str>) -> u64 {
+        let identity = self.cached_identity.get_or_init(|| self.compute_identity());
         let mut hasher = Sha1::new();
         if let Some(name) = feature_name {
-            hasher.update(format!("{name}:").as_bytes());
+            hasher.update(name.as_bytes());
+            hasher.update(b":");
         }
-        hasher.update(parts.join(":").as_bytes());
+        hasher.update(identity.as_bytes());
         let digest = hasher.finalize();
 
         // Create a BigInt to preserve all the 20bytes of the hash digest.
@@ -227,14 +239,16 @@ struct Segment {
 }
 
 #[derive(Debug)]
-struct Feature {
+struct Feature<'a> {
     enabled: bool,
     segments: Vec<Segment>,
-    buckets_by_feature: bool,
+    /// Raw `created_at`, parsed only once a partial rollout needs to know
+    /// whether the feature buckets by name; see `FEATURE_BUCKETING_EPOCH`.
+    created_at: Option<&'a str>,
 }
 
-impl Feature {
-    fn from_json(value: &Value) -> Option<Self> {
+impl<'a> Feature<'a> {
+    fn from_json(value: &'a Value) -> Option<Self> {
         // Default to true to align with flagpole behavior.
         let enabled = value
             .get("enabled")
@@ -249,9 +263,7 @@ impl Feature {
         Some(Feature {
             enabled,
             segments,
-            buckets_by_feature: created_after_epoch(
-                value.get("created_at").and_then(Value::as_str),
-            ),
+            created_at: value.get("created_at").and_then(Value::as_str),
         })
     }
 
@@ -259,10 +271,17 @@ impl Feature {
         if !self.enabled {
             return false;
         }
-        let feature_name = self.buckets_by_feature.then_some(feature_name);
         for segment in &self.segments {
             if segment.conditions_match(context) {
-                return segment.in_rollout(context, feature_name);
+                return match segment.rollout {
+                    0 => false,
+                    100.. => true,
+                    rollout => {
+                        let feature_name =
+                            created_after_epoch(self.created_at).then_some(feature_name);
+                        context.bucket_id(feature_name) % 100 <= rollout
+                    }
+                };
             }
         }
         false
@@ -285,16 +304,6 @@ impl Segment {
 
     fn conditions_match(&self, context: &FeatureContext) -> bool {
         self.conditions.iter().all(|c| c.matches(context))
-    }
-
-    fn in_rollout(&self, context: &FeatureContext, feature_name: Option<&str>) -> bool {
-        if self.rollout == 0 {
-            return false;
-        }
-        if self.rollout >= 100 {
-            return true;
-        }
-        context.bucket_id(feature_name) % 100 <= self.rollout
     }
 }
 
@@ -708,6 +717,24 @@ mod tests {
             id_user, id_org,
             "Different identity fields should produce different IDs"
         );
+    }
+
+    #[test]
+    fn test_bucket_id_resets_on_context_changes() {
+        for feature_name in [None, Some("organizations:test-feature")] {
+            let mut context = FeatureContext::new();
+            context.insert("organization_id", json!(123));
+            context.insert("user_id", json!(42));
+            context.identity_fields(vec!["organization_id"]);
+            let original_id = context.bucket_id(feature_name);
+
+            context.insert("organization_id", json!(456));
+            let updated_id = context.bucket_id(feature_name);
+            assert_ne!(original_id, updated_id);
+
+            context.identity_fields(vec!["user_id"]);
+            assert_ne!(updated_id, context.bucket_id(feature_name));
+        }
     }
 
     #[test]
