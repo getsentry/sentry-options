@@ -134,7 +134,7 @@ impl FeatureContext {
         if let Some(id) = self.cached_id.get() {
             return id;
         }
-        let id = self.compute_id();
+        let id = hash_identity(&self.identity());
         self.cached_id.set(Some(id));
         id
     }
@@ -150,11 +150,6 @@ impl FeatureContext {
             None => self.id(),
             Some(name) => hash_identity(&format!("{name}:{}", self.identity())),
         }
-    }
-
-    /// Compute the id for a FeatureContext.
-    fn compute_id(&self) -> u64 {
-        hash_identity(&self.identity())
     }
 
     /// The identity fields present in the data, sorted and joined as
