@@ -1,4 +1,4 @@
-"""Measure server-side apply PATCH start to the first read of each new option value."""
+"""Measure server-side apply PATCH start to a new-first dual-read."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from sentry_options import init, options
+from sentry_options import UnknownNamespaceError, UnknownOptionError, init, options
 
 
 OPTIONS_NAMESPACE = "getsentry"
@@ -18,12 +18,29 @@ OPTION = "getsentry.options-dual-read-test"
 CONFIGMAP = "sentry-options-getsentry"
 INITIAL_VALUE = 100
 UPDATED_VALUE = 101
+LEGACY_VALUE = 5
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 POLL_SECONDS = 0.1
 
 
 def report(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}), flush=True)
+
+
+def get_option_new_first() -> int:
+    """Model Getsentry's dual-read hook with new values checked before legacy.
+
+    Getsentry checks the legacy store first today. The intended new-first path
+    still uses isset() to distinguish an unset value from the schema default.
+    This fixed option is registered as FLAG_AUTOMATOR_MODIFIABLE in Getsentry.
+    """
+    try:
+        handle = options(OPTIONS_NAMESPACE)
+        if handle.isset(OPTION):
+            return handle.get(OPTION)
+    except (UnknownNamespaceError, UnknownOptionError):
+        pass
+    return LEGACY_VALUE
 
 
 def patch_configmap(
@@ -71,9 +88,8 @@ def main() -> None:
     )
 
     init()
-    handle = options(OPTIONS_NAMESPACE)
-    if handle.get(OPTION) != INITIAL_VALUE:
-        raise RuntimeError(f"Expected {OPTION} to start as {INITIAL_VALUE}")
+    if get_option_new_first() != INITIAL_VALUE:
+        raise RuntimeError(f"Expected new-first dual-read of {OPTION} to start as {INITIAL_VALUE}")
     report("ready", samples=samples)
 
     for iteration in range(1, samples + 1):
@@ -81,7 +97,7 @@ def main() -> None:
         started, patch_finished = patch_configmap(url, namespace, token, context, value)
         deadline = started + sample_timeout
         while True:
-            observed_value = handle.get(OPTION)
+            observed_value = get_option_new_first()
             observed_at = time.monotonic()
             if observed_value == value:
                 report(

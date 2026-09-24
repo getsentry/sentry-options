@@ -1,6 +1,6 @@
 .PHONY: test-minikube-propagation-latency
 
-PROPAGATION_SAMPLES ?= 1
+PROPAGATION_SAMPLES ?= 5
 
 test-minikube-propagation-latency:
 	minikube start --keep-context

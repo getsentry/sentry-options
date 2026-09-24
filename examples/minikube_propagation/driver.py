@@ -24,7 +24,7 @@ POD = "sentry-options-latency"
 OPTIONS_NAMESPACE = "getsentry"
 OPTION = "getsentry.options-dual-read-test"
 IMAGE = "sentry-options-propagation:local"
-DEFAULT_SAMPLE_COUNT = 1
+DEFAULT_SAMPLE_COUNT = 5
 
 
 def kubectl(*args: str, input_text: str | None = None) -> str:
@@ -206,19 +206,20 @@ def run(image: str, sample_count: int, sample_timeout: float) -> None:
         print(f"Minikube ConfigMap propagation latency ({sample_count} {update_label})")
         print(
             "Measured from time.monotonic() immediately before the pod sends a "
-            "Kubernetes server-side apply PATCH until the first normal "
-            f"sentry_options.options('{OPTIONS_NAMESPACE}').get('{OPTION}') "
-            "returns that update in the same running process."
+            "Kubernetes server-side apply PATCH until the first new-first "
+            f"dual-read of {OPTION} returns that update in the same running process."
         )
         print(
-            "Includes API processing, kubelet volume projection, and the "
+            f"Each dual-read calls options('{OPTIONS_NAMESPACE}').isset('{OPTION}'), "
+            "then get() when set; otherwise it returns a simulated legacy value "
+            "of 5. Includes API processing, kubelet volume projection, and the "
             "client's lazy refresh. The probe reads every 100 ms."
         )
         print(
             f"Excludes image build and pod startup. "
             f"Each update flips {OPTION} between 100 and 101."
         )
-        print("Run  PATCH to get (s)  API request (s)")
+        print("Run  PATCH to dual-read (s)  API request (s)")
         for event in samples:
             print(
                 f"{event['iteration']:>3}  {event['latency_seconds']:>16.3f}  "
