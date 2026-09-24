@@ -881,16 +881,25 @@ mod tests {
         // Pinned against sentry's flagpole (tests/flagpole/test_evaluation_context.py)
         // so both evaluators put a feature's rollout in the same buckets.
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", json!("bar"));
-        ctx.insert("baz", json!("barfoo"));
-        ctx.identity_fields(vec!["foo"]);
+        ctx.insert("organization_id", json!(123));
+        ctx.insert("organization_slug", json!("sentry"));
+        ctx.identity_fields(vec!["organization_id"]);
 
         assert_eq!(ctx.bucket_id(None), ctx.id());
-        assert_eq!(ctx.bucket_id(Some("organizations:test-feature")) % 100, 11);
-        assert_eq!(ctx.bucket_id(Some("organizations:other-feature")) % 100, 40);
+        assert_eq!(
+            ctx.bucket_id(Some("organizations:performance-view")) % 100,
+            64
+        );
+        assert_eq!(
+            ctx.bucket_id(Some("organizations:dashboards-edit")) % 100,
+            75
+        );
 
         let ctx = FeatureContext::new();
-        assert_eq!(ctx.bucket_id(Some("organizations:test-feature")) % 100, 6);
+        assert_eq!(
+            ctx.bucket_id(Some("organizations:performance-view")) % 100,
+            85
+        );
     }
 
     #[test]
