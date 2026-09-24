@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, SubsecRound};
 use num::bigint::{BigInt, Sign};
-use std::cell::{Cell, OnceCell};
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -88,7 +88,6 @@ pub struct FeatureContext {
     data: HashMap<String, Value>,
     identity_fields: Vec<String>,
     cached_id: Cell<Option<u64>>,
-    cached_identity: OnceCell<String>,
 }
 
 impl FeatureContext {
@@ -97,7 +96,6 @@ impl FeatureContext {
             data: HashMap::new(),
             identity_fields: Vec::new(),
             cached_id: Cell::new(None),
-            cached_identity: OnceCell::new(),
         }
     }
 
@@ -108,14 +106,12 @@ impl FeatureContext {
     pub fn identity_fields(&mut self, fields: Vec<&str>) {
         self.identity_fields = fields.into_iter().map(|s| s.to_string()).collect();
         self.cached_id.set(None);
-        self.cached_identity.take();
     }
 
     /// Insert a key-value pair into the context.
     pub fn insert(&mut self, key: &str, value: impl Into<Value>) {
         self.data.insert(key.to_string(), value.into());
         self.cached_id.set(None);
-        self.cached_identity.take();
     }
 
     /// Get a context value by key.
@@ -138,7 +134,7 @@ impl FeatureContext {
         if let Some(id) = self.cached_id.get() {
             return id;
         }
-        let id = hash_identity(self.identity());
+        let id = self.compute_id(None);
         self.cached_id.set(Some(id));
         id
     }
@@ -152,59 +148,52 @@ impl FeatureContext {
     pub fn bucket_id(&self, feature_name: Option<&str>) -> u64 {
         match feature_name {
             None => self.id(),
-            Some(name) => hash_identity(&format!("{name}:{}", self.identity())),
+            Some(name) => self.compute_id(Some(name)),
         }
     }
 
-    /// The identity fields present in the data, sorted and joined as
-    /// `key:value:key:value`.
+    /// Compute the id for a FeatureContext.
     ///
-    /// Cached until the data or identity fields change: every feature that
-    /// buckets by name hashes it again for the same context.
-    fn identity(&self) -> &str {
-        self.cached_identity.get_or_init(|| {
-            let mut identity_fields: Vec<&String> = self
-                .identity_fields
-                .iter()
-                .filter(|f| self.data.contains_key(f.as_str()))
-                .collect();
-            if identity_fields.is_empty() {
-                identity_fields = self.data.keys().collect();
-            }
-            identity_fields.sort();
+    /// The original python implementation used a bigint value
+    /// derived from the sha1 hash.
+    ///
+    /// This method returns a u64 which contains the lower place
+    /// values of the bigint so that our rollout modulo math is
+    /// consistent with the original python implementation.
+    fn compute_id(&self, feature_name: Option<&str>) -> u64 {
+        let mut identity_fields: Vec<&String> = self
+            .identity_fields
+            .iter()
+            .filter(|f| self.data.contains_key(f.as_str()))
+            .collect();
+        if identity_fields.is_empty() {
+            identity_fields = self.data.keys().collect();
+        }
+        identity_fields.sort();
 
-            let mut parts: Vec<String> = Vec::with_capacity(identity_fields.len() * 2);
-            for key in identity_fields {
-                parts.push(key.clone());
-                parts.push(value_to_id_string(&self.data[key.as_str()]));
-            }
-            parts.join(":")
-        })
+        let mut parts: Vec<String> = Vec::with_capacity(identity_fields.len() * 2);
+        for key in identity_fields {
+            parts.push(key.clone());
+            parts.push(value_to_id_string(&self.data[key.as_str()]));
+        }
+        let mut hasher = Sha1::new();
+        if let Some(name) = feature_name {
+            hasher.update(name.as_bytes());
+            hasher.update(b":");
+        }
+        hasher.update(parts.join(":").as_bytes());
+        let digest = hasher.finalize();
+
+        // Create a BigInt to preserve all the 20bytes of the hash digest.
+        let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
+
+        // We only need the lower places from the big int to retain compatibility.
+        // modulo will trim off the u64 overflow, and let us break the bigint
+        // into its pieces (there will only be one).
+        let small: BigInt = bigint % 1000000000;
+        let id_parts = small.to_u64_digits().1;
+        if id_parts.is_empty() { 0 } else { id_parts[0] }
     }
-}
-
-/// Hash an identity string into a rollout id.
-///
-/// The original python implementation used a bigint value
-/// derived from the sha1 hash.
-///
-/// This method returns a u64 which contains the lower place
-/// values of the bigint so that our rollout modulo math is
-/// consistent with the original python implementation.
-fn hash_identity(identity: &str) -> u64 {
-    let mut hasher = Sha1::new();
-    hasher.update(identity.as_bytes());
-    let digest = hasher.finalize();
-
-    // Create a BigInt to preserve all the 20bytes of the hash digest.
-    let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
-
-    // We only need the lower places from the big int to retain compatibility.
-    // modulo will trim off the u64 overflow, and let us break the bigint
-    // into its pieces (there will only be one).
-    let small: BigInt = bigint % 1000000000;
-    let id_parts = small.to_u64_digits().1;
-    if id_parts.is_empty() { 0 } else { id_parts[0] }
 }
 
 impl Default for FeatureContext {
@@ -239,17 +228,14 @@ struct Segment {
 }
 
 #[derive(Debug)]
-struct Feature<'a> {
-    name: &'a str,
+struct Feature {
     enabled: bool,
     segments: Vec<Segment>,
-    /// Raw `created_at`, parsed only once a partial rollout needs to know
-    /// whether the feature buckets by name; see `FEATURE_BUCKETING_EPOCH`.
-    created_at: Option<&'a str>,
+    buckets_by_feature: bool,
 }
 
-impl<'a> Feature<'a> {
-    fn from_json(name: &'a str, value: &'a Value) -> Option<Self> {
+impl Feature {
+    fn from_json(value: &Value) -> Option<Self> {
         // Default to true to align with flagpole behavior.
         let enabled = value
             .get("enabled")
@@ -262,32 +248,25 @@ impl<'a> Feature<'a> {
             .filter_map(Segment::from_json)
             .collect();
         Some(Feature {
-            name,
             enabled,
             segments,
-            created_at: value.get("created_at").and_then(|v| v.as_str()),
+            buckets_by_feature: created_after_epoch(
+                value.get("created_at").and_then(Value::as_str),
+            ),
         })
     }
 
-    fn matches(&self, context: &FeatureContext) -> bool {
+    fn matches(&self, feature_name: &str, context: &FeatureContext) -> bool {
         if !self.enabled {
             return false;
         }
+        let feature_name = self.buckets_by_feature.then_some(feature_name);
         for segment in &self.segments {
             if segment.conditions_match(context) {
-                return segment.in_rollout(context, || self.bucket_feature_name());
+                return segment.in_rollout(context, feature_name);
             }
         }
         false
-    }
-
-    /// The name a percentage rollout buckets this feature by, or `None` for
-    /// features that keep the identity-only bucket; see
-    /// `FEATURE_BUCKETING_EPOCH`.
-    ///
-    /// Parses `created_at`, so only ask once a partial rollout needs it.
-    fn bucket_feature_name(&self) -> Option<&'a str> {
-        created_after_epoch(self.created_at).then_some(self.name)
     }
 }
 
@@ -309,23 +288,14 @@ impl Segment {
         self.conditions.iter().all(|c| c.matches(context))
     }
 
-    /// `feature_name`, when it returns a name, buckets by feature as well as
-    /// by identity. It is an argument rather than an identity field because
-    /// one context serves every feature in a batch, and older features must
-    /// keep the identity-only bucket. It is only called for a partial
-    /// rollout, since it parses the feature's `created_at`.
-    fn in_rollout<'n>(
-        &self,
-        context: &FeatureContext,
-        feature_name: impl FnOnce() -> Option<&'n str>,
-    ) -> bool {
+    fn in_rollout(&self, context: &FeatureContext, feature_name: Option<&str>) -> bool {
         if self.rollout == 0 {
             return false;
         }
         if self.rollout >= 100 {
             return true;
         }
-        context.bucket_id(feature_name()) % 100 <= self.rollout
+        context.bucket_id(feature_name) % 100 <= self.rollout
     }
 }
 
@@ -599,10 +569,10 @@ impl FeatureChecker {
             Err(e) => return Err(e.into()),
         };
 
-        let feature = Feature::from_json(feature_name, &feature_val)
+        let feature = Feature::from_json(&feature_val)
             .ok_or_else(|| FeatureError::InvalidValue { key: key.clone() })?;
 
-        let result = feature.matches(context);
+        let result = feature.matches(feature_name, context);
         tracing::debug!(
             feature = feature_name,
             result,
@@ -696,7 +666,7 @@ mod tests {
         let Ok(val) = opts.get("test", &key) else {
             return false;
         };
-        Feature::from_json(feature, &val).is_some_and(|f| f.matches(ctx))
+        Feature::from_json(&val).is_some_and(|parsed_feature| parsed_feature.matches(feature, ctx))
     }
 
     #[test]
@@ -961,9 +931,9 @@ mod tests {
                 "created_at": "2024-01-01",
                 "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
             });
-            Feature::from_json("organizations:performance-view", &value)
+            Feature::from_json(&value)
                 .unwrap()
-                .matches(&ctx)
+                .matches("organizations:performance-view", &ctx)
         };
         assert!(feature(56));
         assert!(!feature(55));
@@ -990,11 +960,41 @@ mod tests {
                 "created_at": "2026-12-01",
                 "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
             });
-            Feature::from_json(name, &value).unwrap().matches(&ctx)
+            Feature::from_json(&value).unwrap().matches(name, &ctx)
         };
         assert!(feature("organizations:performance-view", 64));
         assert!(!feature("organizations:performance-view", 63));
         assert!(!feature("organizations:dashboards-edit", 64));
+    }
+
+    #[test]
+    fn test_first_matching_segment_decides_rollout() {
+        let mut context = FeatureContext::new();
+        context.insert("organization_id", json!(123));
+        context.identity_fields(vec!["organization_id"]);
+
+        for (rollout, expected) in [
+            (0, false),
+            (63, false),
+            (64, true),
+            (100, true),
+            (101, true),
+        ] {
+            let value = json!({
+                "created_at": "2026-12-01",
+                "segments": [
+                    {"name": "first", "rollout": rollout, "conditions": []},
+                    {"name": "second", "rollout": 100, "conditions": []}
+                ]
+            });
+            let feature = Feature::from_json(&value).unwrap();
+
+            assert_eq!(
+                feature.matches("organizations:performance-view", &context),
+                expected,
+                "rollout {rollout}"
+            );
+        }
     }
 
     #[test]
