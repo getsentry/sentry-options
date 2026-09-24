@@ -28,6 +28,23 @@ to collect ten samples, run:
 make test-minikube-propagation-latency PROPAGATION_SAMPLES=10
 ```
 
+To compare a Pod refresh request against the periodic-sync baseline, run:
+
+```sh
+make test-minikube-propagation-latency-annotation
+```
+
+The driver grants the probe permission to PATCH only its own Pod. In this mode,
+after the ConfigMap PATCH succeeds, the probe starts one background request to
+change the Pod annotation `options.sentry.io/refresh-requested-at` to the
+update timestamp. The request is best effort: it has no retry, its failure does
+not interrupt client polling, and the probe does not wait for it. Kubernetes
+documents that a Pod annotation update triggers an immediate refresh of mounted
+ConfigMaps. The report still starts at the ConfigMap PATCH and ends at the
+first new-first dual-read of the value. It shows whether each background Pod
+PATCH completed, failed, or remained unconfirmed when the probe exited. The
+default command above leaves the Pod alone, so the two commands can be compared.
+
 For each update, the pod records `time.monotonic()` immediately before sending
 a Kubernetes server-side apply PATCH for the mounted ConfigMap, matching the
 production deploy's update method. It stops the timer immediately after the
