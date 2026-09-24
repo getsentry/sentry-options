@@ -178,8 +178,7 @@ impl FeatureContext {
         }
         let mut hasher = Sha1::new();
         if let Some(name) = feature_name {
-            hasher.update(name.as_bytes());
-            hasher.update(b":");
+            hasher.update(format!("{name}:").as_bytes());
         }
         hasher.update(parts.join(":").as_bytes());
         let digest = hasher.finalize();
