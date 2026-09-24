@@ -920,31 +920,39 @@ mod tests {
 
     #[test]
     fn test_rollout_keeps_identity_bucketing_for_features_created_before_epoch() {
-        // foo:bar is bucket 62 on identity alone
-        // (see test_feature_context_id_value_align_with_python).
+        // Organization 123 is bucket 56 on identity alone. Under the feature
+        // name it would be 64 (see the test below), which rollout 56 excludes.
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", json!("bar"));
-        ctx.identity_fields(vec!["foo"]);
+        ctx.insert("organization_id", json!(123));
+        ctx.identity_fields(vec!["organization_id"]);
+        assert_eq!(ctx.id() % 100, 56);
 
         let feature = |rollout: u64| {
             let value = json!({
                 "created_at": "2024-01-01",
                 "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
             });
-            Feature::from_json("organizations:test-feature", &value).unwrap()
+            Feature::from_json("organizations:performance-view", &value).unwrap()
         };
-        assert!(feature(62).matches(&ctx));
-        assert!(!feature(61).matches(&ctx));
+        assert!(feature(56).matches(&ctx));
+        assert!(!feature(55).matches(&ctx));
     }
 
     #[test]
     fn test_rollout_buckets_by_feature_for_features_created_after_epoch() {
-        // foo:bar is bucket 11 under organizations:test-feature and 40 under
-        // organizations:other-feature (see test_bucket_id_align_with_python), so
+        // Organization 123 lands in a different bucket under each feature, so
         // the two features at the same rollout reach different populations.
         let mut ctx = FeatureContext::new();
-        ctx.insert("foo", json!("bar"));
-        ctx.identity_fields(vec!["foo"]);
+        ctx.insert("organization_id", json!(123));
+        ctx.identity_fields(vec!["organization_id"]);
+        assert_eq!(
+            ctx.bucket_id(Some("organizations:performance-view")) % 100,
+            64
+        );
+        assert_eq!(
+            ctx.bucket_id(Some("organizations:dashboards-edit")) % 100,
+            75
+        );
 
         let feature = |name: &str, rollout: u64| {
             let value = json!({
@@ -953,9 +961,9 @@ mod tests {
             });
             Feature::from_json(name, &value).unwrap()
         };
-        assert!(feature("organizations:test-feature", 11).matches(&ctx));
-        assert!(!feature("organizations:test-feature", 10).matches(&ctx));
-        assert!(!feature("organizations:other-feature", 11).matches(&ctx));
+        assert!(feature("organizations:performance-view", 64).matches(&ctx));
+        assert!(!feature("organizations:performance-view", 63).matches(&ctx));
+        assert!(!feature("organizations:dashboards-edit", 64).matches(&ctx));
     }
 
     #[test]
