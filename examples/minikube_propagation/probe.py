@@ -80,23 +80,23 @@ def patch_configmap(
 def request_pod_refresh(
     url: str, token: str, context: ssl.SSLContext, generated_at: str, iteration: int
 ) -> None:
-    request = Request(
-        url,
-        data=json.dumps(
-            {
-                "metadata": {
-                    "annotations": {"options.sentry.io/refresh-requested-at": generated_at}
-                }
-            }
-        ).encode(),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/merge-patch+json",
-        },
-        method="PATCH",
-    )
     started = time.monotonic()
     try:
+        request = Request(
+            url,
+            data=json.dumps(
+                {
+                    "metadata": {
+                        "annotations": {"options.sentry.io/refresh-requested-at": generated_at}
+                    }
+                }
+            ).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/merge-patch+json",
+            },
+            method="PATCH",
+        )
         with urlopen(request, context=context, timeout=30) as response:
             response.read()
     except Exception as exc:
