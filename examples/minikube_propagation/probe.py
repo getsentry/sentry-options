@@ -31,7 +31,7 @@ REPORT_LOCK = threading.Lock()
 
 def report(event: str, **fields: object) -> None:
     with REPORT_LOCK:
-        print(json.dumps({"event": event, **fields}), flush=True)
+        print(json.dumps({'event': event, **fields}), flush=True)
 
 
 def get_option_new_first() -> int:
@@ -51,10 +51,10 @@ def get_option_new_first() -> int:
 
 
 def patch_configmap(
-    url: str, namespace: str, token: str, context: ssl.SSLContext, value: int
+    url: str, namespace: str, token: str, context: ssl.SSLContext, value: int,
 ) -> tuple[float, float, str]:
-    generated_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
-    values = {"options": {OPTION: value}, "generated_at": generated_at}
+    generated_at = datetime.now(timezone.utc).isoformat(timespec='microseconds')
+    values = {'options': {OPTION: value}, 'generated_at': generated_at}
     patch = {
         'apiVersion': 'v1',
         'kind': 'ConfigMap',
@@ -82,7 +82,7 @@ def patch_configmap(
 
 
 def request_pod_refresh(
-    url: str, token: str, context: ssl.SSLContext, generated_at: str, iteration: int
+    url: str, token: str, context: ssl.SSLContext, generated_at: str, iteration: int,
 ) -> None:
     started = time.monotonic()
     try:
@@ -90,46 +90,46 @@ def request_pod_refresh(
             url,
             data=json.dumps(
                 {
-                    "metadata": {
-                        "annotations": {"options.sentry.io/refresh-requested-at": generated_at}
-                    }
-                }
+                    'metadata': {
+                        'annotations': {'options.sentry.io/refresh-requested-at': generated_at},
+                    },
+                },
             ).encode(),
             headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/merge-patch+json",
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/merge-patch+json',
             },
-            method="PATCH",
+            method='PATCH',
         )
         with urlopen(request, context=context, timeout=30) as response:
             response.read()
     except Exception as exc:
-        report("pod_refresh", iteration=iteration, status="failed", error=str(exc))
+        report('pod_refresh', iteration=iteration, status='failed', error=str(exc))
     else:
         report(
-            "pod_refresh",
+            'pod_refresh',
             iteration=iteration,
-            status="completed",
+            status='completed',
             api_patch_seconds=time.monotonic() - started,
         )
 
 
 def main() -> None:
-    samples = int(os.environ["SAMPLE_COUNT"])
-    sample_timeout = float(os.environ["SAMPLE_TIMEOUT_SECONDS"])
-    refresh_pod = os.environ["REQUEST_POD_REFRESH"] == "true"
-    pod_name = os.environ["POD_NAME"]
-    namespace = SERVICE_ACCOUNT.joinpath("namespace").read_text().strip()
-    token = SERVICE_ACCOUNT.joinpath("token").read_text().strip()
-    context = ssl.create_default_context(cafile=str(SERVICE_ACCOUNT / "ca.crt"))
-    host = os.environ["KUBERNETES_SERVICE_HOST"]
-    port = os.environ["KUBERNETES_SERVICE_PORT_HTTPS"]
-    api_base = f"https://{host}:{port}/api/v1/namespaces/{namespace}"
+    samples = int(os.environ['SAMPLE_COUNT'])
+    sample_timeout = float(os.environ['SAMPLE_TIMEOUT_SECONDS'])
+    refresh_pod = os.environ['REQUEST_POD_REFRESH'] == 'true'
+    pod_name = os.environ['POD_NAME']
+    namespace = SERVICE_ACCOUNT.joinpath('namespace').read_text().strip()
+    token = SERVICE_ACCOUNT.joinpath('token').read_text().strip()
+    context = ssl.create_default_context(cafile=str(SERVICE_ACCOUNT / 'ca.crt'))
+    host = os.environ['KUBERNETES_SERVICE_HOST']
+    port = os.environ['KUBERNETES_SERVICE_PORT_HTTPS']
+    api_base = f'https://{host}:{port}/api/v1/namespaces/{namespace}'
     configmap_url = (
-        f"{api_base}/configmaps/{CONFIGMAP}"
-        "?fieldManager=sentry-options-propagation&force=true"
+        f'{api_base}/configmaps/{CONFIGMAP}'
+        '?fieldManager=sentry-options-propagation&force=true'
     )
-    pod_url = f"{api_base}/pods/{pod_name}"
+    pod_url = f'{api_base}/pods/{pod_name}'
 
     init()
     if get_option_new_first() != INITIAL_VALUE:
@@ -139,7 +139,7 @@ def main() -> None:
     for iteration in range(1, samples + 1):
         value = UPDATED_VALUE if iteration % 2 else INITIAL_VALUE
         started, patch_finished, generated_at = patch_configmap(
-            configmap_url, namespace, token, context, value
+            configmap_url, namespace, token, context, value,
         )
         if refresh_pod:
             try:
@@ -149,7 +149,7 @@ def main() -> None:
                     daemon=True,
                 ).start()
             except RuntimeError as exc:
-                report("pod_refresh", iteration=iteration, status="failed", error=str(exc))
+                report('pod_refresh', iteration=iteration, status='failed', error=str(exc))
         deadline = started + sample_timeout
         while True:
             observed_value = get_option_new_first()

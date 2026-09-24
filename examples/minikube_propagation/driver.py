@@ -72,8 +72,8 @@ def wait_for_event(namespace: str, name: str, timeout: float) -> list[dict[str, 
 
 
 def run(image: str, sample_count: int, sample_timeout: float, request_pod_refresh: bool) -> None:
-    namespace = f"sentry-options-latency-{uuid.uuid4().hex[:8]}"
-    kubectl("create", "namespace", namespace)
+    namespace = f'sentry-options-latency-{uuid.uuid4().hex[:8]}'
+    kubectl('create', 'namespace', namespace)
     try:
         initial = {
             'options': {OPTION: 100},
@@ -114,16 +114,16 @@ def run(image: str, sample_count: int, sample_timeout: float, request_pod_refres
                 'metadata': {'name': POD, 'namespace': namespace},
                 'rules': [
                     {
-                        "apiGroups": [""],
-                        "resources": ["configmaps"],
-                        "resourceNames": [CONFIGMAP],
-                        "verbs": ["patch"],
+                        'apiGroups': [''],
+                        'resources': ['configmaps'],
+                        'resourceNames': [CONFIGMAP],
+                        'verbs': ['patch'],
                     },
                     {
-                        "apiGroups": [""],
-                        "resources": ["pods"],
-                        "resourceNames": [POD],
-                        "verbs": ["patch"],
+                        'apiGroups': [''],
+                        'resources': ['pods'],
+                        'resourceNames': [POD],
+                        'verbs': ['patch'],
                     },
                 ],
             },
@@ -162,21 +162,21 @@ def run(image: str, sample_count: int, sample_timeout: float, request_pod_refres
                     'serviceAccountName': POD,
                     'containers': [
                         {
-                            "name": "probe",
-                            "image": image,
-                            "imagePullPolicy": "Never",
-                            "command": ["python", "-u", "/app/probe.py"],
-                            "env": [
-                                {"name": "SENTRY_OPTIONS_DIR", "value": "/etc/sentry-options"},
-                                {"name": "SAMPLE_COUNT", "value": str(sample_count)},
-                                {"name": "SAMPLE_TIMEOUT_SECONDS", "value": str(sample_timeout)},
+                            'name': 'probe',
+                            'image': image,
+                            'imagePullPolicy': 'Never',
+                            'command': ['python', '-u', '/app/probe.py'],
+                            'env': [
+                                {'name': 'SENTRY_OPTIONS_DIR', 'value': '/etc/sentry-options'},
+                                {'name': 'SAMPLE_COUNT', 'value': str(sample_count)},
+                                {'name': 'SAMPLE_TIMEOUT_SECONDS', 'value': str(sample_timeout)},
                                 {
-                                    "name": "REQUEST_POD_REFRESH",
-                                    "value": "true" if request_pod_refresh else "false",
+                                    'name': 'REQUEST_POD_REFRESH',
+                                    'value': 'true' if request_pod_refresh else 'false',
                                 },
                                 {
-                                    "name": "POD_NAME",
-                                    "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}},
+                                    'name': 'POD_NAME',
+                                    'valueFrom': {'fieldRef': {'fieldPath': 'metadata.name'}},
                                 },
                             ],
                             'volumeMounts': [
@@ -234,30 +234,30 @@ def run(image: str, sample_count: int, sample_timeout: float, request_pod_refres
         )
         if request_pod_refresh:
             print(
-                "After each successful ConfigMap PATCH, the pod starts one "
-                "best-effort PATCH of its own options.sentry.io/refresh-requested-at "
-                "annotation in a background thread. Client polling does not wait "
-                "for this request; its effect, when successful, is included in "
-                "the measured interval."
+                'After each successful ConfigMap PATCH, the pod starts one '
+                'best-effort PATCH of its own options.sentry.io/refresh-requested-at '
+                'annotation in a background thread. Client polling does not wait '
+                'for this request; its effect, when successful, is included in '
+                'the measured interval.',
             )
             refreshes = {
-                event["iteration"]: event
+                event['iteration']: event
                 for event in found
-                if event["event"] == "pod_refresh"
+                if event['event'] == 'pod_refresh'
             }
-            print("Run  PATCH to dual-read (s)  ConfigMap API (s)  Pod refresh")
+            print('Run  PATCH to dual-read (s)  ConfigMap API (s)  Pod refresh')
         else:
-            print("Run  PATCH to dual-read (s)  ConfigMap API (s)")
+            print('Run  PATCH to dual-read (s)  ConfigMap API (s)')
         for event in samples:
             row = (
                 f"{event['iteration']:>3}  {event['latency_seconds']:>22.3f}  "
                 f"{event['api_patch_seconds']:>17.3f}"
             )
             if request_pod_refresh:
-                refresh = refreshes.get(event["iteration"])
+                refresh = refreshes.get(event['iteration'])
                 row += f"  {refresh['status'] if refresh else 'unconfirmed':>11}"
             print(row)
-        print(f"Mean: {statistics.mean(latencies):.3f}s")
+        print(f'Mean: {statistics.mean(latencies):.3f}s')
         if sample_count > 1:
             print(f'Sample standard deviation: {statistics.stdev(latencies):.3f}s')
         else:
@@ -268,17 +268,17 @@ def run(image: str, sample_count: int, sample_timeout: float, request_pod_refres
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", default=IMAGE)
-    parser.add_argument("--samples", type=int, default=DEFAULT_SAMPLE_COUNT)
-    parser.add_argument("--sample-timeout", type=float, default=240.0)
-    parser.add_argument("--request-pod-refresh", choices=("true", "false"), default="false")
+    parser.add_argument('--image', default=IMAGE)
+    parser.add_argument('--samples', type=int, default=DEFAULT_SAMPLE_COUNT)
+    parser.add_argument('--sample-timeout', type=float, default=240.0)
+    parser.add_argument('--request-pod-refresh', choices=('true', 'false'), default='false')
     args = parser.parse_args()
     if args.samples < 1:
         parser.error('--samples must be at least 1')
     if not math.isfinite(args.sample_timeout) or args.sample_timeout <= 0:
         parser.error('--sample-timeout must be a positive finite number')
     try:
-        run(args.image, args.samples, args.sample_timeout, args.request_pod_refresh == "true")
+        run(args.image, args.samples, args.sample_timeout, args.request_pod_refresh == 'true')
     except (RuntimeError, TimeoutError, FileNotFoundError) as exc:
         print(exc, file=sys.stderr)
         raise SystemExit(1) from exc
