@@ -128,6 +128,34 @@ def test_rollout_partial_returns_result() -> None:
     assert checker.has('organizations:rollout-mid', ctx) is False
 
 
+def test_rollout_before_epoch_buckets_by_identity_only() -> None:
+    # rollout-before-epoch was created before FEATURE_BUCKETING_EPOCH, so its
+    # bucket ignores the feature name. Under the name, org 456 would be bucket
+    # 77 (excluded at rollout 50) and org 999 bucket 47 (included); on identity
+    # alone they are buckets 37 and 54, so the results are the other way round.
+    checker = features(NAMESPACE)
+    ctx = make_context({'organization_id': 456}, identity_fields=['organization_id'])
+    assert checker.has('organizations:rollout-before-epoch', ctx) is True
+
+    ctx = make_context({'organization_id': 999}, identity_fields=['organization_id'])
+    assert checker.has('organizations:rollout-before-epoch', ctx) is False
+
+
+def test_rollout_after_epoch_buckets_by_feature() -> None:
+    # rollout-after-epoch-a and -b share one segment but were created after
+    # FEATURE_BUCKETING_EPOCH, so each feature buckets the same org
+    # differently: org 123 is bucket 22 under a and 58 under b, org 456 is
+    # 53 under a and 5 under b.
+    checker = features(NAMESPACE)
+    ctx = make_context({'organization_id': 123}, identity_fields=['organization_id'])
+    assert checker.has('organizations:rollout-after-epoch-a', ctx) is True
+    assert checker.has('organizations:rollout-after-epoch-b', ctx) is False
+
+    ctx = make_context({'organization_id': 456}, identity_fields=['organization_id'])
+    assert checker.has('organizations:rollout-after-epoch-a', ctx) is False
+    assert checker.has('organizations:rollout-after-epoch-b', ctx) is True
+
+
 def test_has_is_deterministic() -> None:
     # Same context produces same result on repeated calls
     ctx = make_context(

@@ -75,6 +75,42 @@
           ]
         }
       ]
+    },
+    "feature.organizations:rollout-before-epoch": {
+      "enabled": true,
+      "owner": {"team": "test-team"},
+      "created_at": "2024-01-01",
+      "segments": [
+        {
+          "name": "half",
+          "rollout": 50,
+          "conditions": []
+        }
+      ]
+    },
+    "feature.organizations:rollout-after-epoch-a": {
+      "enabled": true,
+      "owner": {"team": "test-team"},
+      "created_at": "2026-12-01",
+      "segments": [
+        {
+          "name": "half",
+          "rollout": 50,
+          "conditions": []
+        }
+      ]
+    },
+    "feature.organizations:rollout-after-epoch-b": {
+      "enabled": true,
+      "owner": {"team": "test-team"},
+      "created_at": "2026-12-01",
+      "segments": [
+        {
+          "name": "half",
+          "rollout": 50,
+          "conditions": []
+        }
+      ]
     }
   }
 }
