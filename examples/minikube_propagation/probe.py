@@ -1,4 +1,4 @@
-"""Measure API PATCH request start to the first read of each new option value."""
+"""Measure server-side apply PATCH start to the first read of each new option value."""
 
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ from urllib.request import Request, urlopen
 from sentry_options import init, options
 
 
-OPTIONS_NAMESPACE = "sentry-options-testing"
-OPTION = "bool-option"
-CONFIGMAP = "sentry-options-sentry-options-testing"
+OPTIONS_NAMESPACE = "getsentry"
+OPTION = "getsentry.options-dual-read-test"
+CONFIGMAP = "sentry-options-getsentry"
+INITIAL_VALUE = 100
+UPDATED_VALUE = 101
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 POLL_SECONDS = 0.1
 
@@ -25,20 +27,26 @@ def report(event: str, **fields: object) -> None:
 
 
 def patch_configmap(
-    url: str, token: str, context: ssl.SSLContext, value: bool
+    url: str, namespace: str, token: str, context: ssl.SSLContext, value: int
 ) -> tuple[float, float]:
     generated_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     values = {"options": {OPTION: value}, "generated_at": generated_at}
     patch = {
-        "data": {"values.json": json.dumps(values)},
-        "metadata": {"annotations": {"generated_at": generated_at}},
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": CONFIGMAP,
+            "namespace": namespace,
+            "annotations": {"generated_at": generated_at},
+        },
+        "data": {"values.json": json.dumps(values, separators=(",", ":"))},
     }
     request = Request(
         url,
         data=json.dumps(patch).encode(),
         headers={
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/merge-patch+json",
+            "Content-Type": "application/apply-patch+yaml",
         },
         method="PATCH",
     )
@@ -57,22 +65,25 @@ def main() -> None:
     context = ssl.create_default_context(cafile=str(SERVICE_ACCOUNT / "ca.crt"))
     host = os.environ["KUBERNETES_SERVICE_HOST"]
     port = os.environ["KUBERNETES_SERVICE_PORT_HTTPS"]
-    url = f"https://{host}:{port}/api/v1/namespaces/{namespace}/configmaps/{CONFIGMAP}"
+    url = (
+        f"https://{host}:{port}/api/v1/namespaces/{namespace}/configmaps/{CONFIGMAP}"
+        "?fieldManager=sentry-options-propagation&force=true"
+    )
 
     init()
     handle = options(OPTIONS_NAMESPACE)
-    if handle.get(OPTION) is not False:
-        raise RuntimeError(f"Expected {OPTION} to start as false")
+    if handle.get(OPTION) != INITIAL_VALUE:
+        raise RuntimeError(f"Expected {OPTION} to start as {INITIAL_VALUE}")
     report("ready", samples=samples)
 
     for iteration in range(1, samples + 1):
-        value = iteration % 2 == 1
-        started, patch_finished = patch_configmap(url, token, context, value)
+        value = UPDATED_VALUE if iteration % 2 else INITIAL_VALUE
+        started, patch_finished = patch_configmap(url, namespace, token, context, value)
         deadline = started + sample_timeout
         while True:
             observed_value = handle.get(OPTION)
             observed_at = time.monotonic()
-            if observed_value is value:
+            if observed_value == value:
                 report(
                     "sample",
                     iteration=iteration,

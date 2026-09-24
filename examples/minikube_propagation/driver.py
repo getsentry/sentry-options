@@ -1,4 +1,4 @@
-"""Report in-pod Kubernetes PATCH request to client get latency.
+"""Report in-pod ConfigMap apply PATCH to client get latency.
 
 Run with `make test-minikube-propagation-latency`. This is an opt-in integration
 probe, not a CI latency gate: kubelet sync timing varies.
@@ -18,9 +18,11 @@ from typing import Any
 
 
 CONTEXT = "minikube"
-CONFIGMAP = "sentry-options-sentry-options-testing"
+CONFIGMAP = "sentry-options-getsentry"
+FEATURES_CONFIGMAP = "sentry-options-getsentry-features"
 POD = "sentry-options-latency"
-OPTIONS_NAMESPACE = "sentry-options-testing"
+OPTIONS_NAMESPACE = "getsentry"
+OPTION = "getsentry.options-dual-read-test"
 IMAGE = "sentry-options-propagation:local"
 DEFAULT_SAMPLE_COUNT = 1
 
@@ -75,7 +77,7 @@ def run(image: str, sample_count: int, sample_timeout: float) -> None:
     kubectl("create", "namespace", namespace)
     try:
         initial = {
-            "options": {"bool-option": False},
+            "options": {OPTION: 100},
             "generated_at": "2020-01-01T00:00:00Z",
         }
         apply(
@@ -83,7 +85,20 @@ def run(image: str, sample_count: int, sample_timeout: float) -> None:
                 "apiVersion": "v1",
                 "kind": "ConfigMap",
                 "metadata": {"name": CONFIGMAP, "namespace": namespace},
-                "data": {"values.json": json.dumps(initial)},
+                "data": {"values.json": json.dumps(initial, separators=(",", ":"))},
+            }
+        )
+        apply(
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {"name": FEATURES_CONFIGMAP, "namespace": namespace},
+                "data": {
+                    "values.json": json.dumps(
+                        {"options": {}, "generated_at": initial["generated_at"]},
+                        separators=(",", ":"),
+                    )
+                },
             }
         )
         apply(
@@ -123,11 +138,20 @@ def run(image: str, sample_count: int, sample_timeout: float) -> None:
                 },
             }
         )
+        # Minikube has no options admission webhook. Materialize the volumes
+        # that production's options.sentry.io injector adds for Getsentry pods.
         apply(
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
-                "metadata": {"name": POD, "namespace": namespace},
+                "metadata": {
+                    "name": POD,
+                    "namespace": namespace,
+                    "annotations": {
+                        "options.sentry.io/inject": "true",
+                        "options.sentry.io/namespace": "getsentry,getsentry-features",
+                    },
+                },
                 "spec": {
                     "restartPolicy": "Never",
                     "serviceAccountName": POD,
@@ -144,14 +168,28 @@ def run(image: str, sample_count: int, sample_timeout: float) -> None:
                             ],
                             "volumeMounts": [
                                 {
-                                    "name": "values",
-                                    "mountPath": "/etc/sentry-options/values/sentry-options-testing",
+                                    "name": CONFIGMAP,
+                                    "mountPath": "/etc/sentry-options/values/getsentry",
+                                    "readOnly": True,
+                                },
+                                {
+                                    "name": FEATURES_CONFIGMAP,
+                                    "mountPath": "/etc/sentry-options/values/getsentry-features",
                                     "readOnly": True,
                                 }
                             ],
                         }
                     ],
-                    "volumes": [{"name": "values", "configMap": {"name": CONFIGMAP}}],
+                    "volumes": [
+                        {
+                            "name": CONFIGMAP,
+                            "configMap": {"name": CONFIGMAP, "optional": True},
+                        },
+                        {
+                            "name": FEATURES_CONFIGMAP,
+                            "configMap": {"name": FEATURES_CONFIGMAP, "optional": True},
+                        },
+                    ],
                 },
             }
         )
@@ -168,15 +206,18 @@ def run(image: str, sample_count: int, sample_timeout: float) -> None:
         print(f"Minikube ConfigMap propagation latency ({sample_count} {update_label})")
         print(
             "Measured from time.monotonic() immediately before the pod sends a "
-            "Kubernetes API PATCH request until the first normal "
-            f"sentry_options.options('{OPTIONS_NAMESPACE}').get('bool-option') "
+            "Kubernetes server-side apply PATCH until the first normal "
+            f"sentry_options.options('{OPTIONS_NAMESPACE}').get('{OPTION}') "
             "returns that update in the same running process."
         )
         print(
             "Includes API processing, kubelet volume projection, and the "
             "client's lazy refresh. The probe reads every 100 ms."
         )
-        print("Excludes image build and pod startup. Each update flips bool-option.")
+        print(
+            f"Excludes image build and pod startup. "
+            f"Each update flips {OPTION} between 100 and 101."
+        )
         print("Run  PATCH to get (s)  API request (s)")
         for event in samples:
             print(

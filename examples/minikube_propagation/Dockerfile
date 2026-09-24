@@ -19,7 +19,7 @@ COPY --from=builder /build/target/wheels/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
 COPY examples/minikube_propagation/probe.py /app/probe.py
-COPY sentry-options/schemas/sentry-options-testing /etc/sentry-options/schemas/sentry-options-testing
+COPY examples/minikube_propagation/schema.json /etc/sentry-options/schemas/getsentry/schema.json
 
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 CMD ["python", "-u", "/app/probe.py"]
