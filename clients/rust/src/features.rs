@@ -20,7 +20,7 @@ use sha1::{Digest, Sha1};
 ///
 /// Must not predate the deploy of this rule, and must match
 /// `FEATURE_BUCKETING_EPOCH` in sentry's `flagpole` package.
-const FEATURE_BUCKETING_EPOCH: NaiveDateTime = NaiveDate::from_ymd_opt(2026, 10, 15)
+const FEATURE_BUCKETING_EPOCH: NaiveDateTime = NaiveDate::from_ymd_opt(2026, 10, 5)
     .unwrap()
     .and_time(NaiveTime::MIN);
 
@@ -895,14 +895,14 @@ mod tests {
     #[test]
     fn test_created_after_epoch() {
         let cases = [
-            ("2026-10-15", false),
-            ("2026-10-15T00:00:01", true),
-            ("2026-10-16", true),
-            ("2026-10-15T00:00:00.000001", true),
-            ("2026-10-15T00:00:00.000000001", false),
-            ("2026-10-14T23:00:00-02:00", true),
-            ("2026-10-15T01:00:00+02:00", false),
-            ("2026-10-15T01:00:00+0200", false),
+            ("2026-10-05", false),
+            ("2026-10-05T00:00:01", true),
+            ("2026-10-06", true),
+            ("2026-10-05T00:00:00.000001", true),
+            ("2026-10-05T00:00:00.000000001", false),
+            ("2026-10-04T23:00:00-02:00", true),
+            ("2026-10-05T01:00:00+02:00", false),
+            ("2026-10-05T01:00:00+0200", false),
             ("2024-01-01", false),
             ("None", false),
             ("not a date", false),
