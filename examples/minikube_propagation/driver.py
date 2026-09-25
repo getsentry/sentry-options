@@ -10,6 +10,7 @@ import argparse
 import base64
 import json
 import math
+import re
 import shutil
 import statistics
 import subprocess
@@ -330,6 +331,15 @@ def observations(namespace: str, pod: str) -> list[dict[str, Any]]:
     return found
 
 
+def sidecar_write_delays(namespace: str, pod: str) -> list[float]:
+    """Return the sidecar's generated_at-to-write delay for each live update."""
+    logs = kubectl('-n', namespace, 'logs', pod, '-c', 'sentry-options-sync')
+    pattern = re.compile(
+        rf'wrote sentry-options-{OPTIONS_NAMESPACES[0]} .* \(([0-9.]+)s after generated_at\)',
+    )
+    return [float(m.group(1)) for m in pattern.finditer(logs)]
+
+
 def clock_offset(namespace: str, pod: str) -> tuple[float, float]:
     """Estimate pod clock minus host clock, and its uncertainty.
 
@@ -475,6 +485,9 @@ def run(args: argparse.Namespace) -> None:
                     app_ns, pod_name, value, started, offset, args.sample_timeout,
                 )
                 samples.append((observed - started, applied - started))
+            write_delays = sidecar_write_delays(app_ns, pod_name) if sidecar else []
+            if sidecar and len(write_delays) != len(samples):
+                raise RuntimeError(f'Expected {len(samples)} sidecar writes, got {write_delays}')
         finally:
             kubectl('delete', 'mutatingwebhookconfiguration', webhook_name, '--ignore-not-found', check=False)
             kubectl('delete', 'namespace', app_ns, infra_ns, '--wait=false', '--ignore-not-found', check=False)
@@ -496,9 +509,20 @@ def run(args: argparse.Namespace) -> None:
         '(read every 100 ms, default 5 s client refresh threshold).',
     )
     print(f'Pod clock offset {offset:+.3f}s, uncertainty ±{uncertainty:.3f}s.')
-    print('Run  Apply to dual-read (s)  kubectl apply (s)')
+    header = 'Run  Apply to dual-read (s)  kubectl apply (s)'
+    if sidecar:
+        print(
+            'Sidecar write is the sidecar\'s own generation_to_write measurement: '
+            'from the CLI\'s generated_at, just before the apply, to the sidecar '
+            'writing the new values into the pod.',
+        )
+        header += '  Sidecar write (s)'
+    print(header)
     for i, (latency, apply_seconds) in enumerate(samples, 1):
-        print(f'{i:>3}  {latency:>22.3f}  {apply_seconds:>17.3f}')
+        row = f'{i:>3}  {latency:>22.3f}  {apply_seconds:>17.3f}'
+        if sidecar:
+            row += f'  {write_delays[i - 1]:>17.3f}'
+        print(row)
     print(f'Mean: {statistics.mean(latencies):.3f}s')
     if len(latencies) > 1:
         print(f'Sample standard deviation: {statistics.stdev(latencies):.3f}s')

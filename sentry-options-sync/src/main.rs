@@ -12,20 +12,33 @@
 //!   first sync before reporting ready anyway (default 30). ConfigMaps are
 //!   optional, so the app then starts on schema defaults, as it would with a
 //!   missing ConfigMap volume.
+//! - `SENTRY_OPTIONS_SYNC_STATSD_ADDR`: optional DogStatsD `host:port`.
+//!
+//! Metrics:
+//! - `sentry.options.sync.generation_to_write` (distribution, seconds, tagged
+//!   `namespace` and `configmap`): from the values' `generated_at` to this pod
+//!   writing them, for each live update. It covers the deploy pipeline and the
+//!   watch. Subtracting it from the client's `propagation_delay`
+//!   (`generated_at` to client refresh) leaves the client's refresh-on-read lag.
 
+mod metrics;
 mod writer;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::runtime::WatchStreamExt;
 use kube::runtime::watcher::{self, Event};
 use kube::{Api, Client};
 use tokio::sync::mpsc;
+
+use metrics::Metrics;
 
 const READY_MARKER: &str = "/tmp/sentry-options-sync-ready";
 const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -47,14 +60,37 @@ fn configmap_data(configmap: Option<&ConfigMap>) -> BTreeMap<String, String> {
     configmap.and_then(|c| c.data.clone()).unwrap_or_default()
 }
 
+/// Seconds from the payload's `values.json` `generated_at` until `now`.
+fn generation_delay(data: &BTreeMap<String, String>, now: DateTime<Utc>) -> Option<f64> {
+    let values: serde_json::Value = serde_json::from_str(data.get("values.json")?).ok()?;
+    let generated_at = DateTime::parse_from_rfc3339(values.get("generated_at")?.as_str()?).ok()?;
+    Some(
+        (now - generated_at.with_timezone(&Utc))
+            .as_seconds_f64()
+            .max(0.0),
+    )
+}
+
 /// Watch one ConfigMap by name and project every change into `dir`.
-async fn sync(api: Api<ConfigMap>, name: String, dir: PathBuf, synced: mpsc::Sender<()>) {
+async fn sync(
+    api: Api<ConfigMap>,
+    name: String,
+    dir: PathBuf,
+    synced: mpsc::Sender<()>,
+    metrics: Arc<Metrics>,
+) {
+    let namespace = dir
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     let config = watcher::Config::default().fields(&format!("metadata.name={name}"));
     let mut events = std::pin::pin!(watcher::watcher(api, config).default_backoff());
     let mut written: Option<BTreeMap<String, String>> = None;
     let mut listed: Option<ConfigMap> = None;
 
     loop {
+        // Only live updates are measured. The initial list reflects values
+        // generated before this pod started, not a deploy reaching it.
+        let mut live = false;
         let data = match events.try_next().await {
             Ok(Some(Event::Init)) => {
                 listed = None;
@@ -65,7 +101,10 @@ async fn sync(api: Api<ConfigMap>, name: String, dir: PathBuf, synced: mpsc::Sen
                 continue;
             }
             Ok(Some(Event::InitDone)) => configmap_data(listed.take().as_ref()),
-            Ok(Some(Event::Apply(configmap))) => configmap_data(Some(&configmap)),
+            Ok(Some(Event::Apply(configmap))) => {
+                live = true;
+                configmap_data(Some(&configmap))
+            }
             Ok(Some(Event::Delete(_))) => BTreeMap::new(),
             Ok(None) => return,
             Err(err) => {
@@ -78,7 +117,20 @@ async fn sync(api: Api<ConfigMap>, name: String, dir: PathBuf, synced: mpsc::Sen
         if written.as_ref() != Some(&data) {
             match writer::write_atomic(&dir, &data) {
                 Ok(()) => {
-                    eprintln!("sentry-options-sync: wrote {name} to {}", dir.display());
+                    let delay = generation_delay(&data, Utc::now()).filter(|_| live);
+                    if let Some(delay) = delay {
+                        metrics.distribution(
+                            "sentry.options.sync.generation_to_write",
+                            delay,
+                            &[("namespace", &namespace), ("configmap", &name)],
+                        );
+                    }
+                    eprintln!(
+                        "sentry-options-sync: wrote {name} to {}{}",
+                        dir.display(),
+                        delay
+                            .map_or_else(String::new, |d| format!(" ({d:.3}s after generated_at)")),
+                    );
                     written = Some(data);
                 }
                 Err(err) => {
@@ -101,6 +153,13 @@ async fn run() -> Result<()> {
         Err(_) => DEFAULT_STARTUP_TIMEOUT,
     };
 
+    let metrics = Arc::new(Metrics::new(
+        std::env::var("SENTRY_OPTIONS_SYNC_STATSD_ADDR")
+            .ok()
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+    ));
+
     let client = Client::try_default().await?;
     let api: Api<ConfigMap> = Api::default_namespaced(client);
 
@@ -108,7 +167,7 @@ async fn run() -> Result<()> {
     for (name, dir) in mappings {
         let (tx, rx) = mpsc::channel(1);
         first_syncs.push(rx);
-        tokio::spawn(sync(api.clone(), name, dir, tx));
+        tokio::spawn(sync(api.clone(), name, dir, tx, metrics.clone()));
     }
 
     let all_synced = async {
@@ -155,5 +214,24 @@ mod tests {
         );
         assert!(parse_mappings("a").is_err());
         assert!(parse_mappings("=/x").is_err());
+    }
+
+    #[test]
+    fn measures_generation_delay() {
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:02.5Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let data = |values: &str| BTreeMap::from([("values.json".to_string(), values.to_string())]);
+
+        assert_eq!(
+            generation_delay(
+                &data(r#"{"options":{},"generated_at":"2026-01-01T00:00:00Z"}"#),
+                now
+            ),
+            Some(2.5)
+        );
+        assert_eq!(generation_delay(&data(r#"{"options":{}}"#), now), None);
+        assert_eq!(generation_delay(&data("not json"), now), None);
+        assert_eq!(generation_delay(&BTreeMap::new(), now), None);
     }
 }

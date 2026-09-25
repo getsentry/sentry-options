@@ -58,6 +58,14 @@ Latency runs from just before `kubectl apply` on the host to the first read
 returning the new value. The driver converts pod timestamps to the host clock
 with an offset measured through `kubectl exec`, and reports its uncertainty.
 
+In sidecar mode the report also shows the sidecar's own
+`sentry.options.sync.generation_to_write` measurement for each update, parsed
+from its log: from the CLI's `generated_at`, just before the apply, to the
+sidecar writing the values into the pod. In production the sidecar sends this
+metric to the node's DogStatsD. The client's existing `propagation_delay` runs
+from `generated_at` to its refresh, so the difference is the client's
+refresh-on-read lag. Neither the app nor the automator changes.
+
 The measurement includes API processing, volume projection (kubelet sync or
 the sidecar's watch), and the client's refresh-on-read, which has a default 5 s
 threshold. It excludes image builds and pod startup. No fixed latency limit is
