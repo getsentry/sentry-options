@@ -124,10 +124,14 @@ impl FeatureContext {
         hasher.update(parts.join(":").as_bytes());
         let digest = hasher.finalize();
 
-        digest.chunks_exact(4).fold(0_u64, |remainder, word| {
-            let word = u32::from_be_bytes(word.try_into().unwrap()) as u64;
-            ((remainder << 32) | word) % 1_000_000_000
-        })
+        digest
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .fold(0_u64, |remainder, word| {
+                let word = u32::from_be_bytes(*word) as u64;
+                ((remainder << 32) | word) % 1_000_000_000
+            })
     }
 }
 
