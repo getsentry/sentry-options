@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "getsentry.options-dual-read-test": {
+      "type": "integer",
+      "default": -1,
+      "description": ""
+    }
+  }
+}
