@@ -3,7 +3,6 @@
 //! Provides [`FeatureContext`] and [`FeatureChecker`] for evaluating feature
 //! flags stored in the options system.
 
-use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
 use std::collections::HashMap;
 
@@ -99,12 +98,11 @@ impl FeatureContext {
 
     /// Compute the id for a FeatureContext.
     ///
-    /// The original python implementation used a bigint value
-    /// derived from the sha1 hash.
-    ///
-    /// This method returns a u64 which contains the lower place
-    /// values of the bigint so that our rollout modulo math is
-    /// consistent with the original python implementation.
+    /// Return the full SHA-1 digest, read as a big-endian integer, modulo
+    /// 1,000,000,000. This preserves the original Python rollout bucket IDs.
+    /// Reducing after each 32-bit word gives the same remainder as reducing
+    /// the full digest once. Each intermediate value is below
+    /// 1,000,000,000 * 2^32 < 2^62, so it fits in a u64.
     fn compute_id(&self) -> u64 {
         let mut identity_fields: Vec<&String> = self
             .identity_fields
@@ -125,15 +123,13 @@ impl FeatureContext {
         hasher.update(parts.join(":").as_bytes());
         let digest = hasher.finalize();
 
-        // Create a BigInt to preserve all the 20bytes of the hash digest.
-        let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
-
-        // We only need the lower places from the big int to retain compatibility.
-        // modulo will trim off the u64 overflow, and let us break the bigint
-        // into its pieces (there will only be one).
-        let small: BigInt = bigint % 1000000000;
-        let id_parts = small.to_u64_digits().1;
-        if id_parts.is_empty() { 0 } else { id_parts[0] }
+        const ID_MODULUS: u64 = 1_000_000_000;
+        let mut remainder = 0_u64;
+        for digest_word in digest.as_chunks::<4>().0 {
+            let word_value = u64::from(u32::from_be_bytes(*digest_word));
+            remainder = ((remainder << 32) + word_value) % ID_MODULUS;
+        }
+        remainder
     }
 }
 
@@ -642,6 +638,28 @@ mod tests {
             id_user, id_org,
             "Different identity fields should produce different IDs"
         );
+    }
+
+    #[test]
+    fn test_feature_context_id_matches_bigint_reference() {
+        use num::ToPrimitive;
+        use num::bigint::{BigInt, Sign};
+
+        for identifier in 0..10_000 {
+            let identity_value = format!("{}:{identifier}", "x".repeat(identifier % 128));
+            let mut context = FeatureContext::new();
+            context.insert("organization_id", json!(identity_value));
+            context.identity_fields(vec!["organization_id"]);
+            let input = format!("organization_id:{identity_value}");
+            let digest = Sha1::digest(input.as_bytes());
+            let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
+            let expected: BigInt = bigint % 1_000_000_000;
+            assert_eq!(
+                context.id(),
+                expected.to_u64().unwrap(),
+                "Hash mismatch for {input}"
+            );
+        }
     }
 
     #[test]
