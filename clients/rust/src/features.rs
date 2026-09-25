@@ -98,12 +98,11 @@ impl FeatureContext {
 
     /// Compute the id for a FeatureContext.
     ///
-    /// The original python implementation used a bigint value
-    /// derived from the sha1 hash.
-    ///
-    /// This method returns a u64 which contains the lower place
-    /// values of the bigint so that our rollout modulo math is
-    /// consistent with the original python implementation.
+    /// Return the full SHA-1 digest, read as a big-endian integer, modulo
+    /// 1,000,000,000. This preserves the original Python rollout bucket IDs.
+    /// Reducing after each 32-bit word gives the same remainder as reducing
+    /// the full digest once. Each intermediate value is below
+    /// 1,000,000,000 * 2^32 < 2^62, so it fits in a u64.
     fn compute_id(&self) -> u64 {
         let mut identity_fields: Vec<&String> = self
             .identity_fields
@@ -124,14 +123,13 @@ impl FeatureContext {
         hasher.update(parts.join(":").as_bytes());
         let digest = hasher.finalize();
 
-        digest
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .fold(0_u64, |remainder, word| {
-                let word = u32::from_be_bytes(*word) as u64;
-                ((remainder << 32) | word) % 1_000_000_000
-            })
+        const ID_MODULUS: u64 = 1_000_000_000;
+        let mut remainder = 0_u64;
+        for digest_word in digest.as_chunks::<4>().0 {
+            let word_value = u64::from(u32::from_be_bytes(*digest_word));
+            remainder = ((remainder << 32) + word_value) % ID_MODULUS;
+        }
+        remainder
     }
 }
 
