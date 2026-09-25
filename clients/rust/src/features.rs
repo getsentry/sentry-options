@@ -184,7 +184,8 @@ impl FeatureContext {
         let identity = self.cached_identity.get_or_init(|| self.compute_identity());
         let mut hasher = Sha1::new();
         if let Some(name) = feature_name {
-            hasher.update(format!("{name}:").as_bytes());
+            hasher.update(name.as_bytes());
+            hasher.update(b":");
         }
         hasher.update(identity.as_bytes());
         let digest = hasher.finalize();
@@ -714,6 +715,31 @@ mod tests {
             id_user, id_org,
             "Different identity fields should produce different IDs"
         );
+    }
+
+    #[test]
+    fn test_bucket_id_matches_bigint_reference() {
+        use num::ToPrimitive;
+        use num::bigint::{BigInt, Sign};
+
+        for organization_id in 0..10_000 {
+            let mut context = FeatureContext::new();
+            context.insert("organization_id", json!(organization_id));
+            context.identity_fields(vec!["organization_id"]);
+            let feature_name = format!(
+                "organizations:{}-{organization_id}",
+                "x".repeat(organization_id % 128)
+            );
+            let input = format!("{feature_name}:organization_id:{organization_id}");
+            let digest = Sha1::digest(input.as_bytes());
+            let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
+            let expected: BigInt = bigint % 1_000_000_000;
+            assert_eq!(
+                context.bucket_id(Some(&feature_name)),
+                expected.to_u64().unwrap(),
+                "Hash mismatch for {input}"
+            );
+        }
     }
 
     #[test]
