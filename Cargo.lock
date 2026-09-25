@@ -1449,6 +1449,7 @@ name = "sentry-options"
 version = "1.2.11"
 dependencies = [
  "arc-swap",
+ "chrono",
  "criterion",
  "num",
  "sentry-options-validation",
