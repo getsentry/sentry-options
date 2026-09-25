@@ -1,67 +1,65 @@
 # Local ConfigMap propagation latency
 
-From the repository root on macOS, run:
+From the repository root on macOS, with Docker and Minikube installed and
+`sentry-envoy-injector` checked out next to this repository, run:
 
 ```sh
-make test-minikube-propagation-latency
+make test-minikube-propagation-latency          # kubelet ConfigMap volumes
+make test-minikube-propagation-latency-sidecar  # sentry-options-sync sidecar
 ```
 
-The target starts Minikube, builds the Python client from this checkout into a
-local image, loads it into Minikube, and runs `driver.py`. Docker and Minikube
-must be installed. The driver always uses the `minikube` kubectl context and
-creates a temporary namespace. It removes that namespace when finished.
+Set `INJECTOR_DIR` if the injector checkout lives elsewhere, and
+`PROPAGATION_SAMPLES` (default 5) to change the number of updates.
 
-The pod mirrors the Getsentry options mounts configured in `ops`: optional,
-read-only ConfigMaps `sentry-options-getsentry` and
-`sentry-options-getsentry-features` at `/etc/sentry-options/values/<namespace>`.
-It carries the same `options.sentry.io` annotations as a Getsentry pod. Minikube
-does not run the production admission webhook, so `driver.py` creates those
-volumes directly. The bundled schema contains the production integer type and
-default for `getsentry.options-dual-read-test`; the ConfigMap starts at 100 and
-the probe alternates it between 101 and 100. The synthetic ConfigMaps are much
-smaller than production's.
+The target starts Minikube and builds three local images: the Python client
+with `probe.py`, `sentry-options-sync`, and `sentry-envoy-injector`. It loads
+them into Minikube and runs `driver.py`. The driver always uses the `minikube`
+kubectl context. It creates two temporary namespaces and a
+`MutatingWebhookConfiguration`, and removes them when finished.
 
-The pod runs `probe.py` throughout the measurement. The default is five updates;
-to collect ten samples, run:
+The setup follows `docs/architecture.md`:
 
-```sh
-make test-minikube-propagation-latency PROPAGATION_SAMPLES=10
-```
+- **Injector.** The real `sentry-envoy-injector` binary runs in-cluster, with an
+  nginx sidecar terminating TLS in front of it. In production, Cloud Run sits
+  behind a TLS load balancer that the webhook reaches through a Service. The
+  webhook mirrors ops `k8s/services/envoy-injector/webhook.yaml`: pod
+  `CREATE`, `failurePolicy: Fail`, `admissionReviewVersions: [v1beta1]`, and a
+  `sentry-envoy-injection: enabled` namespace selector. The selector also
+  matches a per-run label, so a leftover webhook cannot affect other
+  namespaces.
+- **App.** A `getsentry-web` Deployment runs as `service-getsentry` with only
+  the `options.sentry.io/inject` and `options.sentry.io/namespace:
+  getsentry,getsentry-features` annotations. It carries no volumes of its own.
+  The driver checks that the webhook added them. The image bakes the schemas
+  into `/etc/sentry-options/schemas`, as a service image does.
+- **Deploy.** Values live in an automator-style `option-values/{ns}/{default,us}`
+  tree. Each update regenerates the ConfigMap with `sentry-options-cli write
+  --output-format configmap` and applies it from the host with `kubectl apply
+  --server-side --force-conflicts`, as `deploy-new-sentry-options.sh` does from
+  GoCD.
 
-To compare a Pod refresh request against the periodic-sync baseline, run:
+In sidecar mode the Deployment also sets `options.sentry.io/delivery: sidecar`
+and `options.sentry.io/syncImage`. The injector then mounts `emptyDir` volumes
+and adds the `sentry-options-sync` native sidecar. The driver grants
+`service-getsentry` `get`/`list`/`watch` on the two option ConfigMaps by name.
+It uses `kubectl auth can-i` to confirm the identity can watch those
+ConfigMaps but cannot list all ConfigMaps or patch ConfigMaps or Pods. In
+ConfigMap mode, the identity has no ConfigMap access at all.
 
-```sh
-make test-minikube-propagation-latency-annotation
-```
+The app container runs `probe.py`. The probe never talks to Kubernetes. Every
+100 ms it performs the Getsentry-style new-first dual-read of
+`getsentry.options-dual-read-test`: `options("getsentry")`, then `isset()`,
+then `get()` when set, else a simulated legacy value of 5. It logs each change
+with its wall-clock time. The driver requires the first read to return the
+ConfigMap's value, not the legacy fallback. That confirms kubelet mounts the
+volume before start, and in sidecar mode that the startup probe held the app
+until the first sync. Each update then flips the value between 100 and 101.
+Latency runs from just before `kubectl apply` on the host to the first read
+returning the new value. The driver converts pod timestamps to the host clock
+with an offset measured through `kubectl exec`, and reports its uncertainty.
 
-The driver grants the probe permission to PATCH only its own Pod. In this mode,
-after the ConfigMap PATCH succeeds, the probe starts one background request to
-change the Pod annotation `options.sentry.io/refresh-requested-at` to the
-update timestamp. The request is best effort: it has no retry, its failure does
-not interrupt client polling, and the probe does not wait for it. Kubernetes
-documents that a Pod annotation update triggers an immediate refresh of mounted
-ConfigMaps. The report still starts at the ConfigMap PATCH and ends at the
-first new-first dual-read of the value. It shows whether each background Pod
-PATCH completed, failed, or remained unconfirmed when the probe exited. The
-default command above leaves the Pod alone, so the two commands can be compared.
-
-For each update, the pod records `time.monotonic()` immediately before sending
-a Kubernetes server-side apply PATCH for the mounted ConfigMap, matching the
-production deploy's update method. It stops the timer immediately after the
-first new-options-first dual-read returns that update in the same process. Like
-the Getsentry read hook, that read calls `options("getsentry")`, checks
-`isset("getsentry.options-dual-read-test")`, and calls `get()` only when the value
-is set. The current Getsentry hook checks its legacy store first; this probe
-reverses that priority and returns a simulated legacy value of 5 only when the
-new value is unavailable. The sampled option is registered as automator
-modifiable in Getsentry. The probe checks every 100 ms; every sample requires a
-new value to reach the client.
-
-The printed PATCH-to-dual-read latency includes API processing, kubelet volume
-projection, and the client's lazy refresh. It excludes image build and pod
-startup. The report lists each sample and the mean. With at least two
-samples, it also prints the sample standard deviation. No fixed latency limit
-is asserted because kubelet timing varies. This models the new-first branch of
-Getsentry's hook with a fixed legacy fallback, without loading the Sentry
-options manager or its store. Minikube's kubelet configuration and Kubernetes
-version may differ from production GKE.
+The measurement includes API processing, volume projection (kubelet sync or
+the sidecar's watch), and the client's refresh-on-read, which has a default 5 s
+threshold. It excludes image builds and pod startup. No fixed latency limit is
+asserted. Minikube's kubelet configuration and Kubernetes version may differ
+from production GKE.
