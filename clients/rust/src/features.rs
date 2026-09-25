@@ -3,7 +3,6 @@
 //! Provides [`FeatureContext`] and [`FeatureChecker`] for evaluating feature
 //! flags stored in the options system.
 
-use num::bigint::{BigInt, Sign};
 use std::cell::Cell;
 use std::collections::HashMap;
 
@@ -125,15 +124,10 @@ impl FeatureContext {
         hasher.update(parts.join(":").as_bytes());
         let digest = hasher.finalize();
 
-        // Create a BigInt to preserve all the 20bytes of the hash digest.
-        let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
-
-        // We only need the lower places from the big int to retain compatibility.
-        // modulo will trim off the u64 overflow, and let us break the bigint
-        // into its pieces (there will only be one).
-        let small: BigInt = bigint % 1000000000;
-        let id_parts = small.to_u64_digits().1;
-        if id_parts.is_empty() { 0 } else { id_parts[0] }
+        digest.chunks_exact(4).fold(0_u64, |remainder, word| {
+            let word = u32::from_be_bytes(word.try_into().unwrap()) as u64;
+            ((remainder << 32) | word) % 1_000_000_000
+        })
     }
 }
 
@@ -642,6 +636,28 @@ mod tests {
             id_user, id_org,
             "Different identity fields should produce different IDs"
         );
+    }
+
+    #[test]
+    fn test_feature_context_id_matches_bigint_reference() {
+        use num::ToPrimitive;
+        use num::bigint::{BigInt, Sign};
+
+        for identifier in 0..10_000 {
+            let identity_value = format!("{}:{identifier}", "x".repeat(identifier % 128));
+            let mut context = FeatureContext::new();
+            context.insert("organization_id", json!(identity_value));
+            context.identity_fields(vec!["organization_id"]);
+            let input = format!("organization_id:{identity_value}");
+            let digest = Sha1::digest(input.as_bytes());
+            let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
+            let expected: BigInt = bigint % 1_000_000_000;
+            assert_eq!(
+                context.id(),
+                expected.to_u64().unwrap(),
+                "Hash mismatch for {input}"
+            );
+        }
     }
 
     #[test]
