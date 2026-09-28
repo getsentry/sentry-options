@@ -105,24 +105,22 @@ fn eval(args: &EvalArgs) -> Result<String> {
 }
 
 /// Initializes the global options store with the given `(name, definition)`
-/// flags, from a throwaway directory that must outlive the evaluation.
+/// flags, from a throwaway values directory that must outlive the evaluation.
 fn init_options(flags: &[(String, Value)]) -> Result<TempDir> {
-    let properties: serde_json::Map<String, Value> = flags
-        .iter()
-        .map(|(name, _)| (format!("feature.{name}"), feature_property()))
-        .collect();
-    let schema = json!({"version": "1.0", "type": "object", "properties": properties});
+    let schema = json!({
+        "version": "1.0",
+        "type": "object",
+        "patternProperties": { "^feature\\.": feature_property() },
+    })
+    .to_string();
     let values: serde_json::Map<String, Value> = flags
         .iter()
         .map(|(name, definition)| (format!("feature.{name}"), definition.clone()))
         .collect();
 
     let dir = TempDir::new()?;
-    let schema_dir = dir.path().join("schemas").join(NAMESPACE);
     let values_dir = dir.path().join("values").join(NAMESPACE);
-    fs::create_dir_all(&schema_dir)?;
     fs::create_dir_all(&values_dir)?;
-    fs::write(schema_dir.join("schema.json"), schema.to_string())?;
     fs::write(
         values_dir.join("values.json"),
         json!({ "options": values }).to_string(),
@@ -130,6 +128,7 @@ fn init_options(flags: &[(String, Value)]) -> Result<TempDir> {
 
     Options::builder()
         .with_directory(dir.path())
+        .with_schemas(&[(NAMESPACE, &schema)])
         .init()
         .map_err(|e| AppError::Validation(format!("Invalid flag definition: {e}")))?;
     Ok(dir)
