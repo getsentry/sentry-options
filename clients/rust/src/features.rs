@@ -191,15 +191,20 @@ impl Feature {
     }
 
     fn matches(&self, context: &FeatureContext) -> bool {
+        self.matching_segment(context)
+            .is_some_and(|(_, segment)| segment.in_rollout(context))
+    }
+
+    /// The first segment whose conditions match, with its index. `None` when
+    /// disabled or no segment matches.
+    fn matching_segment(&self, context: &FeatureContext) -> Option<(usize, &Segment)> {
         if !self.enabled {
-            return false;
+            return None;
         }
-        for segment in &self.segments {
-            if segment.conditions_match(context) {
-                return segment.in_rollout(context);
-            }
-        }
-        false
+        self.segments
+            .iter()
+            .enumerate()
+            .find(|(_, segment)| segment.conditions_match(context))
     }
 }
 
@@ -526,6 +531,26 @@ pub fn features(namespace: &str) -> FeatureChecker {
     }
 }
 
+/// The outcome of [`evaluate_value`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Evaluation {
+    pub result: bool,
+    /// Index into the definition's `segments` of the first segment whose
+    /// conditions matched. Set even when the context falls outside its rollout.
+    pub segment: Option<usize>,
+}
+
+/// Evaluate a raw feature definition against a context, without initialized
+/// options. Returns `None` if the value is not a valid feature.
+pub fn evaluate_value(value: &Value, context: &FeatureContext) -> Option<Evaluation> {
+    let feature = Feature::from_json(value)?;
+    let matched = feature.matching_segment(context);
+    Some(Evaluation {
+        result: matched.is_some_and(|(_, segment)| segment.in_rollout(context)),
+        segment: matched.map(|(index, _)| index),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,6 +822,64 @@ mod tests {
 
         let (opts_at, _t1) = setup_feature_options(&feature_json(true, id_mod, &cond));
         assert!(check(&opts_at, "organizations:test-feature", &ctx));
+    }
+
+    #[test]
+    fn test_evaluate_value_reports_first_matching_segment() {
+        let feature = json!({
+            "enabled": true,
+            "segments": [
+                {"name": "a", "rollout": 100, "conditions": [
+                    {"property": "slug", "operator": "in", "value": ["acme"]}
+                ]},
+                {"name": "b", "rollout": 0, "conditions": [
+                    {"property": "slug", "operator": "in", "value": ["sentry"]}
+                ]},
+                {"name": "c", "rollout": 100, "conditions": []},
+            ],
+        });
+        let eval = |slug: &str| {
+            let mut ctx = FeatureContext::new();
+            ctx.insert("slug", slug);
+            evaluate_value(&feature, &ctx).unwrap()
+        };
+
+        assert_eq!(
+            eval("acme"),
+            Evaluation {
+                result: true,
+                segment: Some(0)
+            }
+        );
+        // Conditions match segment b, but its 0% rollout decides.
+        assert_eq!(
+            eval("sentry"),
+            Evaluation {
+                result: false,
+                segment: Some(1)
+            }
+        );
+        assert_eq!(
+            eval("other"),
+            Evaluation {
+                result: true,
+                segment: Some(2)
+            }
+        );
+    }
+
+    #[test]
+    fn test_evaluate_value_disabled_and_invalid() {
+        let ctx = FeatureContext::new();
+        let disabled = json!({"enabled": false, "segments": [{"rollout": 100, "conditions": []}]});
+        assert_eq!(
+            evaluate_value(&disabled, &ctx),
+            Some(Evaluation {
+                result: false,
+                segment: None
+            })
+        );
+        assert_eq!(evaluate_value(&json!({"enabled": true}), &ctx), None);
     }
 
     #[test]

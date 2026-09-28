@@ -405,6 +405,15 @@ Same as [Setting an option value locally](#setting-an-option-value-locally), dro
 
 Check it with `features("seer").has("seer-explorer", context)` (see [Reading a feature flag](#reading-a-feature-flag)).
 
+To see how a flag in a values file evaluates for a context, without running a service:
+
+```sh
+sentry-options-cli eval --values flagpole.yaml --flag organizations:my-feature \
+  --context '{"organization_id": 1, "organization_slug": "sentry"}'
+```
+
+It prints `true` or `false` and the segment that decided it. Only the context you pass is used, so include any fields the service would add (getsentry adds `subscription_*` and `sentry_cell`, for example). `--identity-fields` sets the rollout bucketing fields, `organization_id,project_id` by default.
+
 ## Adding a feature flag
 
 In `sentry-options/schemas/{namespace}/schema.json`, add a `feature.`-prefixed option that points at the built-in `Feature` definition. Unlike a regular option, it takes no `type` or `default`:
