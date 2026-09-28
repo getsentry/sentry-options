@@ -720,20 +720,27 @@ mod tests {
         use num::ToPrimitive;
         use num::bigint::{BigInt, Sign};
 
-        for organization_id in 0..10_000 {
+        let cases = [
+            (0, "organizations:a"),
+            (123, "organizations:performance-view"),
+            (456, "organizations:performance-view"),
+            (123, "organizations:dashboards-edit"),
+            // Include a long name to exercise hashing across SHA-1 blocks.
+            (
+                10_000,
+                "organizations:a-feature-name-long-enough-to-span-multiple-sha1-blocks",
+            ),
+        ];
+        for (organization_id, feature_name) in cases {
             let mut context = FeatureContext::new();
             context.insert("organization_id", json!(organization_id));
             context.identity_fields(vec!["organization_id"]);
-            let feature_name = format!(
-                "organizations:{}-{organization_id}",
-                "x".repeat(organization_id % 128)
-            );
             let input = format!("{feature_name}:organization_id:{organization_id}");
             let digest = Sha1::digest(input.as_bytes());
             let bigint = BigInt::from_bytes_be(Sign::Plus, digest.as_slice());
             let expected: BigInt = bigint % 1_000_000_000;
             assert_eq!(
-                context.bucket_id(Some(&feature_name)),
+                context.bucket_id(Some(feature_name)),
                 expected.to_u64().unwrap(),
                 "Hash mismatch for {input}"
             );
