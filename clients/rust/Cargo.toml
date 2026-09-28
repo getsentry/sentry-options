@@ -17,6 +17,7 @@ arc-swap.workspace = true
 chrono.workspace = true
 num = "0.4.3"
 tracing.workspace = true
+strum.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

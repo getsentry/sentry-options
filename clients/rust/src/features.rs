@@ -204,7 +204,8 @@ impl Default for FeatureContext {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, strum::EnumString, strum::VariantNames)]
+#[strum(serialize_all = "snake_case")]
 enum OperatorKind {
     In,
     NotIn,
@@ -214,6 +215,11 @@ enum OperatorKind {
     NotEquals,
     Matches,
     NotMatches,
+}
+
+/// The condition operators the evaluator understands.
+pub fn condition_operators() -> &'static [&'static str] {
+    <OperatorKind as strum::VariantNames>::VARIANTS
 }
 
 #[derive(Debug)]
@@ -306,17 +312,7 @@ impl Segment {
 impl Condition {
     fn from_json(value: &Value) -> Option<Self> {
         let property = value.get("property")?.as_str()?.to_string();
-        let operator = match value.get("operator")?.as_str()? {
-            "in" => OperatorKind::In,
-            "not_in" => OperatorKind::NotIn,
-            "contains" => OperatorKind::Contains,
-            "not_contains" => OperatorKind::NotContains,
-            "equals" => OperatorKind::Equals,
-            "not_equals" => OperatorKind::NotEquals,
-            "matches" => OperatorKind::Matches,
-            "not_matches" => OperatorKind::NotMatches,
-            _ => return None,
-        };
+        let operator = value.get("operator")?.as_str()?.parse().ok()?;
         let value = value.get("value")?.clone();
         Some(Condition {
             property,

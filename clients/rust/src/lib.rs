@@ -3,7 +3,7 @@
 pub mod features;
 pub mod schema_fetch;
 
-pub use features::{FeatureChecker, FeatureContext, FeatureError, features};
+pub use features::{FeatureChecker, FeatureContext, FeatureError, condition_operators, features};
 pub use schema_fetch::{
     RepoSchemaConfig, RepoSchemaConfigs, SchemaFetchError, SchemaFetchResult, fetch_schemas,
     fetch_schemas_from_file,

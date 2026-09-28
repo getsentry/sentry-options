@@ -35,3 +35,4 @@ sha1 = "0.10"
 arc-swap = "1.9.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 tracing = "0.1.44"
+strum = { version = "0.28.0", features = ["derive"] }

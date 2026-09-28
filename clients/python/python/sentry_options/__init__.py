@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
+from sentry_options._core import condition_operators
 from sentry_options._core import feature_property
 from sentry_options._core import FeatureChecker
 from sentry_options._core import FeatureContext
@@ -31,6 +32,7 @@ OptionValue: TypeAlias = JsonPrimitive | list['OptionValue'] | dict[str, 'Option
 
 __all__ = [
     'init',
+    'condition_operators',
     'feature_property',
     'features',
     'fetch_schemas',
