@@ -3,7 +3,7 @@
 //! Provides [`FeatureContext`] and [`FeatureChecker`] for evaluating feature
 //! flags stored in the options system.
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use num::bigint::{BigInt, Sign};
 use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
@@ -11,31 +11,29 @@ use std::collections::HashMap;
 use serde_json::Value;
 use sha1::{Digest, Sha1};
 
-/// Features created after this instant (UTC) bucket their percentage rollouts
+/// Features created after this date bucket their percentage rollouts
 /// by feature name as well as by context identity, so two features at the
 /// same rollout reach different populations instead of the same low buckets.
-/// Features created at or before it, or whose `created_at` does not parse,
+/// Features created on or before it, or whose `created_at` does not parse,
 /// keep bucketing on the identity alone: changing that would move their
 /// in-flight partial rollouts between organizations.
-const FEATURE_BUCKETING_EPOCH: NaiveDateTime = NaiveDate::from_ymd_opt(2026, 10, 5)
-    .unwrap()
-    .and_time(NaiveTime::MIN);
+const FEATURE_BUCKETING_EPOCH: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
 
-/// Parse a feature's `created_at` as UTC.
+/// Parse a feature's creation date.
 ///
-/// Accepts a date, a naive datetime with an optional fraction, or a datetime
-/// with a UTC offset; naive values are taken as UTC. Values that do not parse
-/// return `None`.
-fn parse_created_at(raw: &str) -> Option<NaiveDateTime> {
+/// Accepts dates and datetimes. Timestamps with an offset are converted to
+/// UTC before taking the date; values without an offset use their date as
+/// written. Invalid values return `None`.
+fn parse_created_at(raw: &str) -> Option<NaiveDate> {
     if let Ok(date) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
-        return Some(date.and_time(NaiveTime::MIN));
+        return Some(date);
     }
     if let Ok(datetime) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f") {
-        return Some(datetime);
+        return Some(datetime.date());
     }
     DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f%z")
         .ok()
-        .map(|datetime| datetime.naive_utc())
+        .map(|datetime| datetime.naive_utc().date())
 }
 
 /// Whether a feature with this `created_at` buckets rollouts by feature name.
@@ -942,13 +940,17 @@ mod tests {
     fn test_created_after_epoch() {
         let cases = [
             ("2026-10-05", false),
-            ("2026-10-05T00:00:01", true),
+            ("2026-10-05T00:00:00", false),
+            ("2026-10-05T00:00:01", false),
+            ("2026-10-05T00:00:00.000001", false),
+            ("2026-10-05T23:59:59.999999999", false),
             ("2026-10-06", true),
-            ("2026-10-05T00:00:00.000001", true),
-            ("2026-10-05T00:00:00.000000001", true),
-            ("2026-10-04T23:00:00-02:00", true),
-            ("2026-10-05T01:00:00+02:00", false),
-            ("2026-10-05T01:00:00+0200", false),
+            ("2026-10-06T00:00:00", true),
+            ("2026-10-04T23:00:00-02:00", false),
+            ("2026-10-05T23:00:00-02:00", true),
+            ("2026-10-05T23:00:00-0200", true),
+            ("2026-10-06T01:00:00+02:00", false),
+            ("2026-10-06T01:00:00+0200", false),
             ("2024-01-01", false),
             ("None", false),
             ("not a date", false),
