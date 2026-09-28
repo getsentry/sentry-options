@@ -231,13 +231,14 @@ struct Segment {
 
 #[derive(Debug)]
 struct Feature {
+    name: String,
     enabled: bool,
     segments: Vec<Segment>,
     buckets_by_feature: bool,
 }
 
 impl Feature {
-    fn from_json(value: &Value) -> Option<Self> {
+    fn from_json(name: &str, value: &Value) -> Option<Self> {
         // Default to true to align with flagpole behavior.
         let enabled = value
             .get("enabled")
@@ -250,6 +251,7 @@ impl Feature {
             .filter_map(Segment::from_json)
             .collect();
         Some(Feature {
+            name: name.to_owned(),
             enabled,
             segments,
             buckets_by_feature: created_after_epoch(
@@ -258,11 +260,11 @@ impl Feature {
         })
     }
 
-    fn matches(&self, feature_name: &str, context: &FeatureContext) -> bool {
+    fn matches(&self, context: &FeatureContext) -> bool {
         if !self.enabled {
             return false;
         }
-        let feature_name = self.buckets_by_feature.then_some(feature_name);
+        let feature_name = self.buckets_by_feature.then_some(self.name.as_str());
         for segment in &self.segments {
             if segment.conditions_match(context) {
                 return segment.in_rollout(context, feature_name);
@@ -571,10 +573,10 @@ impl FeatureChecker {
             Err(e) => return Err(e.into()),
         };
 
-        let feature = Feature::from_json(&feature_val)
+        let feature = Feature::from_json(feature_name, &feature_val)
             .ok_or_else(|| FeatureError::InvalidValue { key: key.clone() })?;
 
-        let result = feature.matches(feature_name, context);
+        let result = feature.matches(context);
         tracing::debug!(
             feature = feature_name,
             result,
@@ -668,7 +670,7 @@ mod tests {
         let Ok(val) = opts.get("test", &key) else {
             return false;
         };
-        Feature::from_json(&val).is_some_and(|parsed_feature| parsed_feature.matches(feature, ctx))
+        Feature::from_json(feature, &val).is_some_and(|parsed_feature| parsed_feature.matches(ctx))
     }
 
     #[test]
@@ -979,9 +981,9 @@ mod tests {
                 "created_at": "2024-01-01",
                 "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
             });
-            Feature::from_json(&value)
+            Feature::from_json("organizations:performance-view", &value)
                 .unwrap()
-                .matches("organizations:performance-view", &ctx)
+                .matches(&ctx)
         };
         assert!(feature(56));
         assert!(!feature(55));
@@ -1008,7 +1010,7 @@ mod tests {
                 "created_at": "2026-12-01",
                 "segments": [{"name": "all", "rollout": rollout, "conditions": []}]
             });
-            Feature::from_json(&value).unwrap().matches(name, &ctx)
+            Feature::from_json(name, &value).unwrap().matches(&ctx)
         };
         assert!(feature("organizations:performance-view", 64));
         assert!(!feature("organizations:performance-view", 63));
@@ -1035,13 +1037,9 @@ mod tests {
                     {"name": "second", "rollout": 100, "conditions": []}
                 ]
             });
-            let feature = Feature::from_json(&value).unwrap();
+            let feature = Feature::from_json("organizations:performance-view", &value).unwrap();
 
-            assert_eq!(
-                feature.matches("organizations:performance-view", &context),
-                expected,
-                "rollout {rollout}"
-            );
+            assert_eq!(feature.matches(&context), expected, "rollout {rollout}");
         }
     }
 
