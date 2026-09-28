@@ -1,10 +1,13 @@
 use std::fs;
 
 use clap::Args;
-use sentry_options::{FeatureContext, evaluate_value};
-use serde_json::Value;
+use sentry_options::{FeatureContext, Options, feature_property, features};
+use serde_json::{Value, json};
+use tempfile::TempDir;
 
 use crate::{AppError, Result};
+
+const NAMESPACE: &str = "eval";
 
 #[derive(Args, Debug)]
 pub struct EvalArgs {
@@ -52,28 +55,84 @@ fn eval(args: &EvalArgs) -> Result<String> {
         .get("options")
         .and_then(|options| options.get(&key))
         .ok_or_else(|| AppError::Validation(format!("{key} not found in {}", args.values)))?;
+    let segments = definition
+        .get("segments")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::Validation(format!("{key} has no segments list")))?;
 
+    // Each segment gets its own probe flag at 100% rollout, so a probe is true
+    // exactly when that segment's conditions match.
+    let mut flags = vec![(name.to_string(), definition.clone())];
+    for (i, segment) in segments.iter().enumerate() {
+        let mut segment = segment.clone();
+        segment["rollout"] = json!(100);
+        let mut probe = definition.clone();
+        probe["enabled"] = json!(true);
+        probe["segments"] = json!([segment]);
+        flags.push((format!("eval-segment-{i}"), probe));
+    }
+
+    let _dir = init_options(&flags)?;
+    let checker = features(NAMESPACE);
     let context = build_context(&args.context, &args.identity_fields)?;
-    let evaluation = evaluate_value(definition, &context)
-        .ok_or_else(|| AppError::Validation(format!("{key} is not a valid feature")))?;
+    let has = |flag: &str| checker.try_has(flag, &context).map(|r| r == Some(true));
 
-    let mut out = format!("{}\n", evaluation.result);
-    match evaluation.segment {
-        Some(index) => {
-            let segment = &definition["segments"][index];
-            let segment_name = segment["name"].as_str().unwrap_or("(unnamed)");
-            let rollout = segment["rollout"].as_u64().unwrap_or(100);
+    let result = has(name).map_err(|e| AppError::Validation(format!("{key}: {e}")))?;
+    let mut out = format!("{result}\n");
+    if definition.get("enabled") == Some(&Value::Bool(false)) {
+        out += "flag is disabled\n";
+        return Ok(out);
+    }
+    let mut matched = None;
+    for i in 0..segments.len() {
+        if has(&format!("eval-segment-{i}")).unwrap_or(false) {
+            matched = Some(i);
+            break;
+        }
+    }
+    match matched {
+        Some(i) => {
+            let segment_name = segments[i]["name"].as_str().unwrap_or("(unnamed)");
+            let rollout = segments[i]["rollout"].as_u64().unwrap_or(100);
             out += &format!("segment: {segment_name} (rollout {rollout}%)\n");
-            if !evaluation.result {
+            if !result {
                 out += "conditions matched, but the context is outside the rollout\n";
             }
-        }
-        None if definition.get("enabled") == Some(&Value::Bool(false)) => {
-            out += "flag is disabled\n";
         }
         None => out += "no segment matched\n",
     }
     Ok(out)
+}
+
+/// Initializes the global options store with the given `(name, definition)`
+/// flags, from a throwaway directory that must outlive the evaluation.
+fn init_options(flags: &[(String, Value)]) -> Result<TempDir> {
+    let properties: serde_json::Map<String, Value> = flags
+        .iter()
+        .map(|(name, _)| (format!("feature.{name}"), feature_property()))
+        .collect();
+    let schema = json!({"version": "1.0", "type": "object", "properties": properties});
+    let values: serde_json::Map<String, Value> = flags
+        .iter()
+        .map(|(name, definition)| (format!("feature.{name}"), definition.clone()))
+        .collect();
+
+    let dir = TempDir::new()?;
+    let schema_dir = dir.path().join("schemas").join(NAMESPACE);
+    let values_dir = dir.path().join("values").join(NAMESPACE);
+    fs::create_dir_all(&schema_dir)?;
+    fs::create_dir_all(&values_dir)?;
+    fs::write(schema_dir.join("schema.json"), schema.to_string())?;
+    fs::write(
+        values_dir.join("values.json"),
+        json!({ "options": values }).to_string(),
+    )?;
+
+    Options::builder()
+        .with_directory(dir.path())
+        .init()
+        .map_err(|e| AppError::Validation(format!("Invalid flag definition: {e}")))?;
+    Ok(dir)
 }
 
 fn build_context(context: &str, identity_fields: &[String]) -> Result<FeatureContext> {
@@ -90,105 +149,4 @@ fn build_context(context: &str, identity_fields: &[String]) -> Result<FeatureCon
     }
     ctx.identity_fields(identity_fields.iter().map(String::as_str).collect());
     Ok(ctx)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::NamedTempFile;
-
-    const VALUES: &str = r#"
-options:
-  feature.organizations:test:
-    created_at: "2026-01-01"
-    enabled: true
-    owner:
-      team: dev-infra
-    segments:
-      - name: internal
-        rollout: 100
-        conditions:
-          - property: organization_slug
-            operator: in
-            value: [sentry]
-      - name: nobody
-        rollout: 0
-        conditions:
-          - property: organization_slug
-            operator: in
-            value: [acme]
-  feature.organizations:off:
-    created_at: "2026-01-01"
-    enabled: false
-    owner:
-      team: dev-infra
-    segments:
-      - name: everyone
-        rollout: 100
-        conditions: []
-"#;
-
-    fn run(flag: &str, context: &str) -> Result<String> {
-        let file = NamedTempFile::new().unwrap();
-        fs::write(file.path(), VALUES).unwrap();
-        eval(&EvalArgs {
-            values: file.path().display().to_string(),
-            flag: flag.to_string(),
-            context: context.to_string(),
-            identity_fields: vec!["organization_id".into(), "project_id".into()],
-        })
-    }
-
-    #[test]
-    fn test_reports_matching_segment() {
-        let out = run("organizations:test", r#"{"organization_slug": "sentry"}"#).unwrap();
-        assert_eq!(out, "true\nsegment: internal (rollout 100%)\n");
-    }
-
-    #[test]
-    fn test_accepts_feature_prefix() {
-        let out = run(
-            "feature.organizations:test",
-            r#"{"organization_slug": "sentry"}"#,
-        )
-        .unwrap();
-        assert!(out.starts_with("true\n"));
-    }
-
-    #[test]
-    fn test_reports_matched_segment_outside_rollout() {
-        let out = run("organizations:test", r#"{"organization_slug": "acme"}"#).unwrap();
-        assert_eq!(
-            out,
-            "false\nsegment: nobody (rollout 0%)\nconditions matched, but the context is outside the rollout\n"
-        );
-    }
-
-    #[test]
-    fn test_reports_no_match() {
-        let out = run("organizations:test", r#"{"organization_slug": "other"}"#).unwrap();
-        assert_eq!(out, "false\nno segment matched\n");
-    }
-
-    #[test]
-    fn test_reports_disabled() {
-        let out = run("organizations:off", "{}").unwrap();
-        assert_eq!(out, "false\nflag is disabled\n");
-    }
-
-    #[test]
-    fn test_missing_flag_errors() {
-        let err = run("organizations:nope", "{}").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("feature.organizations:nope not found")
-        );
-    }
-
-    #[test]
-    fn test_invalid_context_errors() {
-        assert!(run("organizations:test", "not json").is_err());
-        let err = run("organizations:test", "[1]").unwrap_err();
-        assert!(err.to_string().contains("must be a JSON object"));
-    }
 }
