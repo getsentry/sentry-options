@@ -17,8 +17,6 @@ use sha1::{Digest, Sha1};
 /// Features created at or before it, or whose `created_at` does not parse,
 /// keep bucketing on the identity alone: changing that would move their
 /// in-flight partial rollouts between organizations.
-///
-/// Must not predate the deploy of this rule.
 const FEATURE_BUCKETING_EPOCH: NaiveDateTime = NaiveDate::from_ymd_opt(2026, 10, 5)
     .unwrap()
     .and_time(NaiveTime::MIN);
