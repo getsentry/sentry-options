@@ -1,4 +1,11 @@
 # Changelog
+## 1.2.13
+
+### New Features ✨
+
+- (cli) Add eval command for checking a feature flag against a context by @kenzoengineer in [#192](https://github.com/getsentry/sentry-options/pull/192)
+- (features) Expose the condition operators the evaluator understands by @kenzoengineer in [#191](https://github.com/getsentry/sentry-options/pull/191)
+
 ## 1.2.12
 
 ### New Features ✨
