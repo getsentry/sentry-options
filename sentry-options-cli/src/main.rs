@@ -1,3 +1,4 @@
+mod eval;
 mod loader;
 mod option_usage;
 mod output;
@@ -153,6 +154,8 @@ enum Commands {
     },
     /// Validate and convert YAML values to JSON or ConfigMap
     Write(WriteArgs),
+    /// Evaluate a feature flag from a values file against a context
+    Eval(eval::EvalArgs),
     /// Fetch schemas from multiple repos via git sparse checkout
     #[command(name = "fetch-schemas")]
     FetchSchemas {
@@ -368,6 +371,7 @@ fn main() {
         Commands::ValidateSchema { schemas } => cli_validate_schema(schemas, cli.quiet),
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write(args) => cli_write(args, cli.quiet),
+        Commands::Eval(args) => eval::cli_eval(args),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
         Commands::ValidateSchemaChanges {
             base_sha,
