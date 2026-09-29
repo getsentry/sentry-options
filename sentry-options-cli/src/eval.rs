@@ -65,7 +65,10 @@ fn eval(args: &EvalArgs) -> Result<String> {
     let mut flags = vec![(name.to_string(), definition.clone())];
     for (i, segment) in segments.iter().enumerate() {
         let mut segment = segment.clone();
-        segment["rollout"] = json!(100);
+        // Non-object segments are left for the schema check to reject.
+        if let Some(fields) = segment.as_object_mut() {
+            fields.insert("rollout".to_string(), json!(100));
+        }
         let mut probe = definition.clone();
         probe["enabled"] = json!(true);
         probe["segments"] = json!([segment]);
