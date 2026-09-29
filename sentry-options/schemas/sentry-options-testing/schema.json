@@ -75,6 +75,15 @@
     },
     "feature.organizations:rollout-mid": {
         "$ref": "#/definitions/Feature"
+    },
+    "feature.organizations:rollout-before-epoch": {
+        "$ref": "#/definitions/Feature"
+    },
+    "feature.organizations:rollout-after-epoch-a": {
+        "$ref": "#/definitions/Feature"
+    },
+    "feature.organizations:rollout-after-epoch-b": {
+        "$ref": "#/definitions/Feature"
     }
   }
 }

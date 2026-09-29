@@ -40,6 +40,20 @@ fn bench_has(c: &mut Criterion) {
         b.iter(|| black_box(checker.has("organizations:rollout-mid", &ctx)));
     });
 
+    group.bench_function("rollout_50pct_before_epoch", |b| {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("organization_id", json!(123));
+        ctx.identity_fields(vec!["organization_id"]);
+        b.iter(|| black_box(checker.has("organizations:rollout-before-epoch", &ctx)));
+    });
+
+    group.bench_function("rollout_50pct_after_epoch", |b| {
+        let mut ctx = FeatureContext::new();
+        ctx.insert("organization_id", json!(123));
+        ctx.identity_fields(vec!["organization_id"]);
+        b.iter(|| black_box(checker.has("organizations:rollout-after-epoch-a", &ctx)));
+    });
+
     group.bench_function("no_match", |b| {
         let mut ctx = FeatureContext::new();
         ctx.insert("organization_id", json!(999));
