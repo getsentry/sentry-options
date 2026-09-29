@@ -921,8 +921,10 @@ mod tests {
     }
 
     #[test]
-    fn test_bucket_id_align_with_python() {
-        // Pinned against the reference tests in getsentry/sentry#125364.
+    fn test_bucket_id_pinned_values() {
+        // Pinned bucket values, reproducible with:
+        //   int(hashlib.sha1(b"<feature>:organization_id:123").hexdigest(), 16) % 100
+        // organization_slug is excluded because identity_fields limits the hash to organization_id.
         let mut ctx = FeatureContext::new();
         ctx.insert("organization_id", json!(123));
         ctx.insert("organization_slug", json!("sentry"));
