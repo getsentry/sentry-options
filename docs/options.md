@@ -12,6 +12,7 @@ The first half of this document covers runtime options. The second half covers f
   - [Setting an option value locally](#setting-an-option-value-locally)
   - [Adding an option](#adding-an-option)
   - [Setting an option value](#setting-an-option-value)
+  - [Deleting an option](#deleting-an-option)
   - [Reading a feature flag](#reading-a-feature-flag)
     - [Definitions](#definitions)
     - [Python](#python-2)
@@ -22,6 +23,7 @@ The first half of this document covers runtime options. The second half covers f
   - [Setting a feature flag value locally](#setting-a-feature-flag-value-locally)
   - [Adding a feature flag](#adding-a-feature-flag)
   - [Setting a feature flag value](#setting-a-feature-flag-value)
+  - [Deleting a feature flag](#deleting-a-feature-flag)
 
 ## Reading an option
 
@@ -284,6 +286,18 @@ Values will be taken from `option-values/seer/default` and deployed in 2 regions
 
 We recommend creating empty (`options: {}`) `{target}/values.yaml` files in all the regions you want options deployed to, then just editing the values in the `default` target. Only edit the region specific ones if you want per-region overrides.
 
+## Deleting an option
+
+Deleting an option requires removing 3 components:
+
+1. The usage in code (the `option.get(...)` callsite)
+2. The definition (in `sentry-options/schemas/{namespace}/schema.json`)
+3. The value (in `sentry-options-automator`)
+
+The above ordering is recommended to prevent any regressions in behaviour. **1.** and **2.** can be done simultaneously in the same PR. Once the definition is removed the value will be stale and can be removed at any time. At the time of writing, our slack agent @jr will clean these up daily.
+
+If you remove the value (**3.**) first, the code will revert to using the default. If you remove the definition (**2.**) first, the usage will throw an error, either in CI or production (!!).
+
 ## Reading a feature flag
 
 The value of a feature flag, unlike options, is evaluated based on some sort of context. For example, a feature flag is set to `true` when certain conditions regarding rollout, org, or project are `true`. After passing in and populating a `FeatureContext`, you can call `has()` and branch off of it. This is useful for targeting a subset of orgs, or rolling out to a random subset of orgs.
@@ -452,3 +466,15 @@ options:
             operator: "in"
             value: [123, 456]
 ```
+
+## Deleting a feature flag
+
+Similar to options, deleting a feature flag requires removing 3 components:
+
+1. The usage in code (the `features.has(...)` callsite)
+2. The definition (`manager.add` in sentry's `temporary.py` or `permanent.py`, or getsentry's `features.py`)
+3. The value (in `sentry-options-automator`)
+
+The above ordering is recommended to prevent any regressions in behavior. **1.** and **2.** can be done simultaneously in the same PR. Once the definition is removed the value is no longer read, but nothing flags a leftover `flagpole.yaml` block, so please remove the value yourself.
+
+If you remove the value (**3.**) first, `features.has()` falls back to the `default=` in `manager.add`, usually `False`, so the flag turns off for everyone. If you remove the definition (**2.**) while checks remain, `features.has()` returns `False` and reports the error to Sentry.
