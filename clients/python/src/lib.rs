@@ -377,7 +377,7 @@ fn feature_property(py: Python<'_>) -> PyResult<Py<PyAny>> {
 /// Condition operators the feature evaluator understands.
 #[pyfunction]
 fn condition_operators() -> Vec<&'static str> {
-    sentry_options::condition_operators().to_vec()
+    sentry_options::condition_operators()
 }
 
 /// Get a namespace handle for accessing options.
