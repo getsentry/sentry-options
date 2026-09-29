@@ -374,6 +374,12 @@ fn feature_property(py: Python<'_>) -> PyResult<Py<PyAny>> {
     json_to_py(py, &sentry_options::feature_property())
 }
 
+/// Condition operators the feature evaluator understands.
+#[pyfunction]
+fn condition_operators() -> Vec<&'static str> {
+    sentry_options::condition_operators()
+}
+
 /// Get a namespace handle for accessing options.
 ///
 /// Raises RuntimeError if init() has not been called.
@@ -488,6 +494,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(refresh, m)?)?;
     m.add_function(wrap_pyfunction!(fetch_schemas, m)?)?;
     m.add_function(wrap_pyfunction!(feature_property, m)?)?;
+    m.add_function(wrap_pyfunction!(condition_operators, m)?)?;
     // Classes
     m.add_class::<NamespaceOptions>()?;
     m.add_class::<PySchemaRegistry>()?;

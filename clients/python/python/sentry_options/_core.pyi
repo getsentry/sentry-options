@@ -30,6 +30,9 @@ additional_schemas : dict[str, str] | None
     already on disk. Values still load from disk.
 """
 
+def condition_operators() -> list[str]: ...
+"""Condition operators the feature evaluator understands."""
+
 def feature_property() -> dict[str, str]: ...
 """
 Return the value a namespace schema pairs with each ``feature.<name>`` key,
