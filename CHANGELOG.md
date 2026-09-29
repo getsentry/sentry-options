@@ -1,4 +1,23 @@
 # Changelog
+## 1.2.12
+
+### New Features ✨
+
+- (flags) Bucket rollouts by feature name for new flags by @jaydgoss in [#184](https://github.com/getsentry/sentry-options/pull/184)
+
+### Bug Fixes 🐛
+
+- Add version to sentry-options cli dependency by @joshuarli in [4a723e9b](https://github.com/getsentry/sentry-options/commit/4a723e9baf85b20ab6547c0ff48b4d71ee2ca155)
+
+### Internal Changes 🔧
+
+- (deps) Bump pyo3 from 0.27.2 to 0.29.2 by @joshuarli in [#179](https://github.com/getsentry/sentry-options/pull/179)
+
+### Other
+
+- Measure best-effort Pod annotation refresh in Minikube by @joshuarli in [#186](https://github.com/getsentry/sentry-options/pull/186)
+- Measure ConfigMap propagation latency with Minikube by @joshuarli in [#185](https://github.com/getsentry/sentry-options/pull/185)
+
 ## 1.2.11
 
 ### New Features ✨
