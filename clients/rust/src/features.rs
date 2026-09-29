@@ -580,7 +580,7 @@ impl FeatureChecker {
         tracing::debug!(
             feature = feature_name,
             result,
-            context_id = context.id(),
+            bucket_id = context.bucket_id(feature.buckets_by_feature.then_some(feature_name)),
             "Feature match result"
         );
         Ok(Some(result))
