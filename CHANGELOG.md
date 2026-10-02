@@ -1,4 +1,14 @@
 # Changelog
+## 1.2.14
+
+### New Features ✨
+
+- (cli) Diff command for options values [DI-1638] by @kenzoengineer in [#194](https://github.com/getsentry/sentry-options/pull/194)
+
+### Internal Changes 🔧
+
+- (docs) Add missing deletion documentation by @kenzoengineer in [#193](https://github.com/getsentry/sentry-options/pull/193)
+
 ## 1.2.13
 
 ### New Features ✨
