@@ -36,7 +36,7 @@ pub struct DiffArgs {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Source {
-    /// The entry's own target pins the value in its files.
+    /// The entry's own target sets the value in its files.
     Target,
     /// Inherited from the namespace's default target.
     Default,
@@ -68,6 +68,7 @@ pub struct DiffEntry {
 /// target -> the merged keys of that target directory alone (not layered with default)
 type TargetMaps = HashMap<String, OptionsMap>;
 
+/// same structure, but merges all files per target together
 fn target_maps(map: &NamespaceMap) -> HashMap<String, TargetMaps> {
     map.iter()
         .map(|(namespace, targets)| {
@@ -89,14 +90,10 @@ fn resolve(
     target: &str,
     key: &str,
 ) -> ResolvedValue {
-    // Values only reach a target through its generated ConfigMap, and one is
-    // only generated for target directories that exist -- so without the
-    // target dir, neither its own pins nor default-target values apply and
-    // resolution falls through to the schema default (matching the client,
-    // which serves schema defaults when a namespace has no values file).
-    if let Some(pinned) = namespace.and_then(|namespace| namespace.get(target)) {
+    // skip this block if there is no namespace or target set
+    if let Some(overrides) = namespace.and_then(|namespace| namespace.get(target)) {
         // has value?
-        if let Some(value) = pinned.get(key) {
+        if let Some(value) = overrides.get(key) {
             return ResolvedValue {
                 value: Some(value.clone()),
                 source: Source::Target,
@@ -120,6 +117,7 @@ fn resolve(
             source: Source::SchemaDefault,
         };
     }
+    // as far as we know, option doesn't exist
     ResolvedValue {
         value: None,
         source: Source::Unset,
@@ -140,6 +138,7 @@ pub fn diff(
     let head = target_maps(head);
 
     let mut entries = Vec::new();
+    // unique set of namespaces between base and head
     let namespaces: BTreeSet<&String> = base
         .keys()
         .chain(head.keys())
@@ -147,7 +146,6 @@ pub fn diff(
         .collect();
 
     for namespace in namespaces {
-        // load_and_validate rejects namespaces without a schema
         let schema = registry
             .get(namespace)
             .expect("loaded namespace has a schema");
@@ -279,54 +277,70 @@ mod tests {
     }
 
     #[test]
-    fn default_change_is_shadowed_by_target_pins() {
+    fn removed_target_override_falls_back_to_default() {
         let registry = registry(&["seer"]);
         let head = &[
-            ("seer/default/values.yaml", "options:\n  rollout: 0.7\n"),
-            ("seer/us/values.yaml", "options:\n  rollout: 1.0\n"),
-            ("seer/de/values.yaml", "options: {}\n"),
-        ];
-        let entries = run_diff(&registry, BASE, head);
-        assert_eq!(entries.len(), 1);
-        let change = entry(&entries, "de", "rollout").unwrap();
-        assert_eq!(change.before, resolved(Some(0.5.into()), Source::Default));
-        assert_eq!(change.after, resolved(Some(0.7.into()), Source::Default));
-    }
-
-    #[test]
-    fn removed_pin_falls_through_to_default_then_schema() {
-        let registry = registry(&["seer"]);
-        let head = &[
-            ("seer/default/values.yaml", "options: {}\n"),
+            ("seer/default/values.yaml", "options:\n  rollout: 0.5\n"),
             ("seer/us/values.yaml", "options: {}\n"),
             ("seer/de/values.yaml", "options: {}\n"),
         ];
         let entries = run_diff(&registry, BASE, head);
-        let us = entry(&entries, "us", "rollout").unwrap();
-        assert_eq!(us.before, resolved(Some(1.0.into()), Source::Target));
-        assert_eq!(us.after, resolved(Some(0.0.into()), Source::SchemaDefault));
-        let de = entry(&entries, "de", "rollout").unwrap();
-        assert_eq!(de.before, resolved(Some(0.5.into()), Source::Default));
-        assert_eq!(de.after, resolved(Some(0.0.into()), Source::SchemaDefault));
+        assert_eq!(entries.len(), 1);
+        let change = entry(&entries, "us", "rollout").unwrap();
+        assert_eq!(change.before, resolved(Some(1.0.into()), Source::Target));
+        assert_eq!(change.after, resolved(Some(0.5.into()), Source::Default));
     }
 
     #[test]
-    fn source_only_change_is_reported() {
+    fn removed_default_falls_back_to_schema_default() {
         let registry = registry(&["seer"]);
         let head = &[
-            ("seer/default/values.yaml", "options:\n  rollout: 0.5\n"),
+            ("seer/default/values.yaml", "options: {}\n"),
             ("seer/us/values.yaml", "options:\n  rollout: 1.0\n"),
-            ("seer/de/values.yaml", "options:\n  rollout: 0.5\n"),
+            ("seer/de/values.yaml", "options: {}\n"),
         ];
         let entries = run_diff(&registry, BASE, head);
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "de", "rollout").unwrap();
         assert_eq!(change.before, resolved(Some(0.5.into()), Source::Default));
-        assert_eq!(change.after, resolved(Some(0.5.into()), Source::Target));
+        assert_eq!(
+            change.after,
+            resolved(Some(0.0.into()), Source::SchemaDefault)
+        );
+        // us keeps its own override, so the default removal must not touch it
+        assert!(entry(&entries, "us", "rollout").is_none());
     }
 
     #[test]
-    fn new_target_directory_starts_deploying() {
+    fn no_value_and_no_schema_default_is_unset() {
+        // feature-flag keys have no schema default; the loader accepts them,
+        // so hand the maps to diff() directly
+        let registry = registry(&["seer"]);
+        let file = |data: &[(&str, serde_json::Value)]| {
+            vec![crate::FileData {
+                path: "seer/us/values.yaml".to_string(),
+                data: data
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+            }]
+        };
+        let targets = |us: Vec<crate::FileData>| {
+            HashMap::from([(
+                "seer".to_string(),
+                HashMap::from([("default".to_string(), file(&[])), ("us".to_string(), us)]),
+            )])
+        };
+        let base = targets(file(&[("feature.x", true.into())]));
+        let head = targets(file(&[]));
+        let entries = diff(&base, &head, &registry, &[]).unwrap();
+        let change = entry(&entries, "us", "feature.x").unwrap();
+        assert_eq!(change.before, resolved(Some(true.into()), Source::Target));
+        assert_eq!(change.after, resolved(None, Source::Unset));
+    }
+
+    #[test]
+    fn missing_target_dir_resolves_to_schema_default_only() {
         let registry = registry(&["seer"]);
         let head = &[
             ("seer/default/values.yaml", "options:\n  rollout: 0.5\n"),
