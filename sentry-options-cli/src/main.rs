@@ -1,3 +1,4 @@
+mod diff;
 mod eval;
 mod loader;
 mod option_usage;
@@ -156,6 +157,8 @@ enum Commands {
     Write(WriteArgs),
     /// Evaluate a feature flag from a values file against a context
     Eval(eval::EvalArgs),
+    /// Diff effective option values between two checkouts of a values root
+    Diff(diff::DiffArgs),
     /// Fetch schemas from multiple repos via git sparse checkout
     #[command(name = "fetch-schemas")]
     FetchSchemas {
@@ -372,6 +375,7 @@ fn main() {
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write(args) => cli_write(args, cli.quiet),
         Commands::Eval(args) => eval::cli_eval(args),
+        Commands::Diff(args) => diff::cli_diff(args),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
         Commands::ValidateSchemaChanges {
             base_sha,

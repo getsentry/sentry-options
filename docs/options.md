@@ -286,6 +286,32 @@ Values will be taken from `option-values/seer/default` and deployed in 2 regions
 
 We recommend creating empty (`options: {}`) `{target}/values.yaml` files in all the regions you want options deployed to, then just editing the values in the `default` target. Only edit the region specific ones if you want per-region overrides.
 
+## Diffing effective values
+
+To see what a change to a values root actually does per target — resolved through target overrides, the `default` target, and schema defaults — rather than reading the raw file diff:
+
+```sh
+sentry-options-cli diff --schemas /path/to/schemas \
+  --base option-values-before --head option-values-after \
+  --exclude-namespace getsentry-features
+```
+
+It prints JSON with one entry per `(namespace, target, key)` whose effective value or source layer changed:
+
+```json
+{
+  "changes": [
+    {
+      "namespace": "seer", "target": "us", "key": "rollout",
+      "before": {"value": 1.0, "source": "us"},
+      "after": {"value": 0.0, "source": "schema-default"}
+    }
+  ]
+}
+```
+
+`source` is the target name, `default`, `schema-default`, `not-deployed` (the target directory doesn't exist on that side) or `unset`. The `default` target is the base layer, not a deployment, so a change to it shows up through each target it affects. Entries whose value is unchanged but whose source moved (e.g. a target pin that equals the inherited value) are included so no-op writes are visible; `--exclude-namespace` is repeatable. sentry-options-automator uses this to comment effective changes on its PRs.
+
 ## Deleting an option
 
 Deleting an option requires removing 3 components:

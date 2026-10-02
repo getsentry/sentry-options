@@ -47,7 +47,7 @@ struct MergedOptions {
     options: BTreeMap<String, serde_json::Value>,
 }
 
-fn merge_keys(filedata: &[FileData]) -> OptionsMap {
+pub(crate) fn merge_keys(filedata: &[FileData]) -> OptionsMap {
     filedata
         .iter()
         .flat_map(|f| f.data.iter())
