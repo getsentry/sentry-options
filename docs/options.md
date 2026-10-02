@@ -306,11 +306,14 @@ It prints JSON with one entry per `(namespace, target, key)` whose effective val
       "before": {"value": 1.0, "source": "target"},
       "after": {"value": 0.0, "source": "schema-default"}
     }
+  ],
+  "removed_targets": [
+    {"namespace": "seer", "target": "de"}
   ]
 }
 ```
 
-`source` is `target` (the entry's own target sets the value), `default`, `schema-default` or `unset`. A side without the target directory resolves to schema defaults alone: no ConfigMap is generated there, so not even default-target values apply — which is also why an empty `{target}/values.yaml` is not a no-op. The `default` target is the base layer, not a deployment, so a change to it shows up through each target it affects. Entries whose value is unchanged but whose source moved (e.g. a target override that equals the inherited value) are included so no-op writes are visible; `--exclude-namespace` is repeatable. sentry-options-automator uses this to comment effective changes on its PRs.
+`source` is `target` (the entry's own target sets the value), `default`, `schema-default` or `unset`. A target directory that never existed resolves to schema defaults alone: no ConfigMap is generated there, so not even default-target values apply — which is also why an empty `{target}/values.yaml` is not a no-op. Removing a target directory (or a whole namespace) is not the reverse: deploys only ever apply ConfigMaps, so the orphaned ConfigMap keeps serving the last-deployed values. Removals are reported in `removed_targets` instead of as per-key changes. The `default` target is the base layer, not a deployment, so a change to it shows up through each target it affects. Entries whose value is unchanged but whose source moved (e.g. a target override that equals the inherited value) are included so no-op writes are visible; `--exclude-namespace` is repeatable. sentry-options-automator uses this to comment effective changes on its PRs.
 
 ## Deleting an option
 

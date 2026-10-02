@@ -65,6 +65,20 @@ pub struct DiffEntry {
     pub after: ResolvedValue,
 }
 
+#[derive(Debug, Serialize)]
+pub struct RemovedTarget {
+    pub namespace: String,
+    pub target: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiffOutput {
+    pub changes: Vec<DiffEntry>,
+    // these are reported separately, because deleting a target doesn't delete its ConfigMap,
+    // it stops it from being deployed.
+    pub removed_targets: Vec<RemovedTarget>,
+}
+
 /// target -> the merged keys of that target directory alone (not layered with default)
 type TargetMaps = HashMap<String, OptionsMap>;
 
@@ -133,11 +147,12 @@ pub fn diff(
     head: &NamespaceMap,
     registry: &SchemaRegistry,
     exclude_namespaces: &[String],
-) -> Result<Vec<DiffEntry>> {
+) -> Result<DiffOutput> {
     let base = target_maps(base);
     let head = target_maps(head);
 
     let mut entries = Vec::new();
+    let mut removed_targets = Vec::new();
     // unique set of namespaces between base and head
     let namespaces: BTreeSet<&String> = base
         .keys()
@@ -146,18 +161,38 @@ pub fn diff(
         .collect();
 
     for namespace in namespaces {
-        let schema = registry
-            .get(namespace)
-            .expect("loaded namespace has a schema");
         let before_maps = base.get(namespace);
         let after_maps = head.get(namespace);
 
-        let mut targets: BTreeSet<&String> = BTreeSet::new();
-        for side in [before_maps, after_maps].into_iter().flatten() {
-            targets.extend(side.keys().filter(|target| *target != "default"));
+        // the default target is the base layer, not a deployment
+        fn deployed_target_names(maps: Option<&TargetMaps>) -> BTreeSet<&String> {
+            maps.into_iter()
+                .flat_map(|maps| maps.keys())
+                .filter(|target| *target != "default")
+                .collect()
+        }
+        let before_targets = deployed_target_names(before_maps);
+        let after_targets = deployed_target_names(after_maps);
+
+        // targets that exist before but not after count as removed
+        for target in before_targets.difference(&after_targets) {
+            removed_targets.push(RemovedTarget {
+                namespace: namespace.clone(),
+                target: (*target).clone(),
+            });
         }
 
-        for target in targets {
+        if after_targets.is_empty() {
+            continue;
+        }
+
+        let schema = registry
+            .get(namespace)
+            .expect("loaded namespace has a schema");
+
+        // removed targets get the removal record above, not per-key rows,
+        // which would wrongly claim their values fall back
+        for target in after_targets {
             let mut keys: BTreeSet<&String> = schema.options.keys().collect();
             for side in [before_maps, after_maps].into_iter().flatten() {
                 for layer in ["default", target.as_str()] {
@@ -182,18 +217,18 @@ pub fn diff(
             }
         }
     }
-    Ok(entries)
+    Ok(DiffOutput {
+        changes: entries,
+        removed_targets,
+    })
 }
 
 pub fn cli_diff(args: DiffArgs) -> Result<()> {
     let registry = SchemaRegistry::from_directory(Path::new(&args.schemas))?;
     let base = loader::load_and_validate(&args.base, &registry)?;
     let head = loader::load_and_validate(&args.head, &registry)?;
-    let entries = diff(&base, &head, &registry, &args.exclude_namespaces)?;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&serde_json::json!({ "changes": entries }))?
-    );
+    let output = diff(&base, &head, &registry, &args.exclude_namespaces)?;
+    println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
 }
 
@@ -233,7 +268,7 @@ mod tests {
         registry: &SchemaRegistry,
         base: &[(&str, &str)],
         head: &[(&str, &str)],
-    ) -> Vec<DiffEntry> {
+    ) -> DiffOutput {
         let base_root = write_root(base);
         let head_root = write_root(head);
         let base = loader::load_and_validate(base_root.path().to_str().unwrap(), registry).unwrap();
@@ -258,7 +293,9 @@ mod tests {
     #[test]
     fn identical_roots_have_no_changes() {
         let registry = registry(&["seer"]);
-        assert!(run_diff(&registry, BASE, BASE).is_empty());
+        let output = run_diff(&registry, BASE, BASE);
+        assert!(output.changes.is_empty());
+        assert!(output.removed_targets.is_empty());
     }
 
     #[test]
@@ -269,7 +306,7 @@ mod tests {
             ("seer/us/values.yaml", "options:\n  rollout: 0.9\n"),
             ("seer/de/values.yaml", "options: {}\n"),
         ];
-        let entries = run_diff(&registry, BASE, head);
+        let entries = run_diff(&registry, BASE, head).changes;
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "us", "rollout").unwrap();
         assert_eq!(change.before, resolved(Some(1.0.into()), Source::Target));
@@ -284,7 +321,7 @@ mod tests {
             ("seer/us/values.yaml", "options: {}\n"),
             ("seer/de/values.yaml", "options: {}\n"),
         ];
-        let entries = run_diff(&registry, BASE, head);
+        let entries = run_diff(&registry, BASE, head).changes;
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "us", "rollout").unwrap();
         assert_eq!(change.before, resolved(Some(1.0.into()), Source::Target));
@@ -299,7 +336,7 @@ mod tests {
             ("seer/us/values.yaml", "options:\n  rollout: 1.0\n"),
             ("seer/de/values.yaml", "options: {}\n"),
         ];
-        let entries = run_diff(&registry, BASE, head);
+        let entries = run_diff(&registry, BASE, head).changes;
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "de", "rollout").unwrap();
         assert_eq!(change.before, resolved(Some(0.5.into()), Source::Default));
@@ -333,7 +370,7 @@ mod tests {
         };
         let base = targets(file(&[("feature.x", true.into())]));
         let head = targets(file(&[]));
-        let entries = diff(&base, &head, &registry, &[]).unwrap();
+        let entries = diff(&base, &head, &registry, &[]).unwrap().changes;
         let change = entry(&entries, "us", "feature.x").unwrap();
         assert_eq!(change.before, resolved(Some(true.into()), Source::Target));
         assert_eq!(change.after, resolved(None, Source::Unset));
@@ -348,7 +385,7 @@ mod tests {
             ("seer/de/values.yaml", "options: {}\n"),
             ("seer/s4s2/values.yaml", "options: {}\n"),
         ];
-        let entries = run_diff(&registry, BASE, head);
+        let entries = run_diff(&registry, BASE, head).changes;
         // without the s4s2 dir, s4s2 read pure schema defaults; now the
         // default target's values start shipping there
         let rollout = entry(&entries, "s4s2", "rollout").unwrap();
@@ -375,7 +412,9 @@ mod tests {
             loader::load_and_validate(base_root.path().to_str().unwrap(), &registry).unwrap();
         let head =
             loader::load_and_validate(head_root.path().to_str().unwrap(), &registry).unwrap();
-        let entries = diff(&base, &head, &registry, &["seer".to_string()]).unwrap();
+        let entries = diff(&base, &head, &registry, &["seer".to_string()])
+            .unwrap()
+            .changes;
         assert!(entries.is_empty());
     }
 
@@ -393,5 +432,46 @@ mod tests {
         assert!(json["before"].get("value").is_none());
         assert_eq!(json["after"]["source"], "schema-default");
         assert_eq!(json["after"]["value"], 0.0);
+    }
+
+    #[test]
+    fn removed_target_dir_is_reported_not_diffed() {
+        let registry = registry(&["seer"]);
+        let head = &[
+            ("seer/default/values.yaml", "options:\n  rollout: 0.5\n"),
+            ("seer/us/values.yaml", "options:\n  rollout: 1.0\n"),
+        ];
+        let output = run_diff(&registry, BASE, head);
+        assert!(output.changes.is_empty());
+        assert_eq!(output.removed_targets.len(), 1);
+        assert_eq!(output.removed_targets[0].namespace, "seer");
+        assert_eq!(output.removed_targets[0].target, "de");
+
+        let json = serde_json::to_value(&output).unwrap();
+        assert_eq!(json["removed_targets"][0]["target"], "de");
+    }
+
+    #[test]
+    fn removed_namespace_reports_all_its_targets() {
+        let registry = registry(&["seer", "other"]);
+        let base = &[
+            ("seer/default/values.yaml", "options: {}\n"),
+            ("seer/us/values.yaml", "options: {}\n"),
+            ("other/default/values.yaml", "options:\n  rollout: 0.5\n"),
+            ("other/us/values.yaml", "options: {}\n"),
+            ("other/de/values.yaml", "options: {}\n"),
+        ];
+        let head = &[
+            ("seer/default/values.yaml", "options: {}\n"),
+            ("seer/us/values.yaml", "options: {}\n"),
+        ];
+        let output = run_diff(&registry, base, head);
+        assert!(output.changes.is_empty());
+        let removed: Vec<(&str, &str)> = output
+            .removed_targets
+            .iter()
+            .map(|r| (r.namespace.as_str(), r.target.as_str()))
+            .collect();
+        assert_eq!(removed, [("other", "de"), ("other", "us")]);
     }
 }
