@@ -1,3 +1,4 @@
+mod diff;
 mod eval;
 mod loader;
 mod option_usage;
@@ -13,7 +14,7 @@ use std::{
 use clap::{Args, Parser, Subcommand};
 use sentry_options_validation::{LOCAL_OPTIONS_DIR, OPTIONS_DIR_ENV, SchemaRegistry};
 
-use loader::{ensure_no_duplicate_keys, load_and_validate};
+use loader::load_and_validate;
 use option_usage::check_option_usage;
 use output::{OutputFormat, generate_configmap, generate_json, write_configmap_yaml, write_json};
 
@@ -156,6 +157,8 @@ enum Commands {
     Write(WriteArgs),
     /// Evaluate a feature flag from a values file against a context
     Eval(eval::EvalArgs),
+    /// Diff effective option values between two checkouts of a values root
+    Diff(diff::DiffArgs),
     /// Fetch schemas from multiple repos via git sparse checkout
     #[command(name = "fetch-schemas")]
     FetchSchemas {
@@ -236,8 +239,7 @@ fn cli_validate_schema(schemas: String, quiet: bool) -> Result<()> {
 
 fn cli_validate_values(schemas: String, root: String, quiet: bool) -> Result<()> {
     let schema_registry = SchemaRegistry::from_directory(Path::new(&schemas))?;
-    let grouped = load_and_validate(&root, &schema_registry)?;
-    ensure_no_duplicate_keys(&grouped)?;
+    load_and_validate(&root, &schema_registry)?;
 
     if !quiet {
         tracing::info!("Values validation successful");
@@ -249,7 +251,6 @@ fn cli_write(args: WriteArgs, quiet: bool) -> Result<()> {
     let schema_registry = SchemaRegistry::from_directory(Path::new(&args.schemas))?;
 
     let grouped = load_and_validate(&args.root, &schema_registry)?;
-    ensure_no_duplicate_keys(&grouped)?;
 
     let generated_at = chrono::Utc::now().to_rfc3339();
 
@@ -372,6 +373,7 @@ fn main() {
         Commands::ValidateValues { schemas, root } => cli_validate_values(schemas, root, cli.quiet),
         Commands::Write(args) => cli_write(args, cli.quiet),
         Commands::Eval(args) => eval::cli_eval(args),
+        Commands::Diff(args) => diff::cli_diff(args),
         Commands::FetchSchemas { config, out } => cli_fetch_schemas(config, out, cli.quiet),
         Commands::ValidateSchemaChanges {
             base_sha,
@@ -776,10 +778,7 @@ options:
             &valid_yaml(&[("string_val", "\"value2\"")]),
         );
 
-        let grouped = f.load().unwrap();
-        let result = ensure_no_duplicate_keys(&grouped);
-        assert!(result.is_err());
-        match result {
+        match f.load() {
             Err(AppError::DuplicateKey { key, .. }) => {
                 assert_eq!(key, "string_val");
             }

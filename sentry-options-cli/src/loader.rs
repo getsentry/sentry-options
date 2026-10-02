@@ -11,7 +11,6 @@ use crate::{AppError, FileData, NamespaceMap, OptionsMap, Result};
 
 /// Reads all YAML files in the root directory, validating and parsing them.
 /// Then outputs options grouped by namespace and target.
-/// Only performs file structure validation, e.g. path, suffix
 pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result<NamespaceMap> {
     let mut grouped = HashMap::new();
     let root_path = Path::new(root);
@@ -107,6 +106,9 @@ pub fn load_and_validate(root: &str, schema_registry: &SchemaRegistry) -> Result
         }
     }
 
+    // ensure there were no duplicates among files in the same target
+    ensure_no_duplicate_keys(&grouped)?;
+
     Ok(grouped)
 }
 
@@ -188,7 +190,7 @@ fn validate_and_parse(
 }
 
 /// Checks options in the same target for duplicate keys
-pub fn ensure_no_duplicate_keys(grouped: &NamespaceMap) -> Result<()> {
+fn ensure_no_duplicate_keys(grouped: &NamespaceMap) -> Result<()> {
     for targets in grouped.values() {
         for filedata in targets.values() {
             let mut key_to_file = HashMap::<String, String>::new();

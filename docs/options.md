@@ -286,6 +286,35 @@ Values will be taken from `option-values/seer/default` and deployed in 2 regions
 
 We recommend creating empty (`options: {}`) `{target}/values.yaml` files in all the regions you want options deployed to, then just editing the values in the `default` target. Only edit the region specific ones if you want per-region overrides.
 
+## Diffing effective values
+
+To see what a change to a values root actually does per target — resolved through target overrides, the `default` target, and schema defaults — rather than reading the raw file diff:
+
+```sh
+sentry-options-cli diff --schemas /path/to/schemas \
+  --base option-values-before --head option-values-after \
+  --exclude-namespace getsentry-features
+```
+
+It prints JSON with one entry per `(namespace, target, key)` whose effective value or source layer changed:
+
+```json
+{
+  "changes": [
+    {
+      "namespace": "seer", "target": "us", "key": "rollout",
+      "before": {"value": 1.0, "source": "target"},
+      "after": {"value": 0.0, "source": "schema-default"}
+    }
+  ],
+  "removed_targets": [
+    {"namespace": "seer", "target": "de"}
+  ]
+}
+```
+
+`source` is `target` (the entry's own target sets the value), `default`, `schema-default` or `unset`. A target directory that never existed resolves to schema defaults alone: no ConfigMap is generated there, so not even default-target values apply — which is also why an empty `{target}/values.yaml` is not a no-op. Removing a target directory (or a whole namespace) is not the reverse: deploys only ever apply ConfigMaps, so the orphaned ConfigMap keeps serving the last-deployed values. Removals are reported in `removed_targets` instead of as per-key changes. The `default` target is the base layer, not a deployment, so a change to it shows up through each target it affects. Entries whose value is unchanged but whose source moved (e.g. a target override that equals the inherited value) are included so no-op writes are visible; `--exclude-namespace` is repeatable. sentry-options-automator uses this to comment effective changes on its PRs.
+
 ## Deleting an option
 
 Deleting an option requires removing 3 components:
