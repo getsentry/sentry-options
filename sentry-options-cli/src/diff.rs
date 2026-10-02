@@ -32,15 +32,28 @@ pub struct DiffArgs {
     exclude_namespaces: Vec<String>,
 }
 
-/// An effective value and the layer that supplies it: the target's own files,
-/// the namespace's default target, or the schema default. "not-deployed"
-/// marks a target directory that doesn't exist on this side, "unset" a key
-/// with no value and no schema default (feature flags).
+/// The layer that supplies an effective value.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Source {
+    /// The entry's own target pins the value in its files.
+    Target,
+    /// Inherited from the namespace's default target.
+    Default,
+    /// Nothing reaches the target from values, so the schema default applies.
+    /// This includes regions with no target directory, as we don't even deploy
+    /// the default target there.
+    SchemaDefault,
+    /// No value and no schema default (feature-flag keys).
+    Unset,
+}
+
+/// An effective value and the layer that supplies it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ResolvedValue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Value>,
-    pub source: String,
+    pub source: Source,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,7 +65,7 @@ pub struct DiffEntry {
     pub after: ResolvedValue,
 }
 
-/// target -> the merged keys of that target directory alone (not layered)
+/// target -> the merged keys of that target directory alone (not layered with default)
 type TargetMaps = HashMap<String, OptionsMap>;
 
 fn target_maps(map: &NamespaceMap) -> HashMap<String, TargetMaps> {
@@ -69,46 +82,47 @@ fn target_maps(map: &NamespaceMap) -> HashMap<String, TargetMaps> {
         .collect()
 }
 
+/// Essentially answers "what value would be returned for this namespace.target.key?"
 fn resolve(
     namespace: Option<&TargetMaps>,
     schema: &NamespaceSchema,
     target: &str,
     key: &str,
 ) -> ResolvedValue {
-    let not_deployed = ResolvedValue {
-        value: None,
-        source: "not-deployed".to_string(),
-    };
-    let Some(namespace) = namespace else {
-        return not_deployed;
-    };
-    let Some(pinned) = namespace.get(target) else {
-        return not_deployed;
-    };
-    if let Some(value) = pinned.get(key) {
-        return ResolvedValue {
-            value: Some(value.clone()),
-            source: target.to_string(),
-        };
+    // Values only reach a target through its generated ConfigMap, and one is
+    // only generated for target directories that exist -- so without the
+    // target dir, neither its own pins nor default-target values apply and
+    // resolution falls through to the schema default (matching the client,
+    // which serves schema defaults when a namespace has no values file).
+    if let Some(pinned) = namespace.and_then(|namespace| namespace.get(target)) {
+        // has value?
+        if let Some(value) = pinned.get(key) {
+            return ResolvedValue {
+                value: Some(value.clone()),
+                source: Source::Target,
+            };
+        }
+        // has value in default target?
+        if let Some(value) = namespace
+            .and_then(|namespace| namespace.get("default"))
+            .and_then(|default| default.get(key))
+        {
+            return ResolvedValue {
+                value: Some(value.clone()),
+                source: Source::Default,
+            };
+        }
     }
-    if let Some(value) = namespace
-        .get("default")
-        .and_then(|default| default.get(key))
-    {
-        return ResolvedValue {
-            value: Some(value.clone()),
-            source: "default".to_string(),
-        };
-    }
+    // has default value in schema?
     if let Some(value) = schema.get_default(key) {
         return ResolvedValue {
             value: Some(value.clone()),
-            source: "schema-default".to_string(),
+            source: Source::SchemaDefault,
         };
     }
     ResolvedValue {
         value: None,
-        source: "unset".to_string(),
+        source: Source::Unset,
     }
 }
 
@@ -175,20 +189,14 @@ pub fn diff(
 
 pub fn cli_diff(args: DiffArgs) -> Result<()> {
     let registry = SchemaRegistry::from_directory(Path::new(&args.schemas))?;
-    let base = load_side(&args.base, &registry)?;
-    let head = load_side(&args.head, &registry)?;
+    let base = loader::load_and_validate(&args.base, &registry)?;
+    let head = loader::load_and_validate(&args.head, &registry)?;
     let entries = diff(&base, &head, &registry, &args.exclude_namespaces)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({ "changes": entries }))?
     );
     Ok(())
-}
-
-fn load_side(root: &str, registry: &SchemaRegistry) -> Result<NamespaceMap> {
-    let grouped = loader::load_and_validate(root, registry)?;
-    loader::ensure_no_duplicate_keys(&grouped)?;
-    Ok(grouped)
 }
 
 #[cfg(test)]
@@ -230,8 +238,8 @@ mod tests {
     ) -> Vec<DiffEntry> {
         let base_root = write_root(base);
         let head_root = write_root(head);
-        let base = load_side(base_root.path().to_str().unwrap(), registry).unwrap();
-        let head = load_side(head_root.path().to_str().unwrap(), registry).unwrap();
+        let base = loader::load_and_validate(base_root.path().to_str().unwrap(), registry).unwrap();
+        let head = loader::load_and_validate(head_root.path().to_str().unwrap(), registry).unwrap();
         diff(&base, &head, registry, &[]).unwrap()
     }
 
@@ -239,11 +247,8 @@ mod tests {
         entries.iter().find(|e| e.target == target && e.key == key)
     }
 
-    fn resolved(value: Option<serde_json::Value>, source: &str) -> ResolvedValue {
-        ResolvedValue {
-            value,
-            source: source.to_string(),
-        }
+    fn resolved(value: Option<serde_json::Value>, source: Source) -> ResolvedValue {
+        ResolvedValue { value, source }
     }
 
     const BASE: &[(&str, &str)] = &[
@@ -269,8 +274,8 @@ mod tests {
         let entries = run_diff(&registry, BASE, head);
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "us", "rollout").unwrap();
-        assert_eq!(change.before, resolved(Some(1.0.into()), "us"));
-        assert_eq!(change.after, resolved(Some(0.9.into()), "us"));
+        assert_eq!(change.before, resolved(Some(1.0.into()), Source::Target));
+        assert_eq!(change.after, resolved(Some(0.9.into()), Source::Target));
     }
 
     #[test]
@@ -284,8 +289,8 @@ mod tests {
         let entries = run_diff(&registry, BASE, head);
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "de", "rollout").unwrap();
-        assert_eq!(change.before, resolved(Some(0.5.into()), "default"));
-        assert_eq!(change.after, resolved(Some(0.7.into()), "default"));
+        assert_eq!(change.before, resolved(Some(0.5.into()), Source::Default));
+        assert_eq!(change.after, resolved(Some(0.7.into()), Source::Default));
     }
 
     #[test]
@@ -298,11 +303,11 @@ mod tests {
         ];
         let entries = run_diff(&registry, BASE, head);
         let us = entry(&entries, "us", "rollout").unwrap();
-        assert_eq!(us.before, resolved(Some(1.0.into()), "us"));
-        assert_eq!(us.after, resolved(Some(0.0.into()), "schema-default"));
+        assert_eq!(us.before, resolved(Some(1.0.into()), Source::Target));
+        assert_eq!(us.after, resolved(Some(0.0.into()), Source::SchemaDefault));
         let de = entry(&entries, "de", "rollout").unwrap();
-        assert_eq!(de.before, resolved(Some(0.5.into()), "default"));
-        assert_eq!(de.after, resolved(Some(0.0.into()), "schema-default"));
+        assert_eq!(de.before, resolved(Some(0.5.into()), Source::Default));
+        assert_eq!(de.after, resolved(Some(0.0.into()), Source::SchemaDefault));
     }
 
     #[test]
@@ -316,8 +321,8 @@ mod tests {
         let entries = run_diff(&registry, BASE, head);
         assert_eq!(entries.len(), 1);
         let change = entry(&entries, "de", "rollout").unwrap();
-        assert_eq!(change.before, resolved(Some(0.5.into()), "default"));
-        assert_eq!(change.after, resolved(Some(0.5.into()), "de"));
+        assert_eq!(change.before, resolved(Some(0.5.into()), Source::Default));
+        assert_eq!(change.after, resolved(Some(0.5.into()), Source::Target));
     }
 
     #[test]
@@ -330,14 +335,16 @@ mod tests {
             ("seer/s4s2/values.yaml", "options: {}\n"),
         ];
         let entries = run_diff(&registry, BASE, head);
+        // without the s4s2 dir, s4s2 read pure schema defaults; now the
+        // default target's values start shipping there
         let rollout = entry(&entries, "s4s2", "rollout").unwrap();
-        assert_eq!(rollout.before, resolved(None, "not-deployed"));
-        assert_eq!(rollout.after, resolved(Some(0.5.into()), "default"));
-        let enabled = entry(&entries, "s4s2", "enabled").unwrap();
         assert_eq!(
-            enabled.after,
-            resolved(Some(false.into()), "schema-default")
+            rollout.before,
+            resolved(Some(0.0.into()), Source::SchemaDefault)
         );
+        assert_eq!(rollout.after, resolved(Some(0.5.into()), Source::Default));
+        // schema-default before and after: no entry
+        assert!(entry(&entries, "s4s2", "enabled").is_none());
     }
 
     #[test]
@@ -350,9 +357,27 @@ mod tests {
         ];
         let base_root = write_root(BASE);
         let head_root = write_root(head);
-        let base = load_side(base_root.path().to_str().unwrap(), &registry).unwrap();
-        let head = load_side(head_root.path().to_str().unwrap(), &registry).unwrap();
+        let base =
+            loader::load_and_validate(base_root.path().to_str().unwrap(), &registry).unwrap();
+        let head =
+            loader::load_and_validate(head_root.path().to_str().unwrap(), &registry).unwrap();
         let entries = diff(&base, &head, &registry, &["seer".to_string()]).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn sources_serialize_as_flat_strings() {
+        let entry = DiffEntry {
+            namespace: "seer".to_string(),
+            target: "us".to_string(),
+            key: "rollout".to_string(),
+            before: resolved(None, Source::Unset),
+            after: resolved(Some(0.0.into()), Source::SchemaDefault),
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["before"]["source"], "unset");
+        assert!(json["before"].get("value").is_none());
+        assert_eq!(json["after"]["source"], "schema-default");
+        assert_eq!(json["after"]["value"], 0.0);
     }
 }

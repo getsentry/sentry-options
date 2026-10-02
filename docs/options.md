@@ -303,14 +303,14 @@ It prints JSON with one entry per `(namespace, target, key)` whose effective val
   "changes": [
     {
       "namespace": "seer", "target": "us", "key": "rollout",
-      "before": {"value": 1.0, "source": "us"},
+      "before": {"value": 1.0, "source": "target"},
       "after": {"value": 0.0, "source": "schema-default"}
     }
   ]
 }
 ```
 
-`source` is the target name, `default`, `schema-default`, `not-deployed` (the target directory doesn't exist on that side) or `unset`. The `default` target is the base layer, not a deployment, so a change to it shows up through each target it affects. Entries whose value is unchanged but whose source moved (e.g. a target pin that equals the inherited value) are included so no-op writes are visible; `--exclude-namespace` is repeatable. sentry-options-automator uses this to comment effective changes on its PRs.
+`source` is `target` (the entry's own target pins the value), `default`, `schema-default` or `unset`. A side without the target directory resolves to schema defaults alone: no ConfigMap is generated there, so not even default-target values apply — which is also why an empty `{target}/values.yaml` is not a no-op. The `default` target is the base layer, not a deployment, so a change to it shows up through each target it affects. Entries whose value is unchanged but whose source moved (e.g. a target pin that equals the inherited value) are included so no-op writes are visible; `--exclude-namespace` is repeatable. sentry-options-automator uses this to comment effective changes on its PRs.
 
 ## Deleting an option
 
