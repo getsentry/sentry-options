@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "type": "object",
+  "patternProperties": {
+    "^feature\\.": { "$ref": "#/definitions/Feature" }
+  }
+}
