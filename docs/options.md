@@ -496,6 +496,31 @@ options:
             value: [123, 456]
 ```
 
+### Service-specific metadata
+
+Fields your service needs on a flag that aren't part of `Feature` go under `metadata`. Anything inside it is accepted without a sentry-options release, and it doesn't affect `has()`:
+
+```yaml
+options:
+  feature.seer-explorer:
+    owner:
+      team: "seer"
+    created_at: "2026-01-01"
+    segments: []
+    metadata:
+      verbose_logging: true
+```
+
+Read it in your service from the raw flag value:
+
+```python
+from sentry_options import options
+
+metadata = options('seer').get('feature.seer-explorer').get('metadata', {})
+```
+
+sentry-options only checks that `metadata` is an object, so validate the fields your code relies on before using them.
+
 ## Deleting a feature flag
 
 Similar to options, deleting a feature flag requires removing 3 components:
