@@ -1,4 +1,14 @@
 # Changelog
+## 1.2.15
+
+### Bug Fixes 🐛
+
+- (callback) Base latency off of mtime rather than current time. by @kenzoengineer in [#197](https://github.com/getsentry/sentry-options/pull/197)
+
+### Internal Changes 🔧
+
+- Upgrade macos-14 runners to macos-15 by @joshuarli in [#195](https://github.com/getsentry/sentry-options/pull/195)
+
 ## 1.2.14
 
 ### New Features ✨
