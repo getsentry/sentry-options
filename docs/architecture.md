@@ -220,7 +220,7 @@ Every refresh — lazy or manual — resets the staleness timer. Two consequence
 
 ### Propagation metric
 
-When a refresh observes a newer `generated_at` than the previous snapshot, the propagation callback (`Options::builder().with_callback` in Rust, `on_propagation` in Python) fires with the namespace and the delay between generation and load — useful for measuring deploy lag.
+When a refresh observes a newer `generated_at` than the previous snapshot, the propagation callback (`Options::builder().with_callback` in Rust, `on_propagation` in Python) fires with the namespace and the delay between generation and the values file's mtime — useful for measuring deploy lag.
 
 ## Feature Flag Evaluation
 

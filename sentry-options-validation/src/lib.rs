@@ -697,7 +697,7 @@ impl Default for SchemaRegistry {
 
 /// Callback invoked when a namespace's values are updated. Receives
 /// `(namespace, delay_secs)` — the propagation delay from ConfigMap generation
-/// to the app reading the new values.
+/// to the values file landing on disk (its mtime).
 pub type PropagationCallback = Box<dyn Fn(&str, f64) + Send + Sync>;
 
 /// Validates and serves option values, reloading them lazily on read and
@@ -955,11 +955,16 @@ impl ValuesStore {
         let last = self.last_generated_at.load();
         if *last.as_ref() != new_generated_at {
             if let Some(callback) = &self.on_propagation {
-                let applied_at = Utc::now();
+                let mtimes = self.last_mtimes.load();
                 for (ns, ts) in &new_generated_at {
                     if last.get(ns).is_some_and(|old| old == ts) {
                         continue;
                     }
+                    // compared to latest mtime, not current time
+                    let applied_at = mtimes
+                        .get(ns)
+                        .map(|m| DateTime::<Utc>::from(*m))
+                        .unwrap_or_else(Utc::now);
                     match propagation_delay_secs(&applied_at, ts) {
                         Some(delay) => {
                             if let Err(e) =
@@ -2062,6 +2067,42 @@ Error: \"version\" is a required property"
         .unwrap();
         let _ = store.load();
         assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_propagation_delay_measured_to_file_mtime() {
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+        let values_file = write_ns(base, "test", "2024-01-21T18:30:00+00:00");
+
+        let events: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        let registry = Arc::new(SchemaRegistry::from_directory(&base.join("schemas")).unwrap());
+        let store = ValuesStore::builder(registry, &base.join("values"))
+            .with_refresh_threshold(Duration::ZERO)
+            .with_callback(Box::new(move |ns, delay| {
+                events_clone.lock().unwrap().push((ns.to_string(), delay));
+            }))
+            .build()
+            .unwrap();
+
+        fs::write(
+            &values_file,
+            r#"{"options": {"enabled": true}, "generated_at": "2024-01-21T19:00:00+00:00"}"#,
+        )
+        .unwrap();
+        let landed_at: DateTime<Utc> = "2024-01-21T19:00:42Z".parse().unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&values_file)
+            .unwrap()
+            .set_modified(landed_at.into())
+            .unwrap();
+        let _ = store.load();
+
+        let captured = events.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].1, 42.0);
     }
 
     #[test]
