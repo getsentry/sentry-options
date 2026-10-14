@@ -32,6 +32,8 @@ thiserror = "2.0.17"
 tempfile = "3.23.0"
 jsonschema = "0.36.0"
 sha1 = "0.10"
+md-5 = "0.10"
+fastrand = "2"
 arc-swap = "1.9.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 tracing = "0.1.44"
