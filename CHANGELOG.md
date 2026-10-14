@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.16
+
+### Internal Changes 🔧
+
+- (cli) More efficient and verbose sparse clone by @kenzoengineer in [#198](https://github.com/getsentry/sentry-options/pull/198)
+
 ## 1.2.15
 
 ### Bug Fixes 🐛
