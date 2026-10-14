@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -132,9 +132,27 @@ fn fetch_repo_schemas(
             delay *= 2;
         }
 
+        let started = Instant::now();
         match try_fetch_repo_schemas(repo_name, source, out_dir) {
-            Ok(()) => return Ok(()),
-            Err(error) => last_error = Some(error),
+            Ok(()) => {
+                tracing::info!(
+                    repo = repo_name,
+                    attempt,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "Fetched schemas"
+                );
+                return Ok(());
+            }
+            Err(error) => {
+                tracing::warn!(
+                    repo = repo_name,
+                    attempt,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    error = %error,
+                    "Schema fetch attempt failed"
+                );
+                last_error = Some(error);
+            }
         }
     }
 
@@ -152,11 +170,17 @@ fn try_fetch_repo_schemas(
         SchemaFetchError::Validation(format!("{}: temp path contains invalid UTF-8", repo_name))
     })?;
 
+    // Only the tip of the default branch is needed. Without --depth the
+    // blob-less clone still pulls full commit and tree history, which for
+    // getsentry is ~70MiB and ~400k objects per fetch.
     git(
         &[
             "clone",
             "--filter=blob:none",
             "--sparse",
+            "--depth=1",
+            "--single-branch",
+            "--no-tags",
             &source.url,
             repo_str,
         ],
