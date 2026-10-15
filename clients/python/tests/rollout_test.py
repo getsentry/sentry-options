@@ -62,9 +62,21 @@ def test_in_rollout_group_bounds(rate: float, expected: bool) -> None:
         assert all(opts.in_rollout_group('float-option', key) is expected for key in range(1000))
 
 
-def test_in_rollout_group_rejects_invalid_key_type() -> None:
-    with pytest.raises(TypeError):
-        options(NS).in_rollout_group('float-option', 1.5)  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    'key',
+    [
+        1.5,
+        None,
+        b'bytes',
+        ['org:1'],
+        2**128,
+        # Lone surrogates can't be encoded as UTF-8.
+        '\ud800',
+    ],
+)
+def test_in_rollout_group_invalid_key_is_false(key: object) -> None:
+    with override_options(NS, {'float-option': 1.0}):
+        assert options(NS).in_rollout_group('float-option', key) is False  # type: ignore[arg-type]
 
 
 def test_rollout_non_numeric_option_is_false() -> None:

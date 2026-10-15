@@ -88,7 +88,8 @@ class NamespaceOptions:
     Determine if ``key`` is in a deterministic % based rollout group based on the rate
     defined by ``option_name``.
 
-    Returns False if the option is unknown or not a number.
+    Returns False if the option is unknown or not a number, or if ``key`` is not
+    a str or an int that fits in 128 bits.
     """
 
     def __repr__(self) -> str: ...

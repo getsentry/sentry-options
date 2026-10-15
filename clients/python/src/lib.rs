@@ -450,15 +450,20 @@ impl NamespaceOptions {
 
     /// Determine if `key` is in a deterministic % based rollout group based
     /// on the rate in `option_name`.
-    fn in_rollout_group(&self, option_name: &str, key: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let in_group = if let Ok(s) = key.cast::<PyString>() {
-            self.options
-                .in_rollout_group(&self.namespace, option_name, s.to_str()?)
+    ///
+    /// Returns false if `key` is not a str or an int that fits in 128 bits.
+    fn in_rollout_group(&self, option_name: &str, key: &Bound<'_, PyAny>) -> bool {
+        if let Ok(s) = key.cast::<PyString>() {
+            s.to_str().is_ok_and(|s| {
+                self.options
+                    .in_rollout_group(&self.namespace, option_name, s)
+            })
         } else {
-            self.options
-                .in_rollout_group(&self.namespace, option_name, key.extract::<i128>()?)
-        };
-        Ok(in_group)
+            key.extract::<i128>().is_ok_and(|int_key| {
+                self.options
+                    .in_rollout_group(&self.namespace, option_name, int_key)
+            })
+        }
     }
 
     fn __repr__(&self) -> String {
