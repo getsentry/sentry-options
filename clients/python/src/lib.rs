@@ -132,7 +132,6 @@ fn options_err(err: RustOptionsError) -> PyErr {
             key, namespace
         )),
         RustOptionsError::Schema(e) => SchemaError::new_err(e.to_string()),
-        RustOptionsError::InvalidType { .. } => OptionsError::new_err(err.to_string()),
     }
 }
 
@@ -441,6 +440,25 @@ impl NamespaceOptions {
         self.options
             .isset(&self.namespace, key)
             .map_err(options_err)
+    }
+
+    /// Determine if the current operation is in a random % based rollout
+    /// group based on the rate defined by `option_name`.
+    fn in_random_rollout(&self, option_name: &str) -> bool {
+        self.options.in_random_rollout(&self.namespace, option_name)
+    }
+
+    /// Determine if `key` is in a deterministic % based rollout group based
+    /// on the rate in `option_name`.
+    fn in_rollout_group(&self, option_name: &str, key: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let in_group = if let Ok(s) = key.cast::<PyString>() {
+            self.options
+                .in_rollout_group(&self.namespace, option_name, s.to_str()?)
+        } else {
+            self.options
+                .in_rollout_group(&self.namespace, option_name, key.extract::<i128>()?)
+        };
+        Ok(in_group)
     }
 
     fn __repr__(&self) -> String {

@@ -1,11 +1,8 @@
-"""Tests for sentry_options.rollout."""
+"""Tests for NamespaceOptions rollout methods."""
 from __future__ import annotations
 
 import pytest
-from sentry_options import UnknownNamespaceError
-from sentry_options import UnknownOptionError
-from sentry_options.rollout import in_random_rollout
-from sentry_options.rollout import in_rollout_group
+from sentry_options import options
 from sentry_options.testing import override_options
 
 NS = 'sentry-options-testing'
@@ -13,13 +10,15 @@ NS = 'sentry-options-testing'
 
 @pytest.mark.parametrize('rate,expected', [(0.0, False), (1.0, True), (1, True)])
 def test_in_random_rollout_bounds(rate: float, expected: bool) -> None:
+    opts = options(NS)
     with override_options(NS, {'float-option': rate}):
-        assert all(in_random_rollout(NS, 'float-option') is expected for _ in range(100))
+        assert all(opts.in_random_rollout('float-option') is expected for _ in range(100))
 
 
 def test_in_random_rollout_partial() -> None:
+    opts = options(NS)
     with override_options(NS, {'float-option': 0.5}):
-        hits = sum(in_random_rollout(NS, 'float-option') for _ in range(10000))
+        hits = sum(opts.in_random_rollout('float-option') for _ in range(10000))
     assert 4000 < hits < 6000
 
 
@@ -37,40 +36,51 @@ def test_in_random_rollout_partial() -> None:
 )
 def test_in_rollout_group_int_keys(key: int, expected: bool) -> None:
     with override_options(NS, {'float-option': 0.5}):
-        assert in_rollout_group(NS, 'float-option', key) is expected
+        assert options(NS).in_rollout_group('float-option', key) is expected
 
 
 def test_in_rollout_group_string_keys() -> None:
-    # md5('hello') buckets to 0.22994, matching the Rust implementation.
+    opts = options(NS)
+    # md5('hello') buckets to 0.22994, matching sentry.options.rollout.
     with override_options(NS, {'float-option': 0.22995}):
-        assert in_rollout_group(NS, 'float-option', 'hello') is True
+        assert opts.in_rollout_group('float-option', 'hello') is True
     with override_options(NS, {'float-option': 0.22994}):
-        assert in_rollout_group(NS, 'float-option', 'hello') is False
+        assert opts.in_rollout_group('float-option', 'hello') is False
 
 
 def test_in_rollout_group_is_deterministic() -> None:
+    opts = options(NS)
     with override_options(NS, {'float-option': 0.5}):
-        results = {in_rollout_group(NS, 'float-option', 'org:1') for _ in range(10)}
+        results = {opts.in_rollout_group('float-option', 'org:1') for _ in range(10)}
     assert len(results) == 1
 
 
 @pytest.mark.parametrize('rate,expected', [(0.0, False), (1.0, True)])
 def test_in_rollout_group_bounds(rate: float, expected: bool) -> None:
+    opts = options(NS)
     with override_options(NS, {'float-option': rate}):
-        assert all(in_rollout_group(NS, 'float-option', key) is expected for key in range(1000))
+        assert all(opts.in_rollout_group('float-option', key) is expected for key in range(1000))
 
 
-def test_rollout_rejects_non_numeric_option() -> None:
+def test_in_rollout_group_rejects_invalid_key_type() -> None:
     with pytest.raises(TypeError):
-        in_random_rollout(NS, 'example-option')
-    with pytest.raises(TypeError):
-        in_rollout_group(NS, 'example-option', 1)
-    with pytest.raises(TypeError):
-        in_rollout_group(NS, 'bool-option', 1)
+        options(NS).in_rollout_group('float-option', 1.5)  # type: ignore[arg-type]
 
 
-def test_rollout_unknown_option() -> None:
-    with pytest.raises(UnknownOptionError):
-        in_rollout_group(NS, 'nonexistent-key', 1)
-    with pytest.raises(UnknownNamespaceError):
-        in_random_rollout('unknown-namespace', 'float-option')
+def test_rollout_non_numeric_option_is_false() -> None:
+    opts = options(NS)
+    assert opts.in_random_rollout('example-option') is False
+    assert opts.in_rollout_group('example-option', 1) is False
+    with override_options(NS, {'bool-option': True}):
+        assert opts.in_random_rollout('bool-option') is False
+        assert opts.in_rollout_group('bool-option', 1) is False
+
+
+def test_rollout_unknown_option_is_false() -> None:
+    opts = options(NS)
+    assert opts.in_random_rollout('nonexistent-key') is False
+    assert opts.in_rollout_group('nonexistent-key', 1) is False
+
+    unknown = options('unknown-namespace')
+    assert unknown.in_random_rollout('float-option') is False
+    assert unknown.in_rollout_group('float-option', 1) is False

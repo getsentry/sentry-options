@@ -4,19 +4,20 @@
 //! a `number` option holding a rate between `0.0` (nobody) and `1.0` (everyone).
 //!
 //! ```rust,ignore
-//! use sentry_options::rollout::{in_random_rollout, in_rollout_group};
+//! use sentry_options::options;
 //!
-//! if in_random_rollout("seer", "sample-rate") {
+//! let opts = options("seer")?;
+//! if opts.in_random_rollout("sample-rate") {
 //!     // ...
 //! }
-//! if in_rollout_group("seer", "org-rollout-rate", org_id) {
+//! if opts.in_rollout_group("org-rollout-rate", org_id) {
 //!     // ...
 //! }
 //! ```
 
 use md5::{Digest, Md5};
 
-use crate::{OptionsError, Result, options};
+use crate::Options;
 
 const BUCKETS: i128 = 100_000;
 
@@ -56,39 +57,35 @@ impl<'a> From<&'a String> for RolloutKey<'a> {
     }
 }
 
-/// Determine if the current operation is in a random % based rollout group
-/// governed by the option `option_name` in `namespace`.
-pub fn in_random_rollout(namespace: &str, option_name: &str) -> bool {
-    if let Ok(rate) = rollout_rate(namespace, option_name) {
-        fastrand::f64() < rate
-    } else {
-        false
+impl Options {
+    /// Determine if the current operation is in a random % based rollout
+    /// group governed by the option `option_name` in `namespace`.
+    ///
+    /// Returns `false` if the option is unknown or not a number.
+    pub fn in_random_rollout(&self, namespace: &str, option_name: &str) -> bool {
+        fastrand::f64() < self.rollout_rate(namespace, option_name)
     }
-}
 
-/// Determine if `key` is in a deterministic % based rollout group governed by
-/// the option `option_name` in `namespace`.
-pub fn in_rollout_group<'a>(
-    namespace: &str,
-    option_name: &str,
-    key: impl Into<RolloutKey<'a>>,
-) -> bool {
-    if let Ok(rate) = rollout_rate(namespace, option_name) {
-        bucket(key.into()) < rate
-    } else {
-        false
+    /// Determine if `key` is in a deterministic % based rollout group governed
+    /// by the option `option_name` in `namespace`.
+    ///
+    /// Returns `false` if the option is unknown or not a number.
+    pub fn in_rollout_group<'a>(
+        &self,
+        namespace: &str,
+        option_name: &str,
+        key: impl Into<RolloutKey<'a>>,
+    ) -> bool {
+        bucket(key.into()) < self.rollout_rate(namespace, option_name)
     }
-}
 
-fn rollout_rate(namespace: &str, option_name: &str) -> Result<f64> {
-    options(namespace)?
-        .get(option_name)?
-        .as_f64()
-        .ok_or_else(|| OptionsError::InvalidType {
-            namespace: namespace.to_string(),
-            key: option_name.to_string(),
-            expected: "number",
-        })
+    /// Unknown or non-numeric options are treated as a 0% rollout.
+    fn rollout_rate(&self, namespace: &str, option_name: &str) -> f64 {
+        self.get(namespace, option_name)
+            .ok()
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0)
+    }
 }
 
 /// Map a key onto `[0, 1)` in steps of 1/100000.
