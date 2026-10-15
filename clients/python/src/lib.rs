@@ -132,6 +132,7 @@ fn options_err(err: RustOptionsError) -> PyErr {
             key, namespace
         )),
         RustOptionsError::Schema(e) => SchemaError::new_err(e.to_string()),
+        RustOptionsError::InvalidType { .. } => OptionsError::new_err(err.to_string()),
     }
 }
 

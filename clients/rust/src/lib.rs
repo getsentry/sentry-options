@@ -1,9 +1,11 @@
 //! Options client for reading validated configuration values.
 
 pub mod features;
+pub mod rollout;
 pub mod schema_fetch;
 
 pub use features::{FeatureChecker, FeatureContext, FeatureError, condition_operators, features};
+pub use rollout::{RolloutKey, in_random_rollout, in_rollout_group};
 pub use schema_fetch::{
     RepoSchemaConfig, RepoSchemaConfigs, SchemaFetchError, SchemaFetchResult, fetch_schemas,
     fetch_schemas_from_file,
@@ -38,6 +40,13 @@ pub enum OptionsError {
 
     #[error("Unknown option '{key}' in namespace '{namespace}'")]
     UnknownOption { namespace: String, key: String },
+
+    #[error("Option '{key}' in namespace '{namespace}' is not a {expected}")]
+    InvalidType {
+        namespace: String,
+        key: String,
+        expected: &'static str,
+    },
 
     #[error("Schema error: {0}")]
     Schema(#[from] ValidationError),
