@@ -235,6 +235,14 @@ A `FeatureContext` carries arbitrary key→value data plus an optional set of `i
 
 `identity_fields` therefore decide what a percentage rollout is bucketed by. Setting them to a stable entity such as `["organization_id"]` keeps a 50% rollout consistent per-org across requests and services; leaving them unset makes bucketing depend on the entire context. This mirrors flagpole's model — context fields are for *targeting*, identity fields are for stable *bucketing*.
 
+## Option Rollouts
+
+`NamespaceOptions::in_random_rollout` and `in_rollout_group` enable you to do simple percentage based rollouts on a `number` option. Percentage based rollouts are an alternative to feature flags and are well suited for contexts where you don't have enough context to use a feature flag.
+
+The `in_rollout_group` method takes a `key` parameter that can be a string or number, which enables determinisitic rollouts based on an identifier like and `id` or `slug`.
+
+Both treat an unknown or non-numeric option as a rate of `0.0`, so they return `false` instead of an error.
+
 ## Schema Evolution & Validation
 
 The `validate-schema` reusable workflow runs on schema PRs and enforces (`sentry-options-cli/src/schema_evolution.rs`):
