@@ -117,6 +117,8 @@ pub fn fetch_schemas_from_file(config_path: &Path, out_dir: &Path) -> SchemaFetc
 
 const MAX_RETRIES: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(3);
+/// should only take a couple seconds
+const GIT_TIMEOUT_SECS: u64 = 30;
 
 fn fetch_repo_schemas(
     repo_name: &str,
@@ -196,8 +198,16 @@ fn try_fetch_repo_schemas(
     copy_schemas(&repo_path.join(&source.path), out_dir)
 }
 
+/// Bounds each git call with coreutils `timeout`, which macOS doesn't ship, so the
+/// bound only applies on Linux (CI/CD). Elsewhere git runs unbounded.
 fn git(args: &[&str], cwd: Option<&Path>, repo_name: &str) -> SchemaFetchResult<()> {
-    let mut command = Command::new("git");
+    let mut command = if cfg!(target_os = "linux") {
+        let mut command = Command::new("timeout");
+        command.arg(GIT_TIMEOUT_SECS.to_string()).arg("git");
+        command
+    } else {
+        Command::new("git")
+    };
     command.args(args);
     if let Some(directory) = cwd {
         command.current_dir(directory);
@@ -205,6 +215,11 @@ fn git(args: &[&str], cwd: Option<&Path>, repo_name: &str) -> SchemaFetchResult<
     let output = command.output()?;
     if output.status.success() {
         Ok(())
+    } else if output.status.code() == Some(124) {
+        Err(SchemaFetchError::Git(format!(
+            "{}: timed out after {}s",
+            repo_name, GIT_TIMEOUT_SECS
+        )))
     } else {
         Err(SchemaFetchError::Git(format!(
             "{}: {}",
