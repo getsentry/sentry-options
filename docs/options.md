@@ -12,6 +12,7 @@ The first half of this document covers runtime options. The second half covers f
   - [Setting an option value locally](#setting-an-option-value-locally)
   - [Adding an option](#adding-an-option)
   - [Setting an option value](#setting-an-option-value)
+  - [Diffing effective values](#diffing-effective-values)
   - [Deleting an option](#deleting-an-option)
   - [Reading a feature flag](#reading-a-feature-flag)
     - [Definitions](#definitions)
@@ -117,10 +118,10 @@ use sentry_options::{options};
 // call init() somewhere early
 #[test]
 fn test_timeout() {
-  assert_eq!(options("seer").get("autofix.enabled").unwrap(), false);
+  assert_eq!(options("seer").unwrap().get("autofix.enabled").unwrap(), false);
   // will be `true` for the lifetime of this guard
   let _guard = override_options(&[("seer", "autofix.enabled", true.into())]).unwrap();
-  assert_eq!(options("seer").get("autofix.enabled").unwrap(), true);
+  assert_eq!(options("seer").unwrap().get("autofix.enabled").unwrap(), true);
 }
 ```
 
@@ -129,9 +130,9 @@ Just like in Python, use `get_forced()` to bypass the 5s cache threshold and see
 // import, create a values file, init(), etc...
 fs::write("sentry-options/values/seer/values.json", br#"{"options": {"autofix.enabled": false}}"#)?;
 // Cached get() still returns the old value within the 5s threshold.
-assert_eq!(options("seer").get("autofix.enabled").unwrap(), true);
+assert_eq!(options("seer")?.get("autofix.enabled")?, true);
 // get_forced() bypasses the cache and returns the updated value immediately.
-assert_eq!(options("seer").get_forced("autofix.enabled").unwrap(), false);
+assert_eq!(options("seer")?.get_forced("autofix.enabled")?, false);
 ```
 
 ## Setting an option value locally
@@ -230,7 +231,7 @@ Dicts can have arbitrary keys that match the value type, so be careful when doin
   {"anything": "x", "goes": "y"}   // arbitrary keys, all string values
 ```
 
-Adding an option with the Python library installed should trigger the ([precommit hook](./setup.md#2-add-workflows)).
+If you installed the [`sentry-options-gen-stubs` pre-commit hook](./setup.md#2-add-workflows), it regenerates the Python type stubs when you change the schema.
 
 ## Setting an option value
 
@@ -501,9 +502,9 @@ options:
 Similar to options, deleting a feature flag requires removing 3 components:
 
 1. The usage in code (the `features.has(...)` callsite)
-2. The definition (`manager.add` in sentry's `temporary.py` or `permanent.py`, or getsentry's `features.py`)
+2. The definition: the `feature.` entry in `sentry-options/schemas/{namespace}/schema.json`. For sentry and getsentry, it is the `manager.add` call in sentry's `temporary.py` or `permanent.py`, or getsentry's `features.py`.
 3. The value (in `sentry-options-automator`)
 
 The above ordering is recommended to prevent any regressions in behavior. **1.** and **2.** can be done simultaneously in the same PR. Once the definition is removed the value is no longer read, but nothing flags a leftover `flagpole.yaml` block, so please remove the value yourself.
 
-If you remove the value (**3.**) first, `features.has()` falls back to the `default=` in `manager.add`, usually `False`, so the flag turns off for everyone. If you remove the definition (**2.**) while checks remain, `features.has()` returns `False` and reports the error to Sentry.
+If you remove the value (**3.**) first, the flag turns off for everyone. The sentry-options client returns `False` for a flag with no value, and sentry and getsentry fall back to the `default=` in `manager.add`, usually `False`. If you remove the definition (**2.**) while checks remain, `has()` returns `False`. sentry and getsentry also report the error to Sentry.

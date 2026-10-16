@@ -8,7 +8,7 @@ The deployment model:
 
 - **Schemas** are baked into the Docker image at build time
 - **Values** are mounted via Kubernetes ConfigMap at runtime
-- The client watches for ConfigMap changes and hot-reloads values without pod restart
+- The client re-reads the mounted values on read and picks up ConfigMap changes without a pod restart
 
 ## Prerequisites
 
@@ -28,14 +28,6 @@ docker tag sentry-options-example \
 
 # Push to registry
 docker push REGION-docker.pkg.dev/PROJECT_ID/REPO/sentry-options-test:latest
-```
-
-Example for sandbox `sbx-hdeng-1`:
-
-```bash
-docker tag sentry-options-example \
-  us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
-docker push us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
 ```
 
 ## 2. Generate and Apply ConfigMap
@@ -67,13 +59,7 @@ kubectl apply -f configmap.yaml
 
 ## 3. Deploy Example Pod
 
-An example deployment exists in `terraform-sandboxes.private`:
-
-```
-terraform-sandboxes.private/personal-sandbox/env/sbx-hdeng-1/k8s/deployment.yaml
-```
-
-The deployment mounts the ConfigMap as a volume:
+Save a deployment that mounts the ConfigMap as a volume to `deployment.yaml`:
 
 ```yaml
 apiVersion: apps/v1
@@ -92,7 +78,7 @@ spec:
     spec:
       containers:
       - name: test
-        image: us-west1-docker.pkg.dev/eng-dev-sbx--hdeng-2/hdeng-images/sentry-options-test:latest
+        image: REGION-docker.pkg.dev/PROJECT_ID/REPO/sentry-options-test:latest
         volumeMounts:
         - name: values
           mountPath: /etc/sentry-options/values/sentry-options-testing
@@ -114,14 +100,14 @@ kubectl apply -f deployment.yaml
 Watch the pod logs:
 
 ```bash
-kubectl logs -f deployment/sentry-options-example
+kubectl logs -f deployment/sentry-options-test
 ```
 
 You should see output like:
 
 ```
-values: UPDATED-VALUE | 0.99 | False
-values: UPDATED-VALUE | 0.99 | False
+values: UPDATED-VALUE | 0.99 | False | default
+values: UPDATED-VALUE | 0.99 | False | default
 ```
 
 Update a value and re-apply:
@@ -140,7 +126,7 @@ Update a value and re-apply:
   | kubectl apply -f -
 ```
 
-The pod will pick up the new values within ~5 seconds without restarting.
+The pod picks up the new values without restarting. Expect a delay of up to the kubelet sync period (about 1 to 2 minutes) plus the 5 second refresh threshold.
 
 ## Directory Structure
 
