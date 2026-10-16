@@ -1,4 +1,10 @@
 # Changelog
+## 1.2.17
+
+### Bug Fixes 🐛
+
+- (cli) Add configurable timeout to git commands (on linux) by @kenzoengineer in [#200](https://github.com/getsentry/sentry-options/pull/200)
+
 ## 1.2.16
 
 ### Internal Changes 🔧
