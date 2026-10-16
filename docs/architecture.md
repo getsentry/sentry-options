@@ -213,12 +213,12 @@ End to end, a value change propagates as: ConfigMap update → ~1–2 min kubele
 
 ### Manual refresh
 
-`Options::refresh()` in Rust (`sentry_options.refresh()` in Python) reloads values immediately, ignoring the staleness threshold, and returns whether anything changed on disk. Files with an unchanged mtime are not re-read. On error the previous snapshot is retained.
+`sentry_options::refresh()` in Rust (`sentry_options.refresh()` in Python) reloads the global store immediately. `Options::refresh()` does the same for a standalone store from `.build()`. A refresh ignores the staleness threshold and returns whether anything changed on disk. Files with an unchanged mtime are not re-read. On error the previous snapshot is retained.
 
 Every refresh — lazy or manual — resets the staleness timer. Two consequences:
 
 - **Preempting hot-path IO**: driving `refresh()` from your own timer more often than the threshold guarantees that reads never stat or parse files inline.
-- **Manual-only mode**: passing `None` as the refresh threshold disables refresh-on-read entirely; values then only change when `refresh()` is called. In Rust, `refresh()` is a method on an `Options` instance from `.build()`. The global store from `.init()` has no public `refresh()`. Combined with the reload callback, this supports eagerly re-deserializing options into a typed struct off the hot path whenever `refresh()` reports a change.
+- **Manual-only mode**: passing `None` as the refresh threshold disables refresh-on-read entirely; values then only change when `refresh()` is called. In Rust, call `sentry_options::refresh()` for the global store, or `Options::refresh()` on an instance from `.build()`. Combined with the reload callback, this supports eagerly re-deserializing options into a typed struct off the hot path whenever `refresh()` reports a change.
 
 ### Propagation metric
 

@@ -152,7 +152,7 @@ Options::builder()
     .init()?;
 ```
 
-**Important:** Passing `None` to `with_refresh_threshold` disables automatic refreshes. Values then change only when you call `refresh()` on an `Options` instance, which you get from `Options::builder().build()` instead of `.init()`. The global store that `.init()` creates has no public `refresh()`, so `.with_refresh_threshold(None).init()` never reloads values.
+**Important:** Passing `None` to `with_refresh_threshold` disables automatic refreshes. Values then change only when you call `sentry_options::refresh()` for the global store from `.init()`, or `refresh()` on an `Options` instance from `Options::builder().build()`.
 
 `.init()` returns `OptionsError::AlreadyInitialized` if options are already initialized; ignore it with `.ok()` if that's expected. The standalone `init_with_schemas()` and `init_with_propagation_callback()` functions are **deprecated** in favor of the builder.
 
