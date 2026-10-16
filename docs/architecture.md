@@ -196,6 +196,8 @@ Options must be initialized once at startup, guarded by a global `OnceLock`. Rus
 | `.with_callback(cb)` | Register a reload callback |
 | `.with_refresh_threshold(t)` | Override the refresh-on-read staleness threshold (default 5 s); `None` disables refresh-on-read |
 
+Call `.build()` instead of `.init()` to get a standalone `Options` instance without setting the global store. The free functions `options()` and `features()` read only the global store.
+
 `init()` is a shorthand for `Options::builder().init()`; the standalone `init_with_schemas` / `init_with_propagation_callback` functions are deprecated in favor of the builder. Python: `init(on_propagation=None, refresh_threshold=5.0, additional_schemas=None)`, where `additional_schemas` is a `{ns: json}` mapping equivalent to `.with_additional_schemas()`.
 
 The `init()` shorthand and Python's `init()` are idempotent — calling again is a no-op. The builder's `.init()` instead returns `OptionsError::AlreadyInitialized` when options are already initialized, so re-initializing with different settings is a loud error rather than a silent no-op.
@@ -216,7 +218,7 @@ End to end, a value change propagates as: ConfigMap update → ~1–2 min kubele
 Every refresh — lazy or manual — resets the staleness timer. Two consequences:
 
 - **Preempting hot-path IO**: driving `refresh()` from your own timer more often than the threshold guarantees that reads never stat or parse files inline.
-- **Manual-only mode**: passing `None` as the refresh threshold disables refresh-on-read entirely; values then only change when `refresh()` is called. Combined with the reload callback, this supports eagerly re-deserializing options into a typed struct off the hot path whenever `refresh()` reports a change.
+- **Manual-only mode**: passing `None` as the refresh threshold disables refresh-on-read entirely; values then only change when `refresh()` is called. In Rust, `refresh()` is a method on an `Options` instance from `.build()`. The global store from `.init()` has no public `refresh()`. Combined with the reload callback, this supports eagerly re-deserializing options into a typed struct off the hot path whenever `refresh()` reports a change.
 
 ### Propagation metric
 

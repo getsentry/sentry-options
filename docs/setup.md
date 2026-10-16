@@ -75,7 +75,7 @@ jobs:
 
   validate:
     needs: cli-version
-    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@0b115be89b102d76beff8106bd4054365954282e
+    uses: getsentry/sentry-options/.github/workflows/validate-schema.yml@1a5e3a280d665ceae23d3c98bc3cd56e6d94ab0f # 1.2.17
     secrets:
       SENTRY_READONLYBOT_PRIVATE_KEY: ${{ secrets.SENTRY_READONLYBOT_PRIVATE_KEY }}
     with:
@@ -90,7 +90,7 @@ In `.pre-commit-config.yaml`
 ```yaml
   # Generates sentry-options type stubs
   - repo: https://github.com/getsentry/sentry-options
-    rev: 0b115be89b102d76beff8106bd4054365954282e
+    rev: 1a5e3a280d665ceae23d3c98bc3cd56e6d94ab0f # 1.2.17
     hooks:
       - id: sentry-options-gen-stubs
 ```
@@ -102,14 +102,14 @@ Again, check the repo for the latest SHAs (pinning actions at SHAs is better pra
 In Python, this would be in `pyproject.toml` or similar:
 
 ```toml
-dependencies = ["sentry-options>=1.1.1"]
+dependencies = ["sentry-options>=1.2.17"]
 ```
 
 In Rust, this would be in `Cargo.toml`:
 
 ```toml
 [dependencies]
-sentry-options = "1.1.1"
+sentry-options = "1.2.17"
 ```
 
 Check the [releases page](https://github.com/getsentry/sentry-options/releases) for the latest version.
@@ -128,7 +128,7 @@ init()  # optional: init(on_propagation=Callback, refresh_threshold=5.0)
 
 `on_propagation` is a callback fired whenever values reload, useful for collecting metrics. `refresh_threshold` sets the staleness window for refresh-on-read (default `5.0` seconds).
 
-**Important:** Passing `None` into `refresh_threshold` will completely disable automatic refreshes and must be triggered manually via `sentry_options.refresh`.
+**Important:** Passing `None` to `refresh_threshold` disables automatic refreshes. Values then change only when you call `sentry_options.refresh()`.
 
 #### Rust
 
@@ -152,7 +152,7 @@ Options::builder()
     .init()?;
 ```
 
-**Important:** Passing `None` into `refresh_threshold` will completely disable automatic refreshes and must be triggered manually via `sentry_options.refresh`.
+**Important:** Passing `None` to `with_refresh_threshold` disables automatic refreshes. Values then change only when you call `refresh()` on an `Options` instance, which you get from `Options::builder().build()` instead of `.init()`. The global store that `.init()` creates has no public `refresh()`, so `.with_refresh_threshold(None).init()` never reloads values.
 
 `.init()` returns `OptionsError::AlreadyInitialized` if options are already initialized; ignore it with `.ok()` if that's expected. The standalone `init_with_schemas()` and `init_with_propagation_callback()` functions are **deprecated** in favor of the builder.
 

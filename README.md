@@ -1,10 +1,10 @@
 # sentry-options
 
-Sentry's internal runtime option and feature-flag platform. Options are defined in your repo and values are set in `sentry-options-automator`. Multiple layers of validation, hot-reloaded, and minimal infrastructure. Awesome.
+Sentry's internal runtime option and feature-flag platform. Options are defined in your repo and values are set in `sentry-options-automator`. Values are validated at several layers, hot-reloaded, and need minimal infrastructure.
 
 `sentry-options` was built to replace our legacy database-backed options with a straightforward config file (in the form of a mounted Kubernetes ConfigMap). This lowers infrastructure complexity, makes the code simpler to understand, and dramatically lowers upper percentile (i.e. P90) latency. `sentry-options` is also Rust native, supporting both Rust and Python client libraries out of the box.
 
-## Documentation Reference
+## Documentation
 
 | Doc                                       | What it covers                                                            |
 | ----------------------------------------- | ------------------------------------------------------------------------- |
@@ -12,9 +12,9 @@ Sentry's internal runtime option and feature-flag platform. Options are defined 
 | [Working with options](./docs/options.md) | Adding/deleting options, using options, setting option values, testing    |
 | [Architecture](./docs/architecture.md)    | Technical reference: schema format, values & targets, runtime model, feature-flag evaluation |
 
-## Quick Reference
+## Quick reference
 
-> See [Working with options](./docs/options.md) for a more detailed guide
+To add sentry-options to a service, follow [Setup](./docs/setup.md). Then read options in code:
 
 ### Python
 
@@ -45,3 +45,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 ```
+
+## Help and license
+
+Report bugs and ask questions in [GitHub issues](https://github.com/getsentry/sentry-options/issues). sentry-options is licensed under [Apache-2.0](./LICENSE).
