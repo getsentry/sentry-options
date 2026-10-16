@@ -186,7 +186,7 @@ For validation to succeed in `sentry-options-automator` it must first know your 
   "repos": {
     "seer": {
       "url": "https://github.com/getsentry/seer",
-      "path": "sentry-options/"
+      "path": "sentry-options/schemas"
     }
   }
 }
