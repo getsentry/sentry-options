@@ -403,6 +403,21 @@ pub fn options(namespace: &str) -> Result<NamespaceOptions> {
     })
 }
 
+/// Refresh the global options store from disk, ignoring the staleness threshold.
+///
+/// Global counterpart of [`Options::refresh`] for stores set up with [`init`]
+/// or [`InitBuilder::init`]. This is the only way to reload values when
+/// refresh-on-read is disabled with `with_refresh_threshold(None)`.
+///
+/// Returns whether a new snapshot was published. Returns an error if `init()`
+/// has not been called.
+pub fn refresh() -> Result<bool> {
+    GLOBAL_OPTIONS
+        .get()
+        .ok_or(OptionsError::NotInitialized)?
+        .refresh()
+}
+
 /// Handle for accessing options within a specific namespace.
 pub struct NamespaceOptions {
     namespace: String,
