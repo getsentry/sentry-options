@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "sentry-options-validation",
     "sentry-options-cli",
+    "sentry-options-sync",
     "clients/rust",
     "clients/python",
     "examples/rust",
@@ -12,6 +13,7 @@ members = [
 default-members = [
     "sentry-options-validation",
     "sentry-options-cli",
+    "sentry-options-sync",
     "clients/rust",
     "examples/rust",
 ]
