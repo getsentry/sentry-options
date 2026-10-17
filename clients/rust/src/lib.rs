@@ -1,9 +1,11 @@
 //! Options client for reading validated configuration values.
 
 pub mod features;
+pub mod rollout;
 pub mod schema_fetch;
 
 pub use features::{FeatureChecker, FeatureContext, FeatureError, condition_operators, features};
+pub use rollout::RolloutKey;
 pub use schema_fetch::{
     RepoSchemaConfig, RepoSchemaConfigs, SchemaFetchError, SchemaFetchResult, fetch_schemas,
     fetch_schemas_from_file,
@@ -439,6 +441,23 @@ impl NamespaceOptions {
     /// Check if an option has a key defined, or if the default is being used.
     pub fn isset(&self, key: &str) -> Result<bool> {
         self.options.isset(&self.namespace, key)
+    }
+
+    /// Determine if the current operation is in a random % based rollout
+    /// group based on the rate defined by `option_name`.
+    ///
+    /// Returns `false` if the option is unknown or not a number.
+    pub fn in_random_rollout(&self, option_name: &str) -> bool {
+        self.options.in_random_rollout(&self.namespace, option_name)
+    }
+
+    /// Determine if `key` is in a deterministic % based rollout group based
+    /// on the rate defined by `option_name`.
+    ///
+    /// Returns `false` if the option is unknown or not a number.
+    pub fn in_rollout_group<'a>(&self, option_name: &str, key: impl Into<RolloutKey<'a>>) -> bool {
+        self.options
+            .in_rollout_group(&self.namespace, option_name, key)
     }
 }
 

@@ -442,6 +442,30 @@ impl NamespaceOptions {
             .map_err(options_err)
     }
 
+    /// Determine if the current operation is in a random % based rollout
+    /// group based on the rate defined by `option_name`.
+    fn in_random_rollout(&self, option_name: &str) -> bool {
+        self.options.in_random_rollout(&self.namespace, option_name)
+    }
+
+    /// Determine if `key` is in a deterministic % based rollout group based
+    /// on the rate in `option_name`.
+    ///
+    /// Returns false if `key` is not a str or an int that fits in 128 bits.
+    fn in_rollout_group(&self, option_name: &str, key: &Bound<'_, PyAny>) -> bool {
+        if let Ok(s) = key.cast::<PyString>() {
+            s.to_str().is_ok_and(|s| {
+                self.options
+                    .in_rollout_group(&self.namespace, option_name, s)
+            })
+        } else {
+            key.extract::<i128>().is_ok_and(|int_key| {
+                self.options
+                    .in_rollout_group(&self.namespace, option_name, int_key)
+            })
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!("NamespaceOptions({:?})", self.namespace)
     }

@@ -75,6 +75,23 @@ class NamespaceOptions:
     def isset(self, key: str) -> bool: ...
     """See if an option is defined and has a value set."""
 
+    def in_random_rollout(self, option_name: str) -> bool: ...
+    """
+    Determine if the current operation is in a random % based rollout group
+    based on the rate in ``option_name``.
+
+    Returns False if the option is unknown or not a number.
+    """
+
+    def in_rollout_group(self, option_name: str, key: int | str) -> bool: ...
+    """
+    Determine if ``key`` is in a deterministic % based rollout group based on the rate
+    defined by ``option_name``.
+
+    Returns False if the option is unknown or not a number, or if ``key`` is not
+    a str or an int that fits in 128 bits.
+    """
+
     def __repr__(self) -> str: ...
 
 

@@ -9,6 +9,9 @@ The first half of this document covers runtime options. The second half covers f
   - [Testing with options](#testing-with-options)
     - [Python](#python-1)
     - [Rust](#rust-1)
+  - [Rolling out with an option](#rolling-out-with-an-option)
+    - [Python](#python-2)
+    - [Rust](#rust-2)
   - [Setting an option value locally](#setting-an-option-value-locally)
   - [Adding an option](#adding-an-option)
   - [Setting an option value](#setting-an-option-value)
@@ -16,11 +19,11 @@ The first half of this document covers runtime options. The second half covers f
   - [Deleting an option](#deleting-an-option)
   - [Reading a feature flag](#reading-a-feature-flag)
     - [Definitions](#definitions)
-    - [Python](#python-2)
-    - [Rust](#rust-2)
-  - [Testing with feature flags](#testing-with-feature-flags)
     - [Python](#python-3)
     - [Rust](#rust-3)
+  - [Testing with feature flags](#testing-with-feature-flags)
+    - [Python](#python-4)
+    - [Rust](#rust-4)
   - [Setting a feature flag value locally](#setting-a-feature-flag-value-locally)
   - [Adding a feature flag](#adding-a-feature-flag)
   - [Setting a feature flag value](#setting-a-feature-flag-value)
@@ -133,6 +136,76 @@ fs::write("sentry-options/values/seer/values.json", br#"{"options": {"autofix.en
 assert_eq!(options("seer")?.get("autofix.enabled")?, true);
 // get_forced() bypasses the cache and returns the updated value immediately.
 assert_eq!(options("seer")?.get_forced("autofix.enabled")?, false);
+```
+
+## Rolling out with an option
+
+A `number` option holding a rate between `0.0` (nobody) and `1.0` (everyone) can gate a percentage rollout.
+
+- `in_random_rollout(option_name)` — a random sample on every call. Use it for sampling, such as logging or tracing a fraction of requests.
+- `in_rollout_group(option_name, key)` — a deterministic choice based on `key`, so the same key always gets the same answer for a given rate. Use it to keep an organization or project consistently in or out of a rollout. `key` may be an integer or a string.
+
+Both return a plain `bool` and never raise or return an error. An unknown option, an option that is not a number, or an unusable key (see below) gives `false`, so a misconfigured rollout option fails closed.
+
+Define the option in your schema as a `number`, typically defaulting to `0.0`:
+
+```json
+"autofix.rollout-rate": {
+  "type": "number",
+  "default": 0.0,
+  "description": "Fraction of organizations with autofix enabled"
+}
+```
+
+Rollout keys are bucketed the same as `sentry.options.rollout`, so a key lands in the same group in Sentry and in both clients (see [architecture](./architecture.md#option-rollouts)).
+
+For targeting by context, such as plan or region, use a [feature flag](#reading-a-feature-flag) instead.
+
+### Python
+
+```python
+from sentry_options import options
+
+opts = options('seer')
+if opts.in_random_rollout('trace.sample-rate'):
+    ...
+if opts.in_rollout_group('autofix.rollout-rate', organization.id):
+    ...
+if opts.in_rollout_group('autofix.rollout-rate', f'{organization.id}:{project.id}'):
+    ...
+```
+
+`key` must be a `str` or an `int` that fits in 128 bits; anything else returns `False`.
+
+To test, override the rate with [`override_options`](#testing-with-options). `0.0` and `1.0` force the result off and on:
+
+```python
+with override_options('seer', {'autofix.rollout-rate': 1.0}):
+    assert options('seer').in_rollout_group('autofix.rollout-rate', 123)
+```
+
+### Rust
+
+```rust
+use sentry_options::options;
+
+let opts = options("seer")?;
+if opts.in_random_rollout("trace.sample-rate") {
+    // ...
+}
+if opts.in_rollout_group("autofix.rollout-rate", organization_id) { // any integer type
+    // ...
+}
+if opts.in_rollout_group("autofix.rollout-rate", "org:1") {         // &str or &String
+    // ...
+}
+```
+
+To test, override the rate with [`override_options`](#rust-1):
+
+```rust
+let _guard = override_options(&[("seer", "autofix.rollout-rate", json!(1.0))]).unwrap();
+assert!(options("seer").unwrap().in_rollout_group("autofix.rollout-rate", 123));
 ```
 
 ## Setting an option value locally
