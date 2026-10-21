@@ -19,7 +19,7 @@ use md5::{Digest, Md5};
 
 use crate::Options;
 
-const BUCKETS: i128 = 100_000;
+pub const BUCKETS: i128 = 100_000;
 
 /// A key used to place an operation into a deterministic rollout group.
 ///

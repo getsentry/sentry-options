@@ -9,7 +9,7 @@ use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
     OptionsError as RustOptionsError, SchemaRegistry as RustSchemaRegistry,
-    ValidationError as RustValidationError, fetch_schemas_from_file,
+    ValidationError as RustValidationError, fetch_schemas_from_file, rollout,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -459,10 +459,18 @@ impl NamespaceOptions {
                     .in_rollout_group(&self.namespace, option_name, s)
             })
         } else {
-            key.extract::<i128>().is_ok_and(|int_key| {
+            // Python int could be larger than i128 (like a bigint)
+            // do a modulus in python so that we can safely extract i128
+            if let Ok(py_int) = key.cast::<PyInt>()
+                && let Ok(small_py_int) = py_int.rem(rollout::BUCKETS)
+                && let Ok(int_key) = small_py_int.extract::<i128>()
+            {
                 self.options
                     .in_rollout_group(&self.namespace, option_name, int_key)
-            })
+            } else {
+                // Converting to a i128 failed somewhere
+                false
+            }
         }
     }
 

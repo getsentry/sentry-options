@@ -32,6 +32,14 @@ def test_in_random_rollout_partial() -> None:
         (100000, True),
         # -5 % 100000 == 99995
         (-5, False),
+        # x % 100000 = 82144
+        (4512295198982144, False),
+        # x % 100000 = 49999
+        (4512295198949999, True),
+        # bigint x % 100000 = 42976
+        (2**160, True),
+        # bigint x % 100000 = 77976
+        ((2**160) + 35000, False),
     ],
 )
 def test_in_rollout_group_int_keys(key: int, expected: bool) -> None:
@@ -69,7 +77,6 @@ def test_in_rollout_group_bounds(rate: float, expected: bool) -> None:
         None,
         b'bytes',
         ['org:1'],
-        2**128,
         # Lone surrogates can't be encoded as UTF-8.
         '\ud800',
     ],
