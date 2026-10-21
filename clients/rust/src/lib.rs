@@ -440,7 +440,7 @@ impl NamespaceOptions {
     /// on the rate defined by `option_name`.
     ///
     /// Returns `false` if the option is unknown or not a number.
-    pub fn in_rollout_group<'a>(&self, option_name: &str, key: impl Into<RolloutKey<'a>>) -> bool {
+    pub fn in_rollout_group(&self, option_name: &str, key: impl RolloutKey) -> bool {
         self.options
             .in_rollout_group(&self.namespace, option_name, key)
     }
