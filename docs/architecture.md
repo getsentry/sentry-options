@@ -239,7 +239,7 @@ A `FeatureContext` carries arbitrary key→value data plus an optional set of `i
 
 `NamespaceOptions::in_random_rollout` and `in_rollout_group` enable you to do simple percentage based rollouts on a `number` option. Percentage based rollouts are an alternative to feature flags and are well suited for contexts where you don't have enough context to use a feature flag.
 
-The `in_rollout_group` method takes a `key` parameter that can be a string or number, which enables determinisitic rollouts based on an identifier like and `id` or `slug`.
+The `in_rollout_group` method takes a `key` parameter that can be a string or number, which enables deterministic rollouts based on an identifier like an `id` or `slug`.
 
 Both treat an unknown or non-numeric option as a rate of `0.0`, so they return `false` instead of an error.
 
