@@ -25,18 +25,17 @@ const BUCKETS: i128 = 100_000;
 ///
 /// Integer keys are bucketed directly. String keys are hashed with MD5 so that
 /// they are bucketed identically to the Python implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RolloutKey<'a> {
-    Int(i128),
-    Str(&'a str),
+pub trait RolloutKey {
+    /// Map this key onto `[0, 1)` in steps of 1/100000.
+    fn bucket(&self) -> f64;
 }
 
 macro_rules! impl_int_rollout_key {
     ($($t:ty),*) => {
         $(
-            impl From<$t> for RolloutKey<'_> {
-                fn from(value: $t) -> Self {
-                    RolloutKey::Int(value as i128)
+            impl RolloutKey for $t {
+                fn bucket(&self) -> f64 {
+                    (*self as i128).rem_euclid(BUCKETS) as f64 / BUCKETS as f64
                 }
             }
         )*
@@ -45,15 +44,23 @@ macro_rules! impl_int_rollout_key {
 
 impl_int_rollout_key!(i8, i16, i32, i64, i128, u8, u16, u32, u64, isize, usize);
 
-impl<'a> From<&'a str> for RolloutKey<'a> {
-    fn from(value: &'a str) -> Self {
-        RolloutKey::Str(value)
+impl RolloutKey for str {
+    fn bucket(&self) -> f64 {
+        let digest = Md5::digest(self.as_bytes());
+        let int_key = u128::from_be_bytes(digest.into());
+        (int_key % BUCKETS as u128) as f64 / BUCKETS as f64
     }
 }
 
-impl<'a> From<&'a String> for RolloutKey<'a> {
-    fn from(value: &'a String) -> Self {
-        RolloutKey::Str(value.as_str())
+impl RolloutKey for String {
+    fn bucket(&self) -> f64 {
+        self.as_str().bucket()
+    }
+}
+
+impl<T: RolloutKey + ?Sized> RolloutKey for &T {
+    fn bucket(&self) -> f64 {
+        (**self).bucket()
     }
 }
 
@@ -70,13 +77,13 @@ impl Options {
     /// by the option `option_name` in `namespace`.
     ///
     /// Returns `false` if the option is unknown or not a number.
-    pub fn in_rollout_group<'a>(
+    pub fn in_rollout_group(
         &self,
         namespace: &str,
         option_name: &str,
-        key: impl Into<RolloutKey<'a>>,
+        key: impl RolloutKey,
     ) -> bool {
-        bucket(key.into()) < self.rollout_rate(namespace, option_name)
+        key.bucket() < self.rollout_rate(namespace, option_name)
     }
 
     /// Unknown or non-numeric options are treated as a 0% rollout.
@@ -88,53 +95,40 @@ impl Options {
     }
 }
 
-/// Map a key onto `[0, 1)` in steps of 1/100000.
-fn bucket(key: RolloutKey<'_>) -> f64 {
-    let remainder = match key {
-        RolloutKey::Int(value) => value.rem_euclid(BUCKETS),
-        RolloutKey::Str(value) => {
-            let digest = Md5::digest(value.as_bytes());
-            let int_key = u128::from_be_bytes(digest.into());
-            (int_key % BUCKETS as u128) as i128
-        }
-    };
-    remainder as f64 / BUCKETS as f64
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_bucket_int_keys() {
-        assert_eq!(bucket(0.into()), 0.0);
-        assert_eq!(bucket(1.into()), 0.00001);
-        assert_eq!(bucket(50_000.into()), 0.5);
-        assert_eq!(bucket(100_000.into()), 0.0);
-        assert_eq!(bucket(123_456.into()), 0.23456);
+        assert_eq!(0i64.bucket(), 0.0);
+        assert_eq!(1i64.bucket(), 0.00001);
+        assert_eq!(50_000i64.bucket(), 0.5);
+        assert_eq!(100_000i64.bucket(), 0.0);
+        assert_eq!(123_456i64.bucket(), 0.23456);
     }
 
     #[test]
     fn test_bucket_negative_int_matches_python_modulo() {
         // Python: -5 % 100000 == 99995
-        assert_eq!(bucket((-5i64).into()), 0.99995);
+        assert_eq!((-5i64).bucket(), 0.99995);
     }
 
     #[test]
     fn test_bucket_large_unsigned_int() {
         // Python: (2**64 - 1) % 100000 == 51615
-        assert_eq!(bucket(u64::MAX.into()), 0.51615);
+        assert_eq!(u64::MAX.bucket(), 0.51615);
     }
 
     #[test]
     fn test_bucket_string_keys_match_python() {
         // Expected values from int(hashlib.md5(key).hexdigest(), 16) % 100000
-        assert_eq!(bucket("hello".into()), 0.22994);
-        assert_eq!(bucket("org:1".into()), 0.091);
-        assert_eq!(bucket("sentry".into()), 0.18128);
-        assert_eq!(bucket("".into()), 0.78366);
+        assert_eq!("hello".bucket(), 0.22994);
+        assert_eq!("org:1".bucket(), 0.091);
+        assert_eq!("sentry".bucket(), 0.18128);
+        assert_eq!("".bucket(), 0.78366);
 
         let owned = String::from("hello");
-        assert_eq!(bucket((&owned).into()), 0.22994);
+        assert_eq!(owned.bucket(), 0.22994);
     }
 }
