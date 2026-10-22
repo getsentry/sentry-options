@@ -431,7 +431,7 @@ impl NamespaceOptions {
     /// Determine if the current operation is in a random % based rollout
     /// group based on the rate defined by `option_name`.
     ///
-    /// Returns True if a random number is equal or less than the rate in `option_name`.
+    /// Returns True if a random number is less than the rate in `option_name`.
     /// Returns False if the option is unknown or not a number, or the random number is
     /// greater than the rate in `option_name`.
     pub fn in_random_rollout(&self, option_name: &str) -> bool {

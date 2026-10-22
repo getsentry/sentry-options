@@ -174,7 +174,7 @@ if opts.in_rollout_group('autofix.rollout-rate', f'{organization.id}:{project.id
     ...
 ```
 
-`key` must be a `str` or an `int` that fits in 128 bits; anything else returns `False`.
+`key` must be a `str` or an `int`.
 
 To test, override the rate with [`override_options`](#testing-with-options). `0.0` and `1.0` force the result off and on:
 
