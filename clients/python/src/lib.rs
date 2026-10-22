@@ -9,7 +9,7 @@ use ::sentry_options::{
     DEFAULT_REFRESH_THRESHOLD, FeatureChecker as RustFeatureChecker,
     FeatureContext as RustFeatureContext, FeatureError as RustFeatureError, Options as RustOptions,
     OptionsError as RustOptionsError, SchemaRegistry as RustSchemaRegistry,
-    ValidationError as RustValidationError, fetch_schemas_from_file,
+    ValidationError as RustValidationError, fetch_schemas_from_file, rollout,
 };
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -440,6 +440,38 @@ impl NamespaceOptions {
         self.options
             .isset(&self.namespace, key)
             .map_err(options_err)
+    }
+
+    /// Determine if the current operation is in a random % based rollout
+    /// group based on the rate defined by `option_name`.
+    fn in_random_rollout(&self, option_name: &str) -> bool {
+        self.options.in_random_rollout(&self.namespace, option_name)
+    }
+
+    /// Determine if `key` is in a deterministic % based rollout group based
+    /// on the rate in `option_name`.
+    ///
+    /// Returns false if `key` is not a str or an int that fits in 128 bits.
+    fn in_rollout_group(&self, option_name: &str, key: &Bound<'_, PyAny>) -> bool {
+        if let Ok(s) = key.cast::<PyString>() {
+            s.to_str().is_ok_and(|s| {
+                self.options
+                    .in_rollout_group(&self.namespace, option_name, s)
+            })
+        } else {
+            // Python int could be larger than i128 (like a bigint)
+            // do a modulus in python so that we can safely extract i128
+            if let Ok(py_int) = key.cast::<PyInt>()
+                && let Ok(small_py_int) = py_int.rem(rollout::BUCKETS)
+                && let Ok(int_key) = small_py_int.extract::<i128>()
+            {
+                self.options
+                    .in_rollout_group(&self.namespace, option_name, int_key)
+            } else {
+                // Converting to a i128 failed somewhere
+                false
+            }
+        }
     }
 
     fn __repr__(&self) -> String {
