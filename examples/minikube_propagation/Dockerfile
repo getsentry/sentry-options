@@ -8,6 +8,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY sentry-options-validation ./sentry-options-validation
 COPY sentry-options-cli ./sentry-options-cli
+COPY sentry-options-sync ./sentry-options-sync
 COPY clients ./clients
 COPY examples/rust ./examples/rust
 RUN pip install 'maturin[patchelf]>=1.7,<2' && \
@@ -19,7 +20,7 @@ COPY --from=builder /build/target/wheels/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
 COPY examples/minikube_propagation/probe.py /app/probe.py
-COPY examples/minikube_propagation/schema.json /etc/sentry-options/schemas/getsentry/schema.json
+COPY examples/minikube_propagation/schemas /etc/sentry-options/schemas
 
 ENV SENTRY_OPTIONS_DIR=/etc/sentry-options
 CMD ["python", "-u", "/app/probe.py"]
