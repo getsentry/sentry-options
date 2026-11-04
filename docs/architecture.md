@@ -135,7 +135,11 @@ segments:                  # required
     rollout: 100           # optional, defaults to 100
     conditions:
       - { property: "organization_id", operator: "in", value: [123] }
+metadata:                  # optional, any keys
+  verbose_logging: true
 ```
+
+`metadata` holds fields owned by the consuming service. It must be an object but its contents aren't validated, and evaluation ignores it. Unknown keys anywhere else in a `Feature` are rejected. Services read it from the raw value returned by `options(ns).get("feature.<name>")`.
 
 Condition operators: `in`, `not_in`, `contains`, `not_contains`, `equals`, `not_equals`, `matches`, `not_matches`.
 

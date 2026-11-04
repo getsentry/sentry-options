@@ -1920,6 +1920,29 @@ mod tests {
     }
 
     #[test]
+    fn test_metadata_is_readable_and_does_not_affect_evaluation() {
+        let feature = r#"{
+            "owner": {"team": "test-team"},
+            "created_at": "2024-01-01",
+            "segments": [{"name": "all", "rollout": 100, "conditions": []}],
+            "metadata": {"verbose_logging": true, "arms": ["a", "b"]}
+        }"#;
+        let (opts, _temp) = setup_feature_options(feature);
+
+        let value = opts
+            .get("test", "feature.organizations:test-feature")
+            .unwrap();
+        assert_eq!(
+            value["metadata"],
+            json!({"verbose_logging": true, "arms": ["a", "b"]})
+        );
+
+        let checker = checker(opts, "test");
+        let result = checker.try_has("organizations:test-feature", &FeatureContext::new());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
     fn test_try_has_absent_when_no_value_set() {
         let (opts, _temp) = setup_without_value();
         let checker = checker(opts, "test");
