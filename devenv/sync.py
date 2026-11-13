@@ -50,9 +50,9 @@ def main(context: dict[str, str]) -> int:
         ),
     )
 
-    print('installing pre-commit hooks ...')
+    print('installing prek hooks ...')
     proc.run(
-        (f"{reporoot}/.venv/bin/pre-commit", 'install', '--install-hooks'),
+        (f"{reporoot}/.venv/bin/prek", 'install', '--prepare-hooks', '-f'),
     )
 
     return 0

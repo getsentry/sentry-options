@@ -37,17 +37,16 @@ jobs:
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: ~/.cache/pre-commit
+          path: ~/.cache/prek
           key: cache-epoch-1|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml', 'uv.lock') }}
 
-      - name: Install pre-commit
-        run: pre-commit install-hooks
+      - name: Prepare prek hooks
+        run: prek prepare-hooks
 
-      - name: Run pre-commit
-        run: |
-          jq '.[]' --raw-output <<< '${{steps.changes.outputs.all_files}}' |
-            # Run pre-commit to lint and format check files that were changed (but not deleted)
-            xargs pre-commit run --files
+      - name: Run prek
+        env:
+          CHANGED_FILES: ${{ steps.changes.outputs.all_files }}
+        run: scripts/prek-changed-files.sh
 
   build-python:
     name: Build Python (${{ matrix.target }})

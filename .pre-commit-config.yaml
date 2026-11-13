@@ -43,11 +43,12 @@ repos:
     hooks:
     - id: sentry-options-gen-stubs
       name: Generate sentry_options mypy stubs
-      entry: sentry-options-gen-stubs
+      # prek can't install this repo into the hook env from a local hook,
+      # and the generator only needs the standard library, so run it directly.
+      entry: python sentry-options-gen-stubs/__init__.py
       language: python
       files: ^sentry-options/schemas/|^sentry-options/sentry_options/
       pass_filenames: false
-      additional_dependencies: ["."]
     - id: rustfmt
       name: format rust code
       language: system
