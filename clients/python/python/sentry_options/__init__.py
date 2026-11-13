@@ -5,6 +5,7 @@ ConfigMaps. Schemas (JSON) define available options with types and defaults;
 values are managed in sentry-options-automator and deployed as JSON files.
 The library watches for file changes and refreshes values automatically.
 """
+
 from __future__ import annotations
 
 from typing import TypeAlias

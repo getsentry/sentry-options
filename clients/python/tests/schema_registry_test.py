@@ -1,4 +1,5 @@
 """Tests for standalone schema validation without a runtime values store."""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,5 @@
 """Benchmarks for options.get() across all value types."""
+
 from __future__ import annotations
 
 import pyperf

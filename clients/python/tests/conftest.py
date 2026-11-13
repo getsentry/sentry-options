@@ -65,6 +65,4 @@ def run_isolated(script: str, options_dir: Path, timeout: int = 30, **env_extra:
         text=True,
         timeout=timeout,
     )
-    assert result.returncode == 0, (
-        f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+    assert result.returncode == 0, f'Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}'

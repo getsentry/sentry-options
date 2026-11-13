@@ -5,7 +5,6 @@ from sentry_options import FeatureContext
 from sentry_options import features
 from sentry_options import UnknownNamespaceError
 
-
 NAMESPACE = 'sentry-options-testing'
 
 

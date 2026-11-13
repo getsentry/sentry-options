@@ -1,4 +1,5 @@
 """Tests for sentry-options Python client."""
+
 from __future__ import annotations
 
 import pytest

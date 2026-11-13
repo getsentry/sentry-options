@@ -20,6 +20,7 @@ CLI usage:
         --output sentry-options/sentry_options/__init__.pyi
     sentry-options-gen-stubs --check
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,8 +82,7 @@ def _resolve_type(
             td = f'_{class_name}_{counter[0]}_{suffix}'
             counter[0] += 1
             typed_dicts[td] = [
-                (k, _field_type(v, class_name, f'{key}.{k}', typed_dicts, counter))
-                for k, v in obj_props.items()
+                (k, _field_type(v, class_name, f'{key}.{k}', typed_dicts, counter)) for k, v in obj_props.items()
             ]
             return td
         value_type = prop.get('additionalProperties')
@@ -112,7 +112,7 @@ def _field_type(
 def generate(schemas_dir: Path) -> str:
     if not schemas_dir.is_dir():
         print(
-            f"error: schemas directory not found: {schemas_dir}",
+            f'error: schemas directory not found: {schemas_dir}',
             file=sys.stderr,
         )
         sys.exit(1)
@@ -131,7 +131,7 @@ def generate(schemas_dir: Path) -> str:
         )
 
     if not raw_namespaces:
-        print(f"No schemas found under {schemas_dir}", file=sys.stderr)
+        print(f'No schemas found under {schemas_dir}', file=sys.stderr)
         sys.exit(1)
 
     typed_dicts: dict[str, list[tuple[str, str]]] = {}
@@ -145,7 +145,7 @@ def generate(schemas_dir: Path) -> str:
                 if '$ref' not in prop
             }
         except ValueError as e:
-            print(f"error: {namespace}: {e}", file=sys.stderr)
+            print(f'error: {namespace}: {e}', file=sys.stderr)
             sys.exit(1)
         namespaces.append((namespace, class_name, key_types))
 
@@ -196,9 +196,7 @@ def generate(schemas_dir: Path) -> str:
 
     for namespace, class_name, _ in namespaces:
         lines.append(
-            f'@overload\n'
-            f'def options(namespace: Literal["{namespace}"])'
-            f' -> {class_name}: ...',
+            f'@overload\ndef options(namespace: Literal["{namespace}"]) -> {class_name}: ...',
         )
     lines.append(
         '@overload\ndef options(namespace: str) -> NamespaceOptions: ...',
@@ -209,8 +207,7 @@ def generate(schemas_dir: Path) -> str:
         lines.append(f'class {class_name}(NamespaceOptions):')
         for key, py_type in key_types.items():
             lines.append(
-                f'    @overload\n'
-                f'    def get(self, key: Literal["{key}"]) -> {py_type}: ...',
+                f'    @overload\n    def get(self, key: Literal["{key}"]) -> {py_type}: ...',
             )
         if key_types:
             lines.append(
@@ -233,10 +230,7 @@ def main() -> None:
         '--schemas-dir',
         type=Path,
         default=Path('sentry-options/schemas'),
-        help=(
-            'Directory containing <namespace>/schema.json files'
-            ' (default: sentry-options/schemas)'
-        ),
+        help='Directory containing <namespace>/schema.json files (default: sentry-options/schemas)',
     )
     parser.add_argument(
         '--output',
@@ -247,10 +241,7 @@ def main() -> None:
     parser.add_argument(
         '--check',
         action='store_true',
-        help=(
-            'Exit with code 1 if the output would change'
-            ' (for CI/pre-commit).'
-        ),
+        help='Exit with code 1 if the output would change (for CI/pre-commit).',
     )
     args = parser.parse_args()
 
@@ -260,14 +251,10 @@ def main() -> None:
     }
 
     if args.check:
-        stale = [
-            path for path, content in files.items()
-            if not path.exists() or path.read_text() != content
-        ]
+        stale = [path for path, content in files.items() if not path.exists() or path.read_text() != content]
         for path in stale:
             print(
-                f"error: {path} is out of date."
-                ' Run `sentry-options-gen-stubs`.',
+                f'error: {path} is out of date. Run `sentry-options-gen-stubs`.',
                 file=sys.stderr,
             )
         if stale:
@@ -277,7 +264,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     for path, content in files.items():
         path.write_text(content)
-        print(f"Written to {path}")
+        print(f'Written to {path}')
 
 
 if __name__ == '__main__':
