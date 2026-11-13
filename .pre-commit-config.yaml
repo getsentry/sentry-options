@@ -1,6 +1,5 @@
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+-   repo: builtin
     hooks:
     -   id: check-yaml
     -   id: check-json
@@ -8,37 +7,29 @@ repos:
     -   id: check-executables-have-shebangs
     -   id: check-merge-conflict
     -   id: check-case-conflict
-    -   id: debug-statements
-    -   id: double-quote-string-fixer
+    -   id: end-of-file-fixer
+        exclude_types: [svg]
+    -   id: trailing-whitespace
+        exclude_types: [svg]
+    -   id: check-added-large-files
+        args: ['--maxkb=1024']
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
     -   id: name-tests-test
-    - id: end-of-file-fixer
-      exclude_types: [svg]
-    - id: trailing-whitespace
-      exclude_types: [svg]
-    - id: check-added-large-files
-      args: ['--maxkb=1024']
--   repo: https://github.com/asottile/reorder-python-imports
-    rev: v3.15.0
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
     hooks:
-    -   id: reorder-python-imports
-        args: [--py312-plus, --add-import, 'from __future__ import annotations']
--   repo: https://github.com/asottile/add-trailing-comma
-    rev: v3.2.0
+    -   id: ruff-check
+        args: [--fix]
+    -   id: ruff-format
+-   repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1-1
     hooks:
-    -   id: add-trailing-comma
--   repo: https://github.com/asottile/pyupgrade
-    rev: v3.21.2
-    hooks:
-    -   id: pyupgrade
-        args: [--py312-plus]
--   repo: https://github.com/hhatto/autopep8
-    rev: v2.3.2
-    hooks:
-    -   id: autopep8
--   repo: https://github.com/PyCQA/flake8
-    rev: 7.3.0
-    hooks:
-    -   id: flake8
+    -   id: shellcheck
+        args: [--shell=sh, --enable=check-extra-masked-returns]
+        # direnv runs .envrc with bash.
+        exclude: ^\.envrc$
 -   repo: local
     hooks:
     - id: sentry-options-gen-stubs

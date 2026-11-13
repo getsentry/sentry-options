@@ -4,6 +4,7 @@ Each test spins up a subprocess with its own ``SENTRY_OPTIONS_DIR`` so the Rust
 ``OnceLock`` starts fresh and ``init(additional_schemas=...)`` takes effect. The schema is
 passed in memory; values are still loaded from disk via the fallback chain.
 """
+
 from __future__ import annotations
 
 import json

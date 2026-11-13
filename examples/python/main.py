@@ -6,6 +6,7 @@ bool-option, and string-option.
 Updating values in `../values` will be reflected in stdout.
 Ctrl+C to exit.
 """
+
 from __future__ import annotations
 
 import time
@@ -31,6 +32,7 @@ def get_string_option_value():
 
 if __name__ == '__main__':
     from sentry_options import init
+
     init()
 
     while True:
@@ -39,4 +41,4 @@ if __name__ == '__main__':
         f = get_float_value()
         b = get_bool_value()
         so = get_string_option_value()
-        print(f"values: {s} | {f} | {b} | {so}", flush=True)
+        print(f'values: {s} | {f} | {b} | {so}', flush=True)

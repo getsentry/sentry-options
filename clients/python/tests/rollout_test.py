@@ -1,4 +1,5 @@
 """Tests for NamespaceOptions rollout methods."""
+
 from __future__ import annotations
 
 import pytest

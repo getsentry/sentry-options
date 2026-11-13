@@ -1,7 +1,7 @@
 minVersion: 1.2.0
 changelog: CHANGELOG.md
 changelogPolicy: auto
-preReleaseCommand: bash scripts/bump-version.sh
+preReleaseCommand: sh scripts/bump-version.sh
 github:
   owner: getsentry
   repo: sentry-options

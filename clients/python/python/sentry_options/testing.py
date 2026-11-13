@@ -8,6 +8,7 @@ Import this module to enable test overrides:
         # options('namespace').get('key') returns 'test-value'
         ...
 """
+
 from __future__ import annotations
 
 import contextlib

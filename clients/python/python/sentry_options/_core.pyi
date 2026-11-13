@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, TypeAlias
+from typing import TypeAlias
 
 JsonPrimitive: TypeAlias = str | int | float | bool | None
-OptionValue: TypeAlias = JsonPrimitive | list["OptionValue"] | dict[str, "OptionValue"]
+OptionValue: TypeAlias = JsonPrimitive | list['OptionValue'] | dict[str, 'OptionValue']
 
 def init(
     on_propagation: Callable[[str, float], None] | None = None,
     refresh_threshold: float | None = 5.0,
     additional_schemas: dict[str, str] | None = None,
 ) -> None: ...
+
 """
 Initialize the options extension with schema and
 values defined in environment variables or production paths.
@@ -31,15 +33,18 @@ additional_schemas : dict[str, str] | None
 """
 
 def condition_operators() -> list[str]: ...
+
 """Condition operators the feature evaluator understands."""
 
 def feature_property() -> dict[str, str]: ...
+
 """
 Return the value a namespace schema pairs with each ``feature.<name>`` key,
 i.e. ``{"$ref": "#/definitions/Feature"}``, for assembling a schema in memory.
 """
 
 def refresh() -> bool: ...
+
 """
 Refresh values from disk, ignoring the staleness threshold.
 
@@ -52,6 +57,7 @@ Raises NotInitializedError if ``init()`` has not been called.
 """
 
 def fetch_schemas(config: str | Path, output: str | Path) -> None: ...
+
 """
 Fetch schema snapshots from the repositories listed in ``repos.json``.
 
@@ -60,9 +66,11 @@ store or make schema loading network-dependent.
 """
 
 def options(namespace: str) -> NamespaceOptions: ...
+
 """Create NamespaceOptions for a given options namespace"""
 
 def features(namespace: str) -> FeatureChecker: ...
+
 """Create a FeatureChecker for a given options namespace"""
 
 class NamespaceOptions:
@@ -93,7 +101,6 @@ class NamespaceOptions:
 
     def __repr__(self) -> str: ...
 
-
 class SchemaRegistry:
     """A standalone, immutable registry loaded from a schema snapshot."""
     @staticmethod
@@ -111,7 +118,6 @@ class SchemaRegistry:
 
     def __repr__(self) -> str: ...
 
-
 class FeatureChecker:
     """
     Interface for checking features flags against a context object.
@@ -127,7 +133,6 @@ class FeatureChecker:
         The latter return values would all have been swallowed into ``false`` in ``has``.
         """
     def __repr__(self) -> str: ...
-
 
 class FeatureContext:
     """

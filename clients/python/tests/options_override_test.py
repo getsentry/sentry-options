@@ -1,4 +1,5 @@
 """Tests for sentry_options.testing override functionality."""
+
 from __future__ import annotations
 
 import pytest

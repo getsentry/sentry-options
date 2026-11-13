@@ -1,4 +1,5 @@
 """Benchmarks for FeatureChecker.has() across various scenarios."""
+
 from __future__ import annotations
 
 import pyperf

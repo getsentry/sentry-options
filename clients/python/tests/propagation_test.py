@@ -6,6 +6,7 @@ a real Python callback. Refreshes are triggered synchronously with
 ``get_forced``, which bypasses the refresh threshold so the tests don't have
 to wait it out.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -3,6 +3,7 @@
 Run with `make test-minikube-propagation-latency`. This is an opt-in integration
 probe, not a CI latency gate: kubelet sync timing varies.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -14,7 +15,6 @@ import sys
 import time
 import uuid
 from typing import Any
-
 
 CONTEXT = 'minikube'
 CONFIGMAP = 'sentry-options-getsentry'
@@ -35,7 +35,7 @@ def kubectl(*args: str, input_text: str | None = None) -> str:
         check=False,
     )
     if result.returncode:
-        raise RuntimeError(f"kubectl {' '.join(args)} failed: {result.stderr.strip()}")
+        raise RuntimeError(f'kubectl {" ".join(args)} failed: {result.stderr.strip()}')
     return result.stdout
 
 
@@ -229,8 +229,7 @@ def run(image: str, sample_count: int, sample_timeout: float, request_pod_refres
             "client's lazy refresh. The probe reads every 100 ms.",
         )
         print(
-            f'Excludes image build and pod startup. '
-            f'Each update flips {OPTION} between 100 and 101.',
+            f'Excludes image build and pod startup. Each update flips {OPTION} between 100 and 101.',
         )
         if request_pod_refresh:
             print(
@@ -240,22 +239,15 @@ def run(image: str, sample_count: int, sample_timeout: float, request_pod_refres
                 'for this request; its effect, when successful, is included in '
                 'the measured interval.',
             )
-            refreshes = {
-                event['iteration']: event
-                for event in found
-                if event['event'] == 'pod_refresh'
-            }
+            refreshes = {event['iteration']: event for event in found if event['event'] == 'pod_refresh'}
             print('Run  PATCH to dual-read (s)  ConfigMap API (s)  Pod refresh')
         else:
             print('Run  PATCH to dual-read (s)  ConfigMap API (s)')
         for event in samples:
-            row = (
-                f"{event['iteration']:>3}  {event['latency_seconds']:>22.3f}  "
-                f"{event['api_patch_seconds']:>17.3f}"
-            )
+            row = f'{event["iteration"]:>3}  {event["latency_seconds"]:>22.3f}  {event["api_patch_seconds"]:>17.3f}'
             if request_pod_refresh:
                 refresh = refreshes.get(event['iteration'])
-                row += f"  {refresh['status'] if refresh else 'unconfirmed':>11}"
+                row += f'  {refresh["status"] if refresh else "unconfirmed":>11}'
             print(row)
         print(f'Mean: {statistics.mean(latencies):.3f}s')
         if sample_count > 1:

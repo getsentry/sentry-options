@@ -1,4 +1,5 @@
 """Measure server-side apply PATCH start to a new-first dual-read."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +8,7 @@ import ssl
 import threading
 import time
 from datetime import datetime
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 from urllib.request import Request
 from urllib.request import urlopen
@@ -16,7 +17,6 @@ from sentry_options import init
 from sentry_options import options
 from sentry_options import UnknownNamespaceError
 from sentry_options import UnknownOptionError
-
 
 OPTIONS_NAMESPACE = 'getsentry'
 OPTION = 'getsentry.options-dual-read-test'
@@ -51,9 +51,13 @@ def get_option_new_first() -> int:
 
 
 def patch_configmap(
-    url: str, namespace: str, token: str, context: ssl.SSLContext, value: int,
+    url: str,
+    namespace: str,
+    token: str,
+    context: ssl.SSLContext,
+    value: int,
 ) -> tuple[float, float, str]:
-    generated_at = datetime.now(timezone.utc).isoformat(timespec='microseconds')
+    generated_at = datetime.now(UTC).isoformat(timespec='microseconds')
     values = {'options': {OPTION: value}, 'generated_at': generated_at}
     patch = {
         'apiVersion': 'v1',
@@ -82,7 +86,11 @@ def patch_configmap(
 
 
 def request_pod_refresh(
-    url: str, token: str, context: ssl.SSLContext, generated_at: str, iteration: int,
+    url: str,
+    token: str,
+    context: ssl.SSLContext,
+    generated_at: str,
+    iteration: int,
 ) -> None:
     started = time.monotonic()
     try:
@@ -125,10 +133,7 @@ def main() -> None:
     host = os.environ['KUBERNETES_SERVICE_HOST']
     port = os.environ['KUBERNETES_SERVICE_PORT_HTTPS']
     api_base = f'https://{host}:{port}/api/v1/namespaces/{namespace}'
-    configmap_url = (
-        f'{api_base}/configmaps/{CONFIGMAP}'
-        '?fieldManager=sentry-options-propagation&force=true'
-    )
+    configmap_url = f'{api_base}/configmaps/{CONFIGMAP}?fieldManager=sentry-options-propagation&force=true'
     pod_url = f'{api_base}/pods/{pod_name}'
 
     init()
@@ -139,7 +144,11 @@ def main() -> None:
     for iteration in range(1, samples + 1):
         value = UPDATED_VALUE if iteration % 2 else INITIAL_VALUE
         started, patch_finished, generated_at = patch_configmap(
-            configmap_url, namespace, token, context, value,
+            configmap_url,
+            namespace,
+            token,
+            context,
+            value,
         )
         if refresh_pod:
             try:

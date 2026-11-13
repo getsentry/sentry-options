@@ -4,6 +4,7 @@ Each test spins up a subprocess with its own ``SENTRY_OPTIONS_DIR`` so the
 Rust ``OnceLock`` starts fresh and ``init(refresh_threshold=...)`` takes
 effect.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

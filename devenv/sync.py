@@ -34,14 +34,14 @@ def main(context: dict[str, str]) -> int:
     uv.install(
         cfg['uv']['version'],
         cfg['uv'][constants.SYSTEM_MACHINE],
-        cfg['uv'][f"{constants.SYSTEM_MACHINE}_sha256"],
+        cfg['uv'][f'{constants.SYSTEM_MACHINE}_sha256'],
         reporoot,
     )
 
     print('syncing .venv ...')
     proc.run(
         (
-            f"{reporoot}/.devenv/bin/uv",
+            f'{reporoot}/.devenv/bin/uv',
             'sync',
             '--frozen',
             '--quiet',
@@ -52,7 +52,7 @@ def main(context: dict[str, str]) -> int:
 
     print('installing prek hooks ...')
     proc.run(
-        (f"{reporoot}/.venv/bin/prek", 'install', '--prepare-hooks', '-f'),
+        (f'{reporoot}/.venv/bin/prek', 'install', '--prepare-hooks', '-f'),
     )
 
     return 0

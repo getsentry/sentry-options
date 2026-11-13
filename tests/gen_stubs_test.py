@@ -1,4 +1,5 @@
 """Tests for sentry_options_gen_stubs."""
+
 from __future__ import annotations
 
 import json
@@ -52,26 +53,21 @@ def schemas_dir(tmp_path: Path) -> Path:
         ns_dir = tmp_path / namespace
         ns_dir.mkdir()
         (ns_dir / 'schema.json').write_text(
-            json.dumps({
-                'version': '1.0',
-                'type': 'object',
-                'properties': {
-                    key: {**prop, 'default': None}
-                    for key, prop in keys.items()
-                },
-            }),
+            json.dumps(
+                {
+                    'version': '1.0',
+                    'type': 'object',
+                    'properties': {key: {**prop, 'default': None} for key, prop in keys.items()},
+                }
+            ),
         )
     return tmp_path
 
 
 def test_namespace_to_class() -> None:
     assert namespace_to_class('seer') == 'NamespaceOptions_seer'
-    assert namespace_to_class(
-        'seer-code-review',
-    ) == 'NamespaceOptions_seer_code_review'
-    assert namespace_to_class(
-        'my.namespace',
-    ) == 'NamespaceOptions_my_namespace'
+    assert namespace_to_class('seer-code-review') == 'NamespaceOptions_seer_code_review'
+    assert namespace_to_class('my.namespace') == 'NamespaceOptions_my_namespace'
 
 
 def test_generate_imports(schemas_dir: Path) -> None:
@@ -108,16 +104,18 @@ def test_feature_keys_do_not_emit_get_overloads(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {
-                'real-option': {'type': 'boolean', 'default': False},
-                'feature.organizations:my-flag': {
-                    '$ref': '#/definitions/Feature',
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {
+                    'real-option': {'type': 'boolean', 'default': False},
+                    'feature.organizations:my-flag': {
+                        '$ref': '#/definitions/Feature',
+                    },
                 },
-            },
-        }),
+            }
+        ),
     )
     output = generate(tmp_path)
     assert 'def get(self, key: Literal["real-option"]) -> bool' in output
@@ -128,13 +126,15 @@ def test_unknown_type_raises(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {
-                'bad-key': {'type': 'unknown-type', 'default': None},
-            },
-        }),
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {
+                    'bad-key': {'type': 'unknown-type', 'default': None},
+                },
+            }
+        ),
     )
     with pytest.raises(SystemExit):
         generate(tmp_path)
@@ -144,13 +144,15 @@ def test_array_without_items_raises(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {
-                'arr': {'type': 'array', 'default': []},
-            },
-        }),
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {
+                    'arr': {'type': 'array', 'default': []},
+                },
+            }
+        ),
     )
     with pytest.raises(SystemExit):
         generate(tmp_path)
@@ -160,13 +162,15 @@ def test_object_without_properties_raises(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {
-                'obj': {'type': 'object', 'default': {}},
-            },
-        }),
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {
+                    'obj': {'type': 'object', 'default': {}},
+                },
+            }
+        ),
     )
     with pytest.raises(SystemExit):
         generate(tmp_path)
@@ -174,25 +178,15 @@ def test_object_without_properties_raises(tmp_path: Path) -> None:
 
 def test_generate_options_overloads(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
-    assert (
-        'def options(namespace: Literal["my-service"])'
-        ' -> NamespaceOptions_my_service'
-        in output
-    )
-    assert (
-        'def options(namespace: Literal["other-service"])'
-        ' -> NamespaceOptions_other_service'
-        in output
-    )
+    assert 'def options(namespace: Literal["my-service"]) -> NamespaceOptions_my_service' in output
+    assert 'def options(namespace: Literal["other-service"]) -> NamespaceOptions_other_service' in output
     assert 'def options(namespace: str) -> NamespaceOptions' in output
 
 
 def test_generate_namespace_subclasses(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
     assert 'class NamespaceOptions_my_service(NamespaceOptions):' in output
-    assert (
-        'class NamespaceOptions_other_service(NamespaceOptions):' in output
-    )
+    assert 'class NamespaceOptions_other_service(NamespaceOptions):' in output
 
 
 def test_generate_primitive_overloads(schemas_dir: Path) -> None:
@@ -206,10 +200,7 @@ def test_generate_primitive_overloads(schemas_dir: Path) -> None:
 
 def test_generate_typed_array(schemas_dir: Path) -> None:
     output = generate(schemas_dir)
-    assert (
-        'def get(self, key: Literal["int-list-key"]) -> list[int]'
-        in output
-    )
+    assert 'def get(self, key: Literal["int-list-key"]) -> list[int]' in output
 
 
 def test_generate_array_of_objects(schemas_dir: Path) -> None:
@@ -218,33 +209,32 @@ def test_generate_array_of_objects(schemas_dir: Path) -> None:
     assert f"{td} = TypedDict('{td}'" in output
     assert "    'url': str," in output
     assert "    'weight': int," in output
-    assert (
-        f'def get(self, key: Literal["obj-list-key"]) -> list[{td}]'
-        in output
-    )
+    assert f'def get(self, key: Literal["obj-list-key"]) -> list[{td}]' in output
 
 
 def test_generate_optional_field_in_array_of_objects(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {
-                'endpoints': {
-                    'type': 'array',
-                    'items': {
-                        'type': 'object',
-                        'properties': {
-                            'url': {'type': 'string'},
-                            'label': {'type': 'string', 'optional': True},
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {
+                    'endpoints': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'url': {'type': 'string'},
+                                'label': {'type': 'string', 'optional': True},
+                            },
                         },
+                        'default': [],
                     },
-                    'default': [],
                 },
-            },
-        }),
+            }
+        ),
     )
     output = generate(tmp_path)
     td = '_NamespaceOptions_svc_0_Item'
@@ -261,9 +251,7 @@ def test_generate_typed_object(schemas_dir: Path) -> None:
     assert "    'port': int," in output
     # optional field uses NotRequired
     assert "    'label': NotRequired[str]," in output
-    assert (
-        f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
-    )
+    assert f'def get(self, key: Literal["typed-obj-key"]) -> {td}' in output
 
 
 def test_typed_dict_field_names_preserved(tmp_path: Path) -> None:
@@ -273,19 +261,21 @@ def test_typed_dict_field_names_preserved(tmp_path: Path) -> None:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {
-                'nested': {
-                    'type': 'object',
-                    'properties': {
-                        'host-name': {'type': 'string'},
-                        'port-number': {'type': 'integer'},
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {
+                    'nested': {
+                        'type': 'object',
+                        'properties': {
+                            'host-name': {'type': 'string'},
+                            'port-number': {'type': 'integer'},
+                        },
                     },
                 },
-            },
-        }),
+            }
+        ),
     )
     output = generate(tmp_path)
     assert "    'host-name': str," in output
@@ -312,11 +302,13 @@ def _single_key_schema(tmp_path: Path, prop: dict) -> Path:
     ns_dir = tmp_path / 'svc'
     ns_dir.mkdir()
     (ns_dir / 'schema.json').write_text(
-        json.dumps({
-            'version': '1.0',
-            'type': 'object',
-            'properties': {'k': {**prop, 'default': None}},
-        }),
+        json.dumps(
+            {
+                'version': '1.0',
+                'type': 'object',
+                'properties': {'k': {**prop, 'default': None}},
+            }
+        ),
     )
     return tmp_path
 
@@ -324,7 +316,8 @@ def _single_key_schema(tmp_path: Path, prop: dict) -> Path:
 def test_generate_scalar_map(tmp_path: Path) -> None:
     output = generate(
         _single_key_schema(
-            tmp_path, {
+            tmp_path,
+            {
                 'type': 'object',
                 'additionalProperties': {'type': 'string'},
             },
@@ -337,7 +330,8 @@ def test_generate_array_valued_map(tmp_path: Path) -> None:
     # {key: [string]} — sentry-apps.webhook-logging.enabled
     output = generate(
         _single_key_schema(
-            tmp_path, {
+            tmp_path,
+            {
                 'type': 'object',
                 'additionalProperties': {'type': 'array', 'items': {'type': 'string'}},
             },
@@ -350,7 +344,8 @@ def test_generate_object_valued_map(tmp_path: Path) -> None:
     # {orgId: {max_candidates: int}} — seer.night_shift.org_tweaks
     output = generate(
         _single_key_schema(
-            tmp_path, {
+            tmp_path,
+            {
                 'type': 'object',
                 'additionalProperties': {
                     'type': 'object',
@@ -359,16 +354,14 @@ def test_generate_object_valued_map(tmp_path: Path) -> None:
             },
         ),
     )
-    assert (
-        'def get(self, key: Literal["k"]) -> dict[str, dict[str, int]]'
-        in output
-    )
+    assert 'def get(self, key: Literal["k"]) -> dict[str, dict[str, int]]' in output
 
 
 def test_generate_map_of_typed_objects(tmp_path: Path) -> None:
     output = generate(
         _single_key_schema(
-            tmp_path, {
+            tmp_path,
+            {
                 'type': 'object',
                 'additionalProperties': {
                     'type': 'object',
@@ -390,7 +383,8 @@ def test_generate_map_of_typed_objects(tmp_path: Path) -> None:
 def test_generate_nested_map_field_in_fixed_object(tmp_path: Path) -> None:
     output = generate(
         _single_key_schema(
-            tmp_path, {
+            tmp_path,
+            {
                 'type': 'object',
                 'properties': {
                     'scopes': {'type': 'object', 'additionalProperties': {'type': 'string'}},
