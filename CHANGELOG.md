@@ -1,4 +1,35 @@
 # Changelog
+## 1.2.18
+
+### New Features ✨
+
+- (client) Add a global refresh() to the Rust client by @joshuarli with @sentry-junior in [#202](https://github.com/getsentry/sentry-options/pull/202)
+
+### Bug Fixes 🐛
+
+- (gen-stubs) Mark generated stubs as a partial stub package by @chromy, @claude and @joshuarli in [#207](https://github.com/getsentry/sentry-options/pull/207)
+
+### Documentation 📚
+
+- Refresh docs against current code by @joshuarli with @sentry-junior in [#201](https://github.com/getsentry/sentry-options/pull/201)
+
+### Internal Changes 🔧
+
+#### Deps
+
+- Bump certifi to 2026.10.19 by @geoffg-sentry with @sentry-junior in [#206](https://github.com/getsentry/sentry-options/pull/206)
+- Bump uv to 0.13.5 by @geoffg-sentry with @sentry-junior in [#205](https://github.com/getsentry/sentry-options/pull/205)
+- Bump uv to 0.13.4 by @geoffg-sentry with @sentry-junior in [#204](https://github.com/getsentry/sentry-options/pull/204)
+
+#### Other
+
+- Migrate from pre-commit to prek by @joshuarli with @sentry-junior in [#209](https://github.com/getsentry/sentry-options/pull/209)
+- Fix Python client venv install path by @chromy and @claude in [#208](https://github.com/getsentry/sentry-options/pull/208)
+
+### Other
+
+- Add Rollout helpers by @markstory and @kenzoengineer in [#199](https://github.com/getsentry/sentry-options/pull/199)
+
 ## 1.2.17
 
 ### Bug Fixes 🐛
