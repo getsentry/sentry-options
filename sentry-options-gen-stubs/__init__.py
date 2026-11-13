@@ -9,6 +9,11 @@ returns the correct type without needing cast().
 Everything else (init, exceptions, NamespaceOptions base, etc.) is
 re-exported from sentry_options._core via explicit imports.
 
+The stubs only cover the top-level module, so a py.typed marked `partial`
+(PEP 561) is written next to them. Without it, type checkers that resolve
+packages like the runtime does (e.g. ty) stop at the stub directory and
+cannot find sentry_options._core or sentry_options.testing.
+
 CLI usage:
     sentry-options-gen-stubs
     sentry-options-gen-stubs --schemas-dir path/to/schemas \
@@ -22,6 +27,8 @@ import json
 import re
 import sys
 from pathlib import Path
+
+PY_TYPED_CONTENT = 'partial\n'
 
 _SCHEMA_TO_PYTHON = {
     'string': 'str',
@@ -247,21 +254,30 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    content = generate(args.schemas_dir)
+    files = {
+        args.output: generate(args.schemas_dir),
+        args.output.parent / 'py.typed': PY_TYPED_CONTENT,
+    }
 
     if args.check:
-        if not args.output.exists() or args.output.read_text() != content:
+        stale = [
+            path for path, content in files.items()
+            if not path.exists() or path.read_text() != content
+        ]
+        for path in stale:
             print(
-                f"error: {args.output} is out of date."
+                f"error: {path} is out of date."
                 ' Run `sentry-options-gen-stubs`.',
                 file=sys.stderr,
             )
+        if stale:
             sys.exit(1)
         return
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(content)
-    print(f"Written to {args.output}")
+    for path, content in files.items():
+        path.write_text(content)
+        print(f"Written to {path}")
 
 
 if __name__ == '__main__':
