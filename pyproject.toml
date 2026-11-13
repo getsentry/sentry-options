@@ -18,7 +18,7 @@ sentry_options_gen_stubs = "sentry-options-gen-stubs"
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.5.0",
+    "prek>=0.5.10",
     "pytest>=8",
     "sentry-devenv>=1.25.0",
 ]

@@ -9,7 +9,7 @@ Sentry's internal option and feature-flag platform: schema-defined options, git-
 - Rust tests: `SENTRY_OPTIONS_DIR=$PWD/sentry-options cargo test` (`.envrc` sets the variable)
 - Python client tests, from `clients/python`: `uv sync --extra dev && uv run maturin develop && uv run pytest tests`
 - Stub generator tests, from the repo root: `uv sync && uv run pytest`
-- Pre-commit hooks: `pre-commit run --files <files>`
+- Pre-commit hooks via [prek](https://github.com/j178/prek): `prek run --files <files>`
 
 ## Invariants
 
