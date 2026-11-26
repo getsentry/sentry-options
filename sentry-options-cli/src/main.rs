@@ -186,6 +186,9 @@ enum Commands {
 
         #[arg(long, help = "output the deleted options as a space-separated string")]
         report_deletions: bool,
+
+        #[arg(long, default_value_t = false, help = "allow changes to option shape")]
+        allow_shape_change: bool,
     },
     #[command(name = "check-option-usage")]
     CheckOptionUsage {
@@ -316,6 +319,7 @@ fn cli_validate_schema_changes(
     head_sha: String,
     repo: String,
     report_deletions: bool,
+    allow_shape_change: bool,
     quiet: bool,
 ) -> Result<()> {
     let base_temp = tempfile::tempdir()?;
@@ -339,6 +343,7 @@ fn cli_validate_schema_changes(
         &head_extracted,
         &repo,
         report_deletions,
+        allow_shape_change,
         quiet,
     )?;
 
@@ -380,7 +385,15 @@ fn main() {
             head_sha,
             repo,
             report_deletions,
-        } => cli_validate_schema_changes(base_sha, head_sha, repo, report_deletions, cli.quiet),
+            allow_shape_change,
+        } => cli_validate_schema_changes(
+            base_sha,
+            head_sha,
+            repo,
+            report_deletions,
+            allow_shape_change,
+            cli.quiet,
+        ),
         Commands::CheckOptionUsage { deletions, root } => cli_check_option_usage(deletions, root),
     };
 
